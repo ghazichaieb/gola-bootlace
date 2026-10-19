@@ -1,0 +1,228 @@
+// Package tftp is a small read-only TFTP server: PXE firmware fetches its first boot file (iPXE) with it. Writing is refused.
+// Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
+package tftp
+
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"net"
+	"path"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const (
+	opRRQ   = 1
+	opWRQ   = 2
+	opDATA  = 3
+	opACK   = 4
+	opERROR = 5
+	opOACK  = 6
+
+	errNotFound  = 1
+	errAccess    = 2
+	errIllegalOp = 4
+
+	defaultBlock = 512
+	minBlock     = 8
+	maxBlock     = 65464
+)
+
+// Server answers read requests from a file system (the folder with the boot files).
+type Server struct {
+	FS      fs.FS
+	Timeout time.Duration // how long to wait for the client's answer before sending again (default 2 s)
+	Retries int           // how many times to send again before giving up (default 5)
+	Logf    func(format string, args ...any)
+}
+
+func (s *Server) logf(format string, args ...any) {
+	if s.Logf != nil {
+		s.Logf(format, args...)
+	}
+}
+
+// Serve reads requests from conn until it is closed. Every transfer runs on its own socket, as the protocol wants.
+func (s *Server) Serve(conn net.PacketConn) error {
+	buf := make([]byte, 1500)
+	for {
+		n, client, err := conn.ReadFrom(buf)
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return nil
+			}
+			return err
+		}
+		request := append([]byte(nil), buf[:n]...)
+		go s.handle(conn.LocalAddr(), client, request)
+	}
+}
+
+func (s *Server) handle(local net.Addr, client net.Addr, packet []byte) {
+	if len(packet) < 4 {
+		return
+	}
+	host, _, _ := net.SplitHostPort(local.String())
+	conn, err := net.ListenPacket("udp", net.JoinHostPort(host, "0"))
+	if err != nil {
+		s.logf("tftp: cannot open a transfer socket: %v", err)
+		return
+	}
+	defer conn.Close()
+	switch binary.BigEndian.Uint16(packet) {
+	case opRRQ:
+		if err := s.read(conn, client, packet[2:]); err != nil {
+			s.logf("tftp: %v: %v", client, err)
+		}
+	case opWRQ:
+		sendError(conn, client, errAccess, "this server is read-only")
+	default:
+		sendError(conn, client, errIllegalOp, "expected a read request")
+	}
+}
+
+// request is what a read request says: file, mode and options (names in lower case).
+type request struct {
+	file    string
+	mode    string
+	options map[string]string
+}
+
+func parseRequest(b []byte) (request, error) {
+	fields := strings.Split(string(b), "\x00")
+	if len(fields) < 3 || fields[0] == "" {
+		return request{}, errors.New("malformed request")
+	}
+	r := request{file: fields[0], mode: strings.ToLower(fields[1]), options: map[string]string{}}
+	rest := fields[2:]
+	for i := 0; i+1 < len(rest); i += 2 {
+		r.options[strings.ToLower(rest[i])] = rest[i+1]
+	}
+	return r, nil
+}
+
+func (s *Server) read(conn net.PacketConn, client net.Addr, raw []byte) error {
+	req, err := parseRequest(raw)
+	if err != nil {
+		sendError(conn, client, errIllegalOp, err.Error())
+		return err
+	}
+	name := path.Clean("/" + strings.ReplaceAll(req.file, "\\", "/"))[1:]
+	if name == "" || !fs.ValidPath(name) {
+		sendError(conn, client, errNotFound, "file not found")
+		return fmt.Errorf("refused the path %q", req.file)
+	}
+	f, err := s.FS.Open(name)
+	if err != nil {
+		sendError(conn, client, errNotFound, "file not found")
+		return fmt.Errorf("%s: not found", name)
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		sendError(conn, client, errNotFound, "file not found")
+		return fmt.Errorf("%s: not a file", name)
+	}
+	block, oack := defaultBlock, []string{}
+	if v, ok := req.options["blksize"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			block = min(max(n, minBlock), maxBlock)
+			oack = append(oack, "blksize", strconv.Itoa(block))
+		}
+	}
+	timeout := s.Timeout
+	if timeout <= 0 {
+		timeout = 2 * time.Second
+	}
+	if _, ok := req.options["tsize"]; ok {
+		oack = append(oack, "tsize", strconv.FormatInt(info.Size(), 10))
+	}
+	retries := s.Retries
+	if retries <= 0 {
+		retries = 5
+	}
+	t := &transfer{conn: conn, client: client, timeout: timeout, retries: retries}
+	if len(oack) > 0 { // options: the client confirms them with ACK 0 before the data starts
+		if err := t.send(oackPacket(oack), 0); err != nil {
+			return err
+		}
+	}
+	return t.data(f, block)
+}
+
+type transfer struct {
+	conn    net.PacketConn
+	client  net.Addr
+	timeout time.Duration
+	retries int
+}
+
+// send writes a packet and waits for the ACK of `block`, writing again when the answer does not come.
+func (t *transfer) send(packet []byte, block uint16) error {
+	buf := make([]byte, 1500)
+	for attempt := 0; attempt <= t.retries; attempt++ {
+		if _, err := t.conn.WriteTo(packet, t.client); err != nil {
+			return err
+		}
+		deadline := time.Now().Add(t.timeout)
+		for time.Now().Before(deadline) {
+			_ = t.conn.SetReadDeadline(deadline)
+			n, from, err := t.conn.ReadFrom(buf)
+			if err != nil {
+				break // timeout: send again
+			}
+			if from.String() != t.client.String() {
+				sendError(t.conn, from, 5, "unknown transfer ID") // somebody else: tell them, keep waiting for the real client
+				continue
+			}
+			if n >= 4 && binary.BigEndian.Uint16(buf) == opACK && binary.BigEndian.Uint16(buf[2:]) == block {
+				return nil
+			}
+			if n >= 2 && binary.BigEndian.Uint16(buf) == opERROR {
+				return errors.New("the client stopped the transfer")
+			}
+		}
+	}
+	return errors.New("the client stopped answering")
+}
+
+// data sends the file in blocks of `size` bytes; the last block is shorter than the others (empty when the size is an exact multiple).
+func (t *transfer) data(r io.Reader, size int) error {
+	chunk := make([]byte, size)
+	var block uint16 = 1
+	for {
+		n, err := io.ReadFull(r, chunk)
+		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+			return err
+		}
+		packet := make([]byte, 4+n)
+		binary.BigEndian.PutUint16(packet, opDATA)
+		binary.BigEndian.PutUint16(packet[2:], block)
+		copy(packet[4:], chunk[:n])
+		if err := t.send(packet, block); err != nil {
+			return err
+		}
+		if n < size {
+			return nil
+		}
+		block++ // wraps from 65535 to 0, as clients expect for files longer than 65535 blocks
+	}
+}
+
+func oackPacket(pairs []string) []byte {
+	b := []byte{0, opOACK}
+	for _, s := range pairs {
+		b = append(append(b, s...), 0)
+	}
+	return b
+}
+
+func sendError(conn net.PacketConn, to net.Addr, code uint16, message string) {
+	b := []byte{0, opERROR, byte(code >> 8), byte(code)}
+	b = append(append(b, message...), 0)
+	_, _ = conn.WriteTo(b, to)
+}
