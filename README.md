@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="branding/bootlace-logo-dark.svg">
+    <img alt="Gola Bootlace" src="branding/bootlace-logo.svg" width="460">
+  </picture>
+</p>
+
 # Gola Bootlace
 
 A network boot server for ISO files: put your ISOs in a folder, and any PC on the network can boot and install from them over PXE.

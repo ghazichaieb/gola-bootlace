@@ -13,4 +13,8 @@ Planned (nothing is copied or bundled yet; update this list the day it is):
 - Samba (https://www.samba.org), GPL-3.0-or-later. Planned: run as a separate program next to the server, for Windows ISOs.
 - 7-Zip (https://www.7-zip.org), LGPL and BSD parts. Planned: listing ISO contents, run as a separate program.
 
+- Geist (https://vercel.com/font), Copyright (c) Vercel, SIL Open Font License 1.1. The word "Bootlace" in the logo files is set in Geist Bold,
+  converted to outlines by tools/make_logo.py. The font file itself is not in this repository.
+- The Gola logo and its GOLA lettering (branding/source/GolaLogo.svg) belong to Gola Services SUARL: see ADDITIONAL-TERMS.md (names and logos).
+
 No Microsoft software is included or redistributed. Windows files come from the user's own ISO.
