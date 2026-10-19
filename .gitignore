@@ -1,0 +1,9 @@
+/bootlace
+/bootlace.exe
+/dist/
+/data/
+*.iso
+*.wim
+*.log
+.idea/
+.vscode/

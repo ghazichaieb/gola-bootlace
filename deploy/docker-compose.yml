@@ -1,0 +1,10 @@
+# Placeholder: nothing runs yet. PXE needs broadcast traffic, which Docker's normal network does not pass, so the real file will use host
+# networking (Linux hosts only) or a macvlan network.
+services:
+  bootlace:
+    image: gola-bootlace:dev
+    network_mode: host
+    volumes:
+      - ./data/isos:/data/isos
+      - ./data/state:/data/state
+    restart: unless-stopped

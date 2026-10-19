@@ -1,0 +1,16 @@
+Gola Bootlace, by Gola Services
+Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later (see LICENSE and ADDITIONAL-TERMS.md).
+
+Third-party software this project reuses or ships. Keep every entry's copyright headers and licence texts when you copy files.
+
+Planned (nothing is copied or bundled yet; update this list the day it is):
+
+- Ventoy (https://github.com/ventoy/Ventoy), Copyright (c) longpanda, GPL-3.0-or-later.
+  Planned reuse: the per-distribution initramfs helper scripts (IMG/cpio/ventoy/hook/*) and ideas from vtoyjump. Files copied from it must keep
+  their original headers and be listed here by path.
+- iPXE (https://ipxe.org), GPL-2.0-or-later with some files under compatible licences. Planned: ship built binaries and their source.
+- wimboot (https://ipxe.org/wimboot), GPL-2.0-or-later. Planned: used to start Windows setup images.
+- Samba (https://www.samba.org), GPL-3.0-or-later. Planned: run as a separate program next to the server, for Windows ISOs.
+- 7-Zip (https://www.7-zip.org), LGPL and BSD parts. Planned: listing ISO contents, run as a separate program.
+
+No Microsoft software is included or redistributed. Windows files come from the user's own ISO.
