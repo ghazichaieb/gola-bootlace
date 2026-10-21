@@ -3,6 +3,7 @@ package admin
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -24,7 +25,28 @@ type fakeBackend struct {
 func (f *fakeBackend) ISOInfos() ([]httpd.ISOInfo, error) { return f.isos, nil }
 func (f *fakeBackend) Clients() []httpd.Client            { return f.clients }
 func (f *fakeBackend) Rescan()                            { f.rescans++ }
-func (f *fakeBackend) StartedAt() time.Time               { return time.Now().Add(-time.Minute) }
+func (f *fakeBackend) ForgetPC(mac string) bool {
+	for i, c := range f.clients {
+		if c.MAC == mac {
+			f.clients = append(f.clients[:i], f.clients[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+func (f *fakeBackend) ForgetPCsNotSeenFor(d time.Duration) int {
+	kept, n := f.clients[:0], 0
+	for _, c := range f.clients {
+		if time.Since(c.LastSeen) > d {
+			n++
+		} else {
+			kept = append(kept, c)
+		}
+	}
+	f.clients = kept
+	return n
+}
+func (f *fakeBackend) StartedAt() time.Time { return time.Now().Add(-time.Minute) }
 
 type rig struct {
 	t       *testing.T
@@ -37,7 +59,7 @@ type rig struct {
 
 func newRig(t *testing.T) *rig {
 	t.Helper()
-	store, _, err := config.Open(filepath.Join(t.TempDir(), "c.json"), config.Config{Title: "Gola Bootlace"})
+	store, _, err := config.Open(filepath.Join(t.TempDir(), "c.json"), config.Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +146,7 @@ func TestNothingWorksWithoutALogin(t *testing.T) {
 func TestAChangeNeedsTheHeaderThatOtherSitesCannotAdd(t *testing.T) {
 	r := newRig(t)
 	r.login()
-	if code, _ := r.do("PUT", "/api/settings", map[string]any{"title": "x", "menuTimeout": 3, "default": ""}, map[string]string{"X-Bootlace": ""}); code != 403 {
+	if code, _ := r.do("PUT", "/api/settings", map[string]any{"menuTimeout": 3, "default": ""}, map[string]string{"X-Bootlace": ""}); code != 403 {
 		t.Fatalf("without the header: %d", code)
 	}
 	if code, _ := r.do("POST", "/api/login", map[string]string{"password": "correct horse"}, map[string]string{"X-Bootlace": ""}); code != 403 {
@@ -135,13 +157,13 @@ func TestAChangeNeedsTheHeaderThatOtherSitesCannotAdd(t *testing.T) {
 func TestSettingsAndIsosAreChangedThroughTheApi(t *testing.T) {
 	r := newRig(t)
 	r.login()
-	if code, out := r.do("PUT", "/api/settings", map[string]any{"title": "My menu", "menuTimeout": 12, "default": "iso:0123456789"}, nil); code != 200 {
+	if code, out := r.do("PUT", "/api/settings", map[string]any{"menuTimeout": 12, "default": "iso:0123456789"}, nil); code != 200 {
 		t.Fatalf("%d %v", code, out)
 	}
-	if c := r.store.Get(); c.Title != "My menu" || c.MenuTimeout != 12 || c.Default != "iso:0123456789" {
+	if c := r.store.Get(); c.MenuTimeout != 12 || c.Default != "iso:0123456789" {
 		t.Fatalf("%+v", c)
 	}
-	if code, out := r.do("PUT", "/api/settings", map[string]any{"title": "x", "menuTimeout": -5, "default": ""}, nil); code != 400 || out["error"] == nil {
+	if code, out := r.do("PUT", "/api/settings", map[string]any{"menuTimeout": -5, "default": ""}, nil); code != 400 || out["error"] == nil {
 		t.Fatalf("a bad timeout: %d %v", code, out)
 	}
 	if code, _ := r.do("PUT", "/api/isos/0123456789", map[string]any{"hidden": true, "title": "Renamed"}, nil); code != 200 {
@@ -159,7 +181,7 @@ func TestSettingsAndIsosAreChangedThroughTheApi(t *testing.T) {
 	if code, _ := r.do("POST", "/api/rescan", map[string]any{}, nil); code != 200 || r.backend.rescans != 1 {
 		t.Fatal(code, r.backend.rescans)
 	}
-	if code, _ := r.do("PUT", "/api/settings", map[string]any{"title": "x", "bogus": 1}, nil); code != 400 {
+	if code, _ := r.do("PUT", "/api/settings", map[string]any{"bogus": 1}, nil); code != 400 {
 		t.Fatalf("an unknown field: %d", code)
 	}
 }
@@ -278,5 +300,42 @@ func TestThePageAndTheRedirectAreServed(t *testing.T) {
 	}
 	if code, _ := r.do("GET", "/", nil, nil); code != 302 {
 		t.Fatalf("the address of the server itself leads to the pages: %d", code)
+	}
+}
+
+func TestPcListIsPagedSearchedAndCleaned(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	r.backend.clients = nil
+	for i := 0; i < 30; i++ {
+		r.backend.clients = append(r.backend.clients, httpd.Client{MAC: fmt.Sprintf("aa:bb:cc:dd:ee:%02x", i), IP: fmt.Sprintf("10.0.0.%d", i), Product: "Box", LastSeen: time.Now().Add(-time.Duration(i) * 24 * time.Hour)})
+	}
+	_, out := r.do("GET", "/api/pcs?limit=10&offset=20", nil, nil)
+	if out["total"].(float64) != 30 || len(out["pcs"].([]any)) != 10 || out["offset"].(float64) != 20 {
+		t.Fatalf("%v", out)
+	}
+	if _, out = r.do("GET", "/api/pcs?limit=10&offset=999", nil, nil); len(out["pcs"].([]any)) != 0 {
+		t.Fatalf("past the end: %v", out)
+	}
+	if _, out = r.do("GET", "/api/pcs?q=10.0.0.7", nil, nil); out["total"].(float64) != 1 {
+		t.Fatalf("search: %v", out)
+	}
+	if code, out := r.do("POST", "/api/pcs/clean", map[string]any{"days": 10}, nil); code != 200 || out["removed"].(float64) != 20 {
+		t.Fatalf("clean: %d %v", code, out)
+	}
+	if code, _ := r.do("POST", "/api/pcs/clean", map[string]any{"days": -1}, nil); code != 400 {
+		t.Fatal(code)
+	}
+	if code, _ := r.do("DELETE", "/api/pcs/aa:bb:cc:dd:ee:00", nil, nil); code != 200 {
+		t.Fatal(code)
+	}
+	if code, _ := r.do("DELETE", "/api/pcs/aa:bb:cc:dd:ee:00", nil, nil); code != 404 {
+		t.Fatal(code)
+	}
+	if code, _ := r.do("PUT", "/api/settings", map[string]any{"menuTimeout": 0, "default": "", "pcDays": 14}, nil); code != 200 || r.store.Get().PCDays != 14 {
+		t.Fatal(code, r.store.Get().PCDays)
+	}
+	if code, _ := r.do("PUT", "/api/settings", map[string]any{"menuTimeout": 0, "default": ""}, nil); code != 200 || r.store.Get().PCDays != 14 {
+		t.Fatal("a save that leaves pcDays out must keep it")
 	}
 }

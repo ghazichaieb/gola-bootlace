@@ -13,6 +13,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,8 @@ type Backend interface {
 	ISOInfos() ([]httpd.ISOInfo, error)
 	Clients() []httpd.Client
 	Rescan()
+	ForgetPC(mac string) bool
+	ForgetPCsNotSeenFor(d time.Duration) int
 	StartedAt() time.Time
 }
 
@@ -85,6 +88,8 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("GET /api/settings", a.authed(a.settings))
 	api.HandleFunc("PUT /api/settings", a.authed(a.settingsUpdate))
 	api.HandleFunc("GET /api/pcs", a.authed(a.pcs))
+	api.HandleFunc("DELETE /api/pcs/{mac}", a.authed(a.pcForget))
+	api.HandleFunc("POST /api/pcs/clean", a.authed(a.pcClean))
 	api.HandleFunc("POST /api/rules", a.authed(a.ruleSet))
 	api.HandleFunc("DELETE /api/rules/{mac}", a.authed(a.ruleDelete))
 	api.HandleFunc("GET /api/log", a.authed(a.logLines))
@@ -373,20 +378,23 @@ func (a *Admin) rescan(w http.ResponseWriter, _ *http.Request) {
 
 func (a *Admin) settings(w http.ResponseWriter, _ *http.Request) {
 	c := a.o.Store.Get()
-	writeJSON(w, http.StatusOK, map[string]any{"title": c.Title, "menuTimeout": c.MenuTimeout, "default": c.Default})
+	writeJSON(w, http.StatusOK, map[string]any{"menuTimeout": c.MenuTimeout, "default": c.Default, "pcDays": c.PCDays})
 }
 
 func (a *Admin) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		Title       string `json:"title"`
 		MenuTimeout int    `json:"menuTimeout"`
 		Default     string `json:"default"`
+		PCDays      *int   `json:"pcDays"` // left out by the pages that do not show it
 	}
 	if !readJSON(w, r, &in) {
 		return
 	}
 	err := a.o.Store.Update(func(c *config.Config) error {
-		c.Title, c.MenuTimeout, c.Default = in.Title, in.MenuTimeout, in.Default
+		c.MenuTimeout, c.Default = in.MenuTimeout, in.Default
+		if in.PCDays != nil {
+			c.PCDays = *in.PCDays
+		}
 		return nil
 	})
 	if err != nil {
@@ -399,7 +407,7 @@ func (a *Admin) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (a *Admin) pcs(w http.ResponseWriter, _ *http.Request) {
+func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	c := a.o.Store.Get()
 	rules := map[string]config.Rule{}
 	for _, r := range c.Rules {
@@ -426,7 +434,78 @@ func (a *Admin) pcs(w http.ResponseWriter, _ *http.Request) {
 			out = append(out, pc{Client: httpd.Client{MAC: r.MAC}, Rule: &r})
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pcs": out})
+	if q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); q != "" {
+		kept := out[:0]
+		for _, p := range out {
+			hay := strings.ToLower(strings.Join([]string{p.MAC, p.IP, p.Manufacturer, p.Product, p.Serial, p.LastAction, noteOf(p.Rule)}, "\n"))
+			if strings.Contains(hay, q) {
+				kept = append(kept, p)
+			}
+		}
+		out = kept
+	}
+	total := len(out)
+	limit, offset := queryInt(r, "limit", 25, 1, 500), queryInt(r, "offset", 0, 0, total)
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"pcs": out[offset:end], "total": total, "offset": offset, "limit": limit})
+}
+
+func noteOf(r *config.Rule) string {
+	if r == nil {
+		return ""
+	}
+	return r.Note
+}
+
+// queryInt is a number in the web address, kept between lo and hi; def when it is missing or not a number.
+func queryInt(r *http.Request, key string, def, lo, hi int) int {
+	v, err := strconv.Atoi(r.URL.Query().Get(key))
+	if err != nil {
+		v = def
+	}
+	if v < lo {
+		v = lo
+	}
+	if v > hi {
+		v = hi
+	}
+	return v
+}
+
+func (a *Admin) pcForget(w http.ResponseWriter, r *http.Request) {
+	mac, ok := config.NormalizeMAC(r.PathValue("mac"))
+	if !ok {
+		mac = r.PathValue("mac") // a PC listed by its address only (an old script without a MAC)
+	}
+	if !a.o.Backend.ForgetPC(mac) {
+		fail(w, http.StatusNotFound, "that PC is not in the list")
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: %s removed from the list of PCs", mac)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (a *Admin) pcClean(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Days int `json:"days"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.Days < 0 || in.Days > 3650 {
+		fail(w, http.StatusBadRequest, "the number of days must be between 0 and 3650")
+		return
+	}
+	n := a.o.Backend.ForgetPCsNotSeenFor(time.Duration(in.Days) * 24 * time.Hour)
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: %d PC(s) not seen for %d day(s) removed from the list", n, in.Days)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"removed": n})
 }
 
 func (a *Admin) ruleSet(w http.ResponseWriter, r *http.Request) {

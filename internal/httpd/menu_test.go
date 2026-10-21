@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
@@ -25,11 +26,11 @@ func managed(t *testing.T) (*httptest.Server, *Server, *config.Store, map[string
 	for _, i := range list {
 		ids[i.Title] = i.ID
 	}
-	store, _, err := config.Open(filepath.Join(t.TempDir(), "c.json"), config.Config{Title: "Test menu", MenuTimeout: 7})
+	store, _, err := config.Open(filepath.Join(t.TempDir(), "c.json"), config.Config{MenuTimeout: 7})
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{ISODir: dir, Title: "x", Base: "http://10.0.0.1:8080", Config: store}
+	s := &Server{ISODir: dir, Base: "http://10.0.0.1:8080", Config: store}
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts, s, store, ids
@@ -38,7 +39,7 @@ func managed(t *testing.T) (*httptest.Server, *Server, *config.Store, map[string
 func TestTheMenuFollowsTheSettings(t *testing.T) {
 	ts, _, store, ids := managed(t)
 	_, body := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:01&ip=10.0.0.5", nil)
-	if !strings.Contains(body, "menu Test menu") || !strings.Contains(body, "--timeout 7000") || !strings.Contains(body, "alpha") || !strings.Contains(body, "beta") || !strings.Contains(body, "set menu-default shell") {
+	if !strings.Contains(body, "menu Gola Bootlace") || !strings.Contains(body, "--timeout 7000") || !strings.Contains(body, "alpha") || !strings.Contains(body, "beta") || !strings.Contains(body, "set menu-default shell") {
 		t.Fatalf("defaults: %s", body)
 	}
 	if err := store.Update(func(c *config.Config) error {
@@ -82,7 +83,7 @@ func TestARuleSendsThatPcAwayFromTheMenu(t *testing.T) {
 	for _, c := range cl {
 		byMAC[c.MAC] = c
 	}
-	if byMAC["aa:bb:cc:dd:ee:02"].LastAction != "rule: own disk" || byMAC["aa:bb:cc:dd:ee:04"].IP != "10.0.0.8" {
+	if byMAC["aa:bb:cc:dd:ee:02"].LastAction != "rule: own disk" || byMAC["aa:bb:cc:dd:ee:04"].IP != "127.0.0.1" {
 		t.Fatalf("%+v", byMAC)
 	}
 }
@@ -108,5 +109,31 @@ func TestIsoInfosShowNamesAndHiding(t *testing.T) {
 	}
 	if infos[0].Title != "A" || infos[0].Original != "alpha" || !infos[0].Hidden || infos[0].Method != "disk" || infos[1].Hidden {
 		t.Fatalf("%+v", infos)
+	}
+}
+
+func TestThePcListSurvivesARestartAndOldPcsAreForgotten(t *testing.T) {
+	ts, s, store, _ := managed(t)
+	s.PCFile = filepath.Join(t.TempDir(), "pcs.json")
+	get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:10", nil)
+	get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:11", nil)
+	s.clientsMu.Lock()
+	s.clients["aa:bb:cc:dd:ee:10"].LastSeen = time.Now().AddDate(0, 0, -40)
+	s.clientsMu.Unlock()
+	s.FlushClients()
+
+	again := &Server{ISODir: s.ISODir, Base: s.Base, Config: store, PCFile: s.PCFile}
+	if err := again.LoadClients(); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(again.Clients()); n != 2 {
+		t.Fatalf("%d PCs after a restart, want 2", n)
+	}
+	_ = store.Update(func(c *config.Config) error { c.PCDays = 30; return nil })
+	if cl := again.Clients(); len(cl) != 1 || cl[0].MAC != "aa:bb:cc:dd:ee:11" {
+		t.Fatalf("a PC not seen for 40 days should be gone with a 30 day limit: %+v", cl)
+	}
+	if !again.ForgetPC("aa:bb:cc:dd:ee:11") || again.ForgetPC("aa:bb:cc:dd:ee:11") || len(again.Clients()) != 0 {
+		t.Fatal("ForgetPC")
 	}
 }

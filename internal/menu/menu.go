@@ -39,6 +39,12 @@ func Script(title string, entries []Entry) string { return ScriptWith(title, ent
 type Options struct {
 	Default int // the entry (counting from 1) that is chosen when the time runs out; 0 keeps the shell; -1 goes on to the PC's own disk
 	Timeout int // seconds to wait before choosing it; 0 waits for ever
+
+	// Picture is the address of a PNG of Width x Height pixels shown behind the menu on a PC whose iPXE has a graphical console (UEFI builds);
+	// the text starts Top pixels from the top. Empty keeps the plain text menu. A PC without graphical console gets the text menu anyway.
+	Picture       string
+	Width, Height int
+	Top           int
 }
 
 // ScriptWith is Script with options.
@@ -52,7 +58,15 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	} else {
 		b.WriteString("set menu-default shell\n")
 	}
+	if o.Picture != "" {
+		// the picture carries the logo, so the menu's own heading only says what to do; a PC that cannot show it falls back to the text menu with the name
+		fmt.Fprintf(&b, "console --x %d --y %d --picture %s --left 64 --right 64 --top %d --bottom 40 && goto gfx || goto plain\n", o.Width, o.Height, o.Picture, o.Top)
+		b.WriteString(":gfx\nmenu Choose what to start\ngoto items\n:plain\n")
+	}
 	fmt.Fprintf(&b, "menu %s\n", clean(title))
+	if o.Picture != "" {
+		b.WriteString(":items\n")
+	}
 	if len(entries) == 0 {
 		b.WriteString("item --gap -- No ISO files were found in the server's folder.\n")
 	}

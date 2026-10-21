@@ -12,6 +12,7 @@ import (
 
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
+	"github.com/ghazichaieb/gola-bootlace/internal/gfx"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
 )
@@ -33,7 +34,7 @@ func (s *Server) settings() config.Config {
 	if s.Config != nil {
 		c = s.Config.Get()
 	} else {
-		c = config.Config{Title: s.Title, MenuTimeout: s.Menu.Timeout, Hidden: map[string]bool{}, Titles: map[string]string{}}
+		c = config.Config{MenuTimeout: s.Menu.Timeout, Hidden: map[string]bool{}, Titles: map[string]string{}}
 		switch {
 		case s.Pick != "":
 			c.Default = "pick:" + s.Pick
@@ -42,12 +43,6 @@ func (s *Server) settings() config.Config {
 		case s.Menu.Default > 0:
 			c.Default = "index:" + strconv.Itoa(s.Menu.Default)
 		}
-	}
-	if c.Title == "" {
-		c.Title = s.Title
-	}
-	if c.Title == "" {
-		c.Title = "Gola Bootlace"
 	}
 	return c
 }
@@ -180,9 +175,10 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			entries = append(entries, e.Entry)
 		}
 	}
-	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout}
+	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout,
+		Picture: s.Base + "/bg.png", Width: gfx.Width, Height: gfx.Height, Top: gfx.LogoBottom + 16}
 	s.logf("menu for %s (%s): %d ISO file(s)", client.IP, client.MAC, len(entries))
-	fmt.Fprint(w, menu.ScriptWith(cfg.Title, entries, opts))
+	fmt.Fprint(w, menu.ScriptWith("Gola Bootlace", entries, opts))
 }
 
 // queryValue is a value iPXE put in the web address, without anything that could break a line of the log.

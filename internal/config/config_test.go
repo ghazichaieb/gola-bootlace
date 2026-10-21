@@ -10,7 +10,7 @@ import (
 func open(t *testing.T) (*Store, string) {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "sub", "bootlace.json")
-	s, created, err := Open(p, Config{Title: "Gola Bootlace", MenuTimeout: 5})
+	s, created, err := Open(p, Config{MenuTimeout: 5})
 	if err != nil || !created {
 		t.Fatal(err, created)
 	}
@@ -19,17 +19,17 @@ func open(t *testing.T) (*Store, string) {
 
 func TestTheFirstOpenWritesTheSeedAndTheNextOneReadsItBack(t *testing.T) {
 	s, p := open(t)
-	if got := s.Get(); got.Title != "Gola Bootlace" || got.MenuTimeout != 5 {
+	if got := s.Get(); got.MenuTimeout != 5 {
 		t.Fatalf("%+v", got)
 	}
 	if err := s.Update(func(c *Config) error { c.MenuTimeout = 30; c.Default = "local"; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	again, created, err := Open(p, Config{Title: "ignored"})
+	again, created, err := Open(p, Config{})
 	if err != nil || created {
 		t.Fatal(err, created)
 	}
-	if got := again.Get(); got.MenuTimeout != 30 || got.Default != "local" || got.Title != "Gola Bootlace" {
+	if got := again.Get(); got.MenuTimeout != 30 || got.Default != "local" {
 		t.Fatalf("%+v", got)
 	}
 }
@@ -40,7 +40,6 @@ func TestAnInvalidChangeIsRefusedAndNothingChanges(t *testing.T) {
 	for name, fn := range map[string]func(*Config){
 		"timeout": func(c *Config) { c.MenuTimeout = -1 },
 		"default": func(c *Config) { c.Default = "rm -rf" },
-		"title":   func(c *Config) { c.Title = "a\nb" },
 		"mac":     func(c *Config) { c.Rules = []Rule{{MAC: "nope", Action: "local"}} },
 		"action":  func(c *Config) { c.Rules = []Rule{{MAC: "aa:bb:cc:dd:ee:ff", Action: "iso:zz"}} },
 		"twice": func(c *Config) {

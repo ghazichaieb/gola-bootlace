@@ -8,3 +8,7 @@
 .idea/
 .vscode/
 /bin/
+
+# files a test run in the repo folder makes
+/bootlace.json
+/pcs.json

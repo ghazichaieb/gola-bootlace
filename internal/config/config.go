@@ -1,4 +1,4 @@
-// Package config holds the settings that are changed in the web interface and kept in a file: the menu's heading and timeout, what starts by itself,
+// Package config holds the settings that are changed in the web interface and kept in a file: the menu's timeout, what starts by itself,
 // the ISOs that are hidden or renamed, and what each PC (by MAC address) is sent to. Infrastructure settings (addresses, ports, DHCP mode) stay on
 // the command line.
 // Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
@@ -27,14 +27,17 @@ type Rule struct {
 
 // Config is the whole file.
 type Config struct {
-	Title       string            `json:"title"`
 	MenuTimeout int               `json:"menuTimeout"` // seconds before the default entry starts; 0 waits for a choice
+	PCDays      int               `json:"pcDays"`      // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
 	Default     string            `json:"default"`     // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
 	Hidden      map[string]bool   `json:"hidden"`      // ISO id -> not in the menu
 	Titles      map[string]string `json:"titles"`      // ISO id -> the name shown instead of the file name
 	Rules       []Rule            `json:"rules"`
 	AdminHash   string            `json:"adminHash"` // see package admin
 }
+
+// DefaultPCDays is how long a PC stays in the list after it was last seen, unless changed.
+const DefaultPCDays = 90
 
 var (
 	idPattern     = regexp.MustCompile(`^[0-9a-f]{10}$`)
@@ -62,12 +65,11 @@ func ValidAction(a string) bool {
 
 // Validate checks what a person may have typed and cleans it up.
 func (c *Config) Validate() error {
-	c.Title = strings.TrimSpace(c.Title)
-	if strings.ContainsAny(c.Title, "\r\n") || len(c.Title) > 60 {
-		return errors.New("the heading must be one line of at most 60 characters")
-	}
 	if c.MenuTimeout < 0 || c.MenuTimeout > 3600 {
 		return errors.New("the timeout must be between 0 and 3600 seconds")
+	}
+	if c.PCDays < 0 || c.PCDays > 3650 {
+		return errors.New("the number of days must be between 0 and 3650")
 	}
 	if !defaultAction.MatchString(c.Default) {
 		return errors.New("the default entry is not valid")
@@ -147,6 +149,10 @@ func Open(path string, seed Config) (s *Store, created bool, err error) {
 	case err == nil:
 		if err := json.Unmarshal(data, &s.cfg); err != nil {
 			return nil, false, fmt.Errorf("%s: %w", path, err)
+		}
+		var probe struct{ PCDays *int }
+		if json.Unmarshal(data, &probe) == nil && probe.PCDays == nil {
+			s.cfg.PCDays = DefaultPCDays // a file from before the setting existed
 		}
 		if s.cfg.Hidden == nil {
 			s.cfg.Hidden = map[string]bool{}

@@ -3,8 +3,12 @@
 package httpd
 
 import (
+	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -31,9 +35,9 @@ const maxClients = 200
 func (s *Server) noteClient(r *http.Request) Client {
 	q := r.URL.Query()
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
-	ip := queryValue(q, "ip", 45)
+	ip := host // where the request really came from; what iPXE says about itself is only used when that is not an address
 	if net.ParseIP(ip) == nil {
-		ip = host
+		ip = queryValue(q, "ip", 45)
 	}
 	mac, _ := config.NormalizeMAC(q.Get("mac"))
 	if mac == "" {
@@ -61,6 +65,7 @@ func (s *Server) noteClient(r *http.Request) Client {
 	}
 	c.IP, c.LastSeen = ip, now
 	c.Count++
+	s.changed()
 	// a request without these (an old script, a test) must not wipe what an earlier one told
 	for key, dst := range map[string]*string{"plat": &c.Platform, "man": &c.Manufacturer, "prod": &c.Product, "serial": &c.Serial} {
 		if v := queryValue(q, key, 60); v != "" {
@@ -76,6 +81,7 @@ func (s *Server) setAction(mac, action string) {
 	defer s.clientsMu.Unlock()
 	if c := s.clients[mac]; c != nil {
 		c.LastAction = action
+		s.changed()
 	}
 }
 
@@ -91,6 +97,7 @@ func (s *Server) noteFetch(remoteAddr, title string) {
 		if c.IP == host {
 			c.LastAction = "booting " + title
 			c.LastSeen = time.Now()
+			s.changed()
 		}
 	}
 }
@@ -99,6 +106,9 @@ func (s *Server) noteFetch(remoteAddr, title string) {
 func (s *Server) Clients() []Client {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
+	if days := s.settings().PCDays; days > 0 {
+		s.forgetBefore(time.Now().AddDate(0, 0, -days))
+	}
 	out := make([]Client, 0, len(s.clients))
 	for _, c := range s.clients {
 		out = append(out, *c)
@@ -146,3 +156,126 @@ func (s *Server) Rescan() {
 
 // Started is when the server started.
 func (s *Server) StartedAt() time.Time { return s.started }
+
+// ForgetPC drops one PC from the list; it is listed again when it asks for a menu.
+func (s *Server) ForgetPC(mac string) bool {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+	_, ok := s.clients[mac]
+	delete(s.clients, mac)
+	if ok {
+		s.changed()
+	}
+	return ok
+}
+
+// ForgetPCsNotSeenFor drops the PCs that did not ask for a menu for this long and says how many there were.
+func (s *Server) ForgetPCsNotSeenFor(d time.Duration) int {
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+	return s.forgetBefore(time.Now().Add(-d))
+}
+
+// forgetBefore is for callers that hold clientsMu.
+func (s *Server) forgetBefore(cutoff time.Time) int {
+	n := 0
+	for mac, c := range s.clients {
+		if c.LastSeen.Before(cutoff) {
+			delete(s.clients, mac)
+			n++
+		}
+	}
+	if n > 0 {
+		s.changed()
+	}
+	return n
+}
+
+// The list of PCs is kept in a file next to the settings, so that it survives a restart (the date of last sight is what the clean-up goes by).
+
+// changed schedules a write of the file; many changes close together make one write.
+func (s *Server) changed() {
+	if s.PCFile == "" {
+		return
+	}
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
+	if s.savePending {
+		return
+	}
+	s.savePending = true
+	time.AfterFunc(2*time.Second, s.saveClients)
+}
+
+func (s *Server) saveClients() {
+	s.saveMu.Lock()
+	s.savePending = false
+	s.saveMu.Unlock()
+	s.clientsMu.Lock()
+	list := make([]Client, 0, len(s.clients))
+	for _, c := range s.clients {
+		list = append(list, *c)
+	}
+	s.clientsMu.Unlock()
+	sort.Slice(list, func(i, j int) bool { return list[i].MAC < list[j].MAC })
+	data, err := json.MarshalIndent(list, "", "  ")
+	if err == nil {
+		err = writeFileAtomic(s.PCFile, append(data, '\n'))
+	}
+	if err != nil && s.Logf != nil {
+		s.Logf("cannot save the list of PCs to %s: %v", s.PCFile, err)
+	}
+}
+
+// LoadClients reads the file at start; a missing file is an empty list.
+func (s *Server) LoadClients() error {
+	if s.PCFile == "" {
+		return nil
+	}
+	data, err := os.ReadFile(s.PCFile)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var list []Client
+	if err := json.Unmarshal(data, &list); err != nil {
+		return err
+	}
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+	s.clients = map[string]*Client{}
+	for i := range list {
+		if list[i].MAC != "" {
+			s.clients[list[i].MAC] = &list[i]
+		}
+	}
+	return nil
+}
+
+// FlushClients writes the list now (used when the server stops).
+func (s *Server) FlushClients() {
+	if s.PCFile != "" {
+		s.saveClients()
+	}
+}
+
+func writeFileAtomic(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".bootlace-*.tmp")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}

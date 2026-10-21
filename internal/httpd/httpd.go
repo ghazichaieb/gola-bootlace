@@ -17,6 +17,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
+	"github.com/ghazichaieb/gola-bootlace/internal/gfx"
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
@@ -27,7 +28,6 @@ import (
 // Server builds the handler. ISODir is read at every request, so an ISO copied into the folder shows up in the next menu without a restart.
 type Server struct {
 	ISODir      string
-	Title       string // the heading of the menu
 	Base        string // how PCs reach this server, for example http://192.168.88.1:8080 (no trailing slash)
 	Logf        func(format string, args ...any)
 	Menu        menu.Options // which entry is chosen when nobody chooses, and after how many seconds
@@ -37,14 +37,18 @@ type Server struct {
 
 	// Config holds the settings made in the web interface; without it the fields above are the settings.
 	Config *config.Store
+	// PCFile is where the list of PCs is kept between runs; empty keeps it in memory only.
+	PCFile string
 	// Mount adds handlers (the web interface) to the paths of the server.
 	Mount map[string]http.Handler
 
-	started   time.Time
-	clientsMu sync.Mutex
-	clients   map[string]*Client
-	mu        sync.Mutex
-	known     map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
+	started     time.Time
+	clientsMu   sync.Mutex
+	clients     map[string]*Client
+	saveMu      sync.Mutex
+	savePending bool
+	mu          sync.Mutex
+	known       map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
 	// Handoff holds the PCs that iPXE sent to FreeBSD's loader; their TFTP requests are answered from the ISO they chose.
 	Handoff *handoff.Registry
 }
@@ -68,6 +72,11 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/boot.ipxe", s.bootScript)
 	mux.HandleFunc("/menu", s.menu)
+	mux.HandleFunc("/bg.png", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(gfx.Background())
+	})
 	mux.HandleFunc("/iso/", s.iso)
 	mux.HandleFunc("/fs/", s.inside)
 	mux.HandleFunc("/ipxe/", s.loader)

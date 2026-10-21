@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"time"
 
@@ -112,7 +113,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		smbPassword = randomPassword()
 	}
 	registry := &handoff.Registry{}
-	seed := config.Config{Title: "Gola Bootlace", MenuTimeout: *menuTimeout, Hidden: map[string]bool{}, Titles: map[string]string{}}
+	seed := config.Config{MenuTimeout: *menuTimeout, PCDays: config.DefaultPCDays, Hidden: map[string]bool{}, Titles: map[string]string{}}
 	switch {
 	case *menuPick != "":
 		seed.Default = "pick:" + *menuPick
@@ -129,7 +130,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	if created {
 		logf("settings file %s made from the command-line menu options", store.Path())
 	}
-	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Config: store}
+	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(filepath.Dir(*configPath), "pcs.json")}
+	if err := web.LoadClients(); err != nil {
+		logf("cannot read the saved list of PCs (%v): starting with an empty list", err)
+	}
 	if !*noAdmin {
 		generated, err := admin.EnsurePassword(store, *adminPassword)
 		if err != nil {

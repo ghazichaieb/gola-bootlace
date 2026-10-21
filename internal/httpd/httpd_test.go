@@ -15,7 +15,7 @@ func server(t *testing.T) (*httptest.Server, string) {
 	if err := os.WriteFile(filepath.Join(dir, "My Linux.iso"), []byte("0123456789"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{ISODir: dir, Title: "Test", Base: "http://10.0.0.1:8080"}
+	s := &Server{ISODir: dir, Base: "http://10.0.0.1:8080"}
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	return ts, dir

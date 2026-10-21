@@ -67,8 +67,8 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",mo
 .btn.danger{color:var(--bad)}
 .btn:disabled{opacity:.55;cursor:default}
 label{display:block;font-weight:600;margin:0 0 4px}
-input[type=text],input[type=password],input[type=number],select{width:100%;min-height:44px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel);}
-input[type=text].inline,select.inline{min-height:38px;padding:5px 9px}
+input[type=text],input[type=search],input[type=password],input[type=number],select{width:100%;min-height:44px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel);}
+input[type=text].inline,input[type=search].inline,select.inline{min-height:38px;padding:5px 9px}
 .field{margin:0 0 14px;max-width:560px}
 .hint{color:var(--muted);font-size:13px;margin:4px 0 0}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -86,9 +86,10 @@ input[type=text].inline,select.inline{min-height:38px;padding:5px 9px}
 .toast.bad{background:var(--bad);color:#fff}
 .log{background:#0e1012;color:#d5d9de;border-radius:10px;padding:10px 12px;height:60vh;min-height:280px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
 .log .t{color:#6f7782}.log .k-dhcp{color:#7fb4ff}.log .k-tftp{color:#c3a3ff}.log .k-smb{color:#79d7c4}.log .k-menu{color:#ffd37a}.log .k-web{color:#ff9aa5}
-.menu-preview{background:#0b53c9;color:#fff;border-radius:6px;padding:12px 18px;font-family:ui-monospace,Consolas,monospace;font-size:13px;max-width:560px}
-.menu-preview .h{text-align:center;font-weight:700;margin-bottom:8px}
-.menu-preview .sel{background:#c8201f;margin:0 -8px;padding:0 8px}
+.menu-preview{container-type:inline-size;position:relative;aspect-ratio:4/3;background:#0c0d0f url(/bg.png) center/100% 100% no-repeat;color:#e8e9ec;border-radius:6px;overflow:hidden;font-family:ui-monospace,Consolas,monospace;font-size:1.56cqw;line-height:1.25;max-width:640px}
+.menu-preview .in{position:absolute;left:6.25%;right:6.25%;top:35.2%;bottom:5%;overflow:hidden}
+.menu-preview .h{font-weight:700;margin-bottom:1.2em}
+.menu-preview .sel{background:#c10016;color:#fff;margin:0 -.6em;padding:0 .6em}
 .steps{margin:0;padding-left:20px}
 .steps li{margin:4px 0}
 .empty{padding:26px;text-align:center;color:var(--muted)}
@@ -206,8 +207,8 @@ function wireLogin() {
 
 // ---- dashboard
 async function loadCommon() {
-  const [isos, pcs] = await Promise.all([api("/api/isos"), api("/api/pcs")]);
-  state.isos = isos.isos || []; state.defaultAction = isos.default || ""; state.pcs = pcs.pcs || [];
+  const isos = await api("/api/isos");
+  state.isos = isos.isos || []; state.defaultAction = isos.default || "";
 }
 async function pageDash() {
   const page = $("#page");
@@ -253,24 +254,46 @@ async function pageISOs() {
 function defaultText() { const d = state.defaultAction; return !d ? "the menu waits for a choice" : d === "local" ? "the PC's own disk starts" : d.startsWith("iso:") ? actionLabel(d) : "set on the command line: " + d; }
 
 // ---- PCs
+// How many PCs fit on a screen cannot be known (the window, the zoom and the phone all differ), so the person chooses; the first guess comes from the window's height.
+function pcPageSize() {
+  try { const v = parseInt(localStorage.getItem("bootlace-pcs-per-page") || "", 10); if ([10, 25, 50, 100].includes(v)) return v; } catch (e) { /* private window */ }
+  const rows = Math.floor((window.innerHeight - 330) / 62);
+  return rows >= 50 ? 50 : rows >= 25 ? 25 : 10;
+}
 async function pagePCs() {
   const page = $("#page");
+  const view = { size: pcPageSize(), offset: 0, q: "", total: 0 };
   page.innerHTML = `<h1>PCs</h1><p class="muted small">PCs that started from the network and asked for a menu. A rule sends one PC somewhere without showing it the menu: for example always to its own disk, or straight into an installer.</p>
-  <div class="card tablewrap" id="pctable"></div>
-  <div class="card" style="margin-top:14px"><h2>Add a rule for a PC that is not listed</h2><form id="rf" class="row" style="align-items:flex-end">
-    <div style="flex:1;min-width:200px"><label for="rmac">MAC address</label><input id="rmac" type="text" placeholder="aa:bb:cc:dd:ee:ff" required pattern="[0-9A-Fa-f]{2}([:\\-][0-9A-Fa-f]{2}){5}"></div>
-    <div style="flex:1;min-width:200px"><label for="ract">Action</label><select id="ract"></select></div>
-    <div style="flex:1;min-width:160px"><label for="rnote">Note</label><input id="rnote" type="text" maxlength="120" placeholder="optional"></div><button class="btn primary">Add rule</button></form></div>`;
+  <div class="card tablewrap"><div class="row" style="padding:12px 14px;justify-content:space-between">
+    <input id="pq" class="inline" type="search" placeholder="Search by name, address or note" style="max-width:320px" aria-label="Search the PCs">
+    <label class="row small" style="margin:0;font-weight:500">Per page <select id="psize" class="inline" style="width:auto"><option>10</option><option>25</option><option>50</option><option>100</option></select></label></div>
+    <div id="pctable"></div><div class="row" id="pager" style="padding:10px 14px;justify-content:space-between"></div></div>
+  <div class="grid two" style="margin-top:14px">
+  <div class="card"><h2>Add a rule for a PC that is not listed</h2><form id="rf">
+    <div class="field"><label for="rmac">MAC address</label><input id="rmac" type="text" placeholder="aa:bb:cc:dd:ee:ff" required pattern="[0-9A-Fa-f]{2}([:\\-][0-9A-Fa-f]{2}){5}"></div>
+    <div class="field"><label for="ract">Action</label><select id="ract"></select></div>
+    <div class="field"><label for="rnote">Note</label><input id="rnote" type="text" maxlength="120" placeholder="optional"></div><button class="btn primary">Add rule</button></form></div>
+  <div class="card"><h2>Clean up the list</h2><form id="cf">
+    <div class="field"><label for="cdays">Forget the PCs not seen for this many days</label><div class="row"><input id="cdays" type="number" min="0" max="3650" value="30" style="max-width:120px"><button class="btn">Forget them now</button></div><p class="hint">Rules are kept: a forgotten PC is listed again, with its rule, the next time it asks for a menu.</p></div></form>
+    <form id="af"><div class="field"><label for="adays">Forget a PC by itself after this many days without a start</label><div class="row"><input id="adays" type="number" min="0" max="3650" style="max-width:120px"><button class="btn">Save</button></div><p class="hint">0 keeps every PC for ever.</p></div></form></div></div>`;
+  $("#psize").value = String(view.size);
   const draw = async () => {
-    await loadCommon();
+    const [isos, pcs, set] = await Promise.all([api("/api/isos"), api(`/api/pcs?limit=${view.size}&offset=${view.offset}&q=${encodeURIComponent(view.q)}`), api("/api/settings")]);
+    state.isos = isos.isos || []; state.defaultAction = isos.default || ""; state.pcs = pcs.pcs || []; view.total = pcs.total || 0;
+    if (view.offset > 0 && !state.pcs.length) { view.offset = Math.max(0, (Math.ceil(view.total / view.size) - 1) * view.size); return draw(); }
+    if (document.activeElement !== $("#adays")) $("#adays").value = set.pcDays;
     $("#ract").innerHTML = actionOptions("local", false);
     $("#pctable").innerHTML = state.pcs.length ? `<table class="rt"><thead><tr><th>PC</th><th class="hide-s">Address</th><th class="hide-s">Last seen</th><th class="hide-s">Doing</th><th>What it does at start</th><th></th></tr></thead><tbody>${state.pcs.map(p => `<tr>
       <td><strong>${esc([p.manufacturer, p.product].filter(Boolean).join(" ") || "Unknown PC")}</strong><div class="muted small mono">${esc(p.mac)}</div>${p.rule && p.rule.note ? `<div class="small">${esc(p.rule.note)}</div>` : ""}</td>
       <td class="hide-s mono small" data-l="Address">${esc(p.ip || "")}<div>${p.platform === "efi" ? "UEFI" : p.platform === "pcbios" ? "BIOS" : ""}</div></td>
-      <td class="hide-s small" data-l="Last seen">${ago(p.lastSeen)}${p.count ? `<div class="muted">${p.count}× menu</div>` : ""}</td>
+      <td class="hide-s small" data-l="Last seen">${p.lastSeen && !p.lastSeen.startsWith("0001") ? ago(p.lastSeen) : "not seen yet"}${p.count ? `<div class="muted">${p.count}× menu</div>` : ""}</td>
       <td class="hide-s small" data-l="Doing">${esc(p.lastAction || "")}</td>
       <td data-l="What it does at start"><select class="inline" data-mac="${esc(p.mac)}" aria-label="What ${esc(p.mac)} does at start">${actionOptions(p.rule ? p.rule.action : "menu")}</select></td>
-      <td>${p.rule ? `<button class="btn small danger" data-del="${esc(p.mac)}" aria-label="Remove the rule of ${esc(p.mac)}">Remove</button>` : ""}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No PC has asked for a menu since the server started.</div>`;
+      <td><div class="row" style="gap:6px;flex-wrap:nowrap">${p.rule ? `<button class="btn small danger" data-del="${esc(p.mac)}" aria-label="Remove the rule of ${esc(p.mac)}">Remove rule</button>` : ""}${p.count ? `<button class="btn small" data-forget="${esc(p.mac)}" aria-label="Forget ${esc(p.mac)}">Forget</button>` : ""}</div></td></tr>`).join("")}</tbody></table>` : `<div class="empty">${view.q ? "No PC matches the search." : "No PC has asked for a menu yet."}</div>`;
+    const pages = Math.max(1, Math.ceil(view.total / view.size)), cur = Math.floor(view.offset / view.size) + 1;
+    $("#pager").innerHTML = `<span class="muted small">${view.total ? `${view.offset + 1}–${view.offset + state.pcs.length} of ${view.total}` : "0 PCs"}</span><span class="row" style="gap:6px"><button class="btn small" id="pprev" ${cur <= 1 ? "disabled" : ""}>Previous</button><span class="small">Page ${cur} of ${pages}</span><button class="btn small" id="pnext" ${cur >= pages ? "disabled" : ""}>Next</button></span>`;
+    $("#pprev").onclick = () => { view.offset = Math.max(0, view.offset - view.size); guard(draw)(); };
+    $("#pnext").onclick = () => { view.offset += view.size; guard(draw)(); };
     page.querySelectorAll("select[data-mac]").forEach(sel => sel.onchange = guard(async () => {
       const p = state.pcs.find(x => x.mac === sel.dataset.mac);
       if (sel.value === "menu") { if (p && p.rule) await api("/api/rules/" + encodeURIComponent(sel.dataset.mac), "DELETE"); }
@@ -278,11 +301,25 @@ async function pagePCs() {
       toast("Saved"); await draw();
     }));
     page.querySelectorAll("button[data-del]").forEach(b => b.onclick = guard(async () => { await api("/api/rules/" + encodeURIComponent(b.dataset.del), "DELETE"); toast("Rule removed"); await draw(); }));
+    page.querySelectorAll("button[data-forget]").forEach(b => b.onclick = guard(async () => { await api("/api/pcs/" + encodeURIComponent(b.dataset.forget), "DELETE"); toast("Forgotten"); await draw(); }));
   };
+  $("#psize").onchange = () => { view.size = parseInt($("#psize").value, 10); view.offset = 0; try { localStorage.setItem("bootlace-pcs-per-page", String(view.size)); } catch (e) { /* ignore */ } guard(draw)(); };
+  let timer = null;
+  $("#pq").oninput = () => { clearTimeout(timer); timer = setTimeout(() => { view.q = $("#pq").value.trim(); view.offset = 0; guard(draw)(); }, 250); };
   $("#rf").onsubmit = guard(async e => {
     e.preventDefault();
     await api("/api/rules", "POST", { mac: $("#rmac").value, action: $("#ract").value, note: $("#rnote").value });
     $("#rf").reset(); toast("Rule added"); await draw();
+  });
+  $("#cf").onsubmit = guard(async e => {
+    e.preventDefault();
+    const days = parseInt($("#cdays").value || "0", 10);
+    if (!confirm(`Forget every PC not seen for ${days} day(s)?`)) return;
+    const r = await api("/api/pcs/clean", "POST", { days }); toast(r.removed + " PC(s) forgotten"); await draw();
+  });
+  $("#af").onsubmit = guard(async e => {
+    e.preventDefault();
+    const s = await api("/api/settings"); await api("/api/settings", "PUT", { menuTimeout: s.menuTimeout, default: s.default, pcDays: parseInt($("#adays").value || "0", 10) }); toast("Saved"); await draw();
   });
   await guard(draw)();
   every(5000, async () => { if (!page.contains(document.activeElement) || document.activeElement === document.body) await draw(); });
@@ -292,10 +329,9 @@ async function pagePCs() {
 async function pageMenu() {
   const page = $("#page");
   await guard(async () => { await loadCommon(); state.settings = await api("/api/settings"); })();
-  const s = state.settings || { title: "", menuTimeout: 0, default: "" };
+  const s = state.settings || { menuTimeout: 0, default: "" };
   const legacy = s.default && !["local"].includes(s.default) && !s.default.startsWith("iso:");
   page.innerHTML = `<h1>Menu</h1><div class="grid two"><form class="card" id="mf">
-    <div class="field"><label for="mt">Heading</label><input id="mt" type="text" maxlength="60" value="${esc(s.title)}"></div>
     <div class="field"><label for="mo">Seconds before the choice below starts by itself</label><input id="mo" type="number" min="0" max="3600" value="${s.menuTimeout}"><p class="hint">0 means the menu waits for someone to choose, for ever.</p></div>
     <div class="field"><label for="md">What starts by itself</label><select id="md"><option value=""${!s.default ? " selected" : ""}>Nothing: wait for a choice</option>
       <option value="local"${s.default === "local" ? " selected" : ""}>Boot from the PC's own disk</option>
@@ -303,18 +339,18 @@ async function pageMenu() {
       ${legacy ? `<option value="${esc(s.default)}" selected>Set on the command line: ${esc(s.default)}</option>` : ""}</select>
       <p class="hint">Useful for a PC without a keyboard, and for PCs that restart in the middle of an installation: "own disk" lets them go on to the installed system.</p></div>
     <button class="btn primary">Save</button></form>
-    <div class="card"><h2>What a PC sees</h2><div class="menu-preview" id="prev"></div><p class="hint">The menu is made again for every PC that starts, so a change applies at its next start.</p></div></div>`;
+    <div class="card"><h2>What a PC sees</h2><p class="hint" style="margin-top:0">The Gola Bootlace logo is always shown on a UEFI PC; an older BIOS PC gets the same list as plain text.</p><div class="menu-preview" id="prev"></div><p class="hint">The menu is made again for every PC that starts, so a change applies at its next start.</p></div></div>`;
   const preview = () => {
     const d = $("#md").value, t = parseInt($("#mo").value || "0", 10);
     const items = state.isos.filter(i => !i.hidden).map(i => ({ k: "iso:" + i.id, t: i.title + (i.method === "recognised" ? "  [" + i.family + "]" : "  [as a disk]") }));
     items.push({ k: "local", t: "Boot from this PC's own disk" }, { k: "shell", t: "iPXE shell" }, { k: "reboot", t: "Restart this PC" });
     const sel = items.find(x => x.k === d) || items.find(x => x.k === "shell");
-    $("#prev").innerHTML = `<div class="h">${esc($("#mt").value || "Gola Bootlace")}</div>` + items.map(x => `<div class="${x === sel ? "sel" : ""}">${esc(x.t)}</div>`).join("") + `<div style="margin-top:8px;opacity:.8">${t > 0 && d ? "Starts the highlighted line after " + t + " s." : "Waits for a choice."}</div>`;
+    $("#prev").innerHTML = `<div class="in"><div class="h">Choose what to start</div>` + items.map(x => `<div class="${x === sel ? "sel" : ""}">${esc(x.t)}</div>`).join("") + `<div style="margin-top:.8em;opacity:.8">${t > 0 && d ? "Starts the highlighted line after " + t + " s." : "Waits for a choice."}</div></div>`;
   };
-  ["mt", "mo", "md"].forEach(id => $("#" + id).oninput = preview); preview();
+  ["mo", "md"].forEach(id => $("#" + id).oninput = preview); preview();
   $("#mf").onsubmit = guard(async e => {
     e.preventDefault();
-    await api("/api/settings", "PUT", { title: $("#mt").value, menuTimeout: parseInt($("#mo").value || "0", 10), default: $("#md").value });
+    await api("/api/settings", "PUT", { menuTimeout: parseInt($("#mo").value || "0", 10), default: $("#md").value });
     toast("Saved: the next PC to start gets it");
   });
 }
