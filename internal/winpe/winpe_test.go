@@ -17,10 +17,13 @@ func TestTheScriptLoadsWimbootWithTheBootFilesAndOurTwoFiles(t *testing.T) {
 	}
 }
 
-func TestTheCommandFileConnectsToTheShareOnTheRightPortAndStartsSetup(t *testing.T) {
+func TestTheCommandFileConnectsToTheShareOnTheRightPortAndStartsTheSetupOfTheEnvironment(t *testing.T) {
 	c := Cmd(set)
-	if !strings.Contains(c, `net use Z: \\10.0.0.1\iso /user:bootlace s3cret /TCPPORT:4445`) || !strings.Contains(c, `cd /d Z:\ab`) || !strings.Contains(c, `setup.exe /unattend:Z:\ab\autounattend.xml`) || !strings.Contains(c, "wpeinit") {
-		t.Fatal(c)
+	for _, want := range []string{`net use Z: \\10.0.0.1\iso /user:bootlace s3cret /TCPPORT:4445`, `set IMAGE=Z:\ab\sources\install.wim`, `install.esd`,
+		`/unattend:Z:\ab\autounattend.xml`, `setup.exe %OPTIONS%`, `cd /d %SystemDrive%\sources`, "wpeinit"} {
+		if !strings.Contains(c, want) {
+			t.Fatalf("missing %q in\n%s", want, c)
+		}
 	}
 	set.Port = 445
 	if strings.Contains(Cmd(set), "TCPPORT") {
@@ -28,5 +31,14 @@ func TestTheCommandFileConnectsToTheShareOnTheRightPortAndStartsSetup(t *testing
 	}
 	if !strings.Contains(ShellIni(), `bootlace.cmd`) {
 		t.Fatal(ShellIni())
+	}
+}
+
+func TestAHeldCommandFileStopsBeforeSetup(t *testing.T) {
+	h := set
+	h.Hold = true
+	c := Cmd(h)
+	if !strings.Contains(c, "Held") || strings.Index(c, "Held") > strings.Index(c, "setup.exe") {
+		t.Fatal(c)
 	}
 }

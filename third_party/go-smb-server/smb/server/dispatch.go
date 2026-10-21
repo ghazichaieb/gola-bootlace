@@ -236,7 +236,7 @@ func (c *conn) handleTreeConnect(msg []byte, hdr *wire.Header, sess *session) ui
 
 	resp := wire.TreeConnectResponse{
 		ShareType:     wire.ShareTypeDisk,
-		ShareFlags:    0x00000030,
+		ShareFlags:    0, // Samba and Windows answer 0 ("manual caching"); 0x30 ("no caching") is not what Windows' set-up environment expects
 		Capabilities:  0,
 		MaximalAccess: 0x001f01ff,
 	}
@@ -308,20 +308,9 @@ func (c *conn) handleCreate(ctx context.Context, msg []byte, hdr *wire.Header, t
 		action = wire.FileOverwritten
 	}
 
+	// Bootlace: no oplock is ever granted (a server may always answer "none"). Granting them made Windows' set-up environment wait for a break
+	// acknowledgement that never came, so that a folder listing or Setup itself stopped for ever.
 	var oplock uint8
-	if req.RequestedOplockLevel != 0 {
-		if tr.oplocks == nil {
-			tr.oplocks = newOplockTable()
-		}
-		info := &oplockInfo{fileId: fid, sessID: hdr.SessionId, treeID: hdr.TreeId, path: name}
-		if tr.oplocks.grant(name, info) {
-			oplock = req.RequestedOplockLevel
-		} else {
-			if broken := tr.oplocks.breakOplock(name); broken != nil {
-				c.sendOplockBreak(broken)
-			}
-		}
-	}
 
 	resp := wire.CreateResponse{
 		OplockLevel:    oplock,

@@ -223,7 +223,7 @@ func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad server address", http.StatusInternalServerError)
 			return
 		}
-		set := winpe.Settings{Base: s.Base, FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Host: u.Hostname(), Share: smbshare.ShareName, Folder: iso.ID, User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort}
+		set := winpe.Settings{Base: s.Base, FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Host: u.Hostname(), Share: smbshare.ShareName, Folder: iso.ID, User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort, Hold: os.Getenv("BOOTLACE_WINPE_HOLD") != ""}
 		var body string
 		switch file {
 		case "boot.ipxe":

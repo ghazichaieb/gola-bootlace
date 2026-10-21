@@ -13,6 +13,7 @@ param(
     [int] $Entry = 1,
     [string] $Pick = '',
     [string] $Name = 'uefi1',
+    [string] $SmbForward = '',          # for finding faults: pass the share connections on to another SMB server (host:port) and log them
     [string] $LogDir = 'C:\bootlace-lab'
 )
 $ErrorActionPreference = 'Stop'
@@ -29,6 +30,7 @@ $serverArgs = @('serve', '-iso-dir', $IsoDir, '-ip', $ip, '-dhcp', 'full', '-pxe
           '-menu-default', $Entry, '-menu-timeout', '3', '-smb-port', '4445', '-smb-password', 'lab-pass-1')   # Windows' own file sharing holds 445 on this PC
 
 if ($Pick) { $serverArgs += @('-menu-pick', $Pick) }
+if ($SmbForward) { $serverArgs += @('-smb-forward', $SmbForward) }
 Start-Process -FilePath (Join-Path $root 'bin\bootlace.exe') -ArgumentList $serverArgs -RedirectStandardOutput (Join-Path $LogDir 'bootlace-out.log') `
     -RedirectStandardError (Join-Path $LogDir 'bootlace-err.log') -WindowStyle Hidden
 Start-Sleep -Seconds 2

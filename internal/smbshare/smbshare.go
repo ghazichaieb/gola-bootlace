@@ -55,12 +55,11 @@ func Serve(ctx context.Context, o Options) error {
 	if o.Forward != "" {
 		inner = o.Forward
 	}
-	srv, err := server.New(
-		server.WithAddr(inner),
+	opts := []server.Option{server.WithAddr(inner),
 		server.WithShares(vfs.NewDiskShare(ShareName, backend)),
 		server.WithAuth(ntlmssp.NewServer(oneUser{user: o.User, password: o.Password}, "BOOTLACE")),
-		server.WithLogger(slog.New(slog.NewTextHandler(logWriter(o.Logf), &slog.HandlerOptions{Level: slog.LevelDebug}))),
-	)
+		server.WithLogger(slog.New(slog.NewTextHandler(logWriter(o.Logf), &slog.HandlerOptions{Level: slog.LevelDebug})))}
+	srv, err := server.New(opts...)
 	if err != nil {
 		return err
 	}
@@ -78,7 +77,7 @@ func Serve(ctx context.Context, o Options) error {
 			if err != nil {
 				return
 			}
-			go handOn(c, inner, o.Logf)
+			go handOn(c, inner, o.Forward != "", o.Logf)
 		}
 	}()
 	if o.Forward != "" {
@@ -98,7 +97,7 @@ func freeLoopbackAddr() (string, error) {
 }
 
 // handOn connects a client to the library's server. A first message that is an SMB1 negotiate gets the SMB 2 "wildcard" answer here and is not passed on.
-func handOn(client net.Conn, inner string, logf func(format string, args ...any)) {
+func handOn(client net.Conn, inner string, passThrough bool, logf func(format string, args ...any)) {
 	defer client.Close()
 	first, err := readFrame(client)
 	if err != nil {
@@ -109,7 +108,7 @@ func handOn(client net.Conn, inner string, logf func(format string, args ...any)
 		return
 	}
 	defer backend.Close()
-	if len(first) > 4 && first[0] == 0xFF && string(first[1:4]) == "SMB" {
+	if !passThrough && len(first) > 4 && first[0] == 0xFF && string(first[1:4]) == "SMB" {
 		if logf != nil {
 			logf("smb: %s opened with an SMB1 negotiate (%d bytes: % x): answering for SMB 2", client.RemoteAddr(), len(first), first[:min(len(first), 120)])
 		}
@@ -354,6 +353,9 @@ func (h *handle) Enumerate(_ context.Context, pattern string) iter.Seq2[vfs.File
 	}
 }
 
+// started is the time the root folder of the share shows: a folder whose dates change at every look makes Windows think it was replaced.
+var started = time.Now()
+
 // rootHandle is the top of the share: a folder per ISO.
 type rootHandle struct{ b *Backend }
 
@@ -365,7 +367,7 @@ func (r *rootHandle) Write(context.Context, int64, []byte) (int, error) {
 }
 func (r *rootHandle) Close(context.Context) error { return nil }
 func (r *rootHandle) Stat(context.Context) (vfs.FileInfo, error) {
-	return info("", 0, true, time.Now()), nil
+	return info("", 0, true, started), nil
 }
 func (r *rootHandle) Enumerate(_ context.Context, pattern string) iter.Seq2[vfs.FileInfo, error] {
 	return func(yield func(vfs.FileInfo, error) bool) {
@@ -419,11 +421,17 @@ func relay(to, from net.Conn, who string, logf func(format string, args ...any))
 	for {
 		msg, err := readFrame(from)
 		if err != nil {
+			if logf != nil {
+				logf("smb: %s side ended: %v", who, err)
+			}
 			return
+		}
+		if logf != nil && !(len(msg) >= 16 && msg[0] == 0xFE) {
+			logf("smb: %s: a frame that is not plain SMB2 (%d bytes: % x)", who, len(msg), msg[:min(len(msg), 64)])
 		}
 		if logf != nil && len(msg) >= 16 && msg[0] == 0xFE {
 			logf("smb: %s: command %d status %#x flags %#x msgid %d (%d bytes)", who, binary.LittleEndian.Uint16(msg[12:]), binary.LittleEndian.Uint32(msg[8:]), binary.LittleEndian.Uint32(msg[16:]), binary.LittleEndian.Uint64(msg[24:]), len(msg))
-			if c := binary.LittleEndian.Uint16(msg[12:]); c <= 1 || ((c == 16 || c == 5) && who == "server") {
+			if c := binary.LittleEndian.Uint16(msg[12:]); c <= 1 || c == 3 || c == 5 || c == 16 || c == 14 || c == 11 {
 				logf("smb: %s bytes: % x", who, msg[:min(len(msg), 400)])
 			}
 		}

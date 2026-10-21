@@ -18,7 +18,8 @@ type Settings struct {
 	Folder   string // the folder of the share that shows this ISO (the share is mapped as a whole: mapping a folder of it makes Windows probe it for ever)
 	User     string
 	Password string
-	Port     int // SMB port (445 unless Windows cannot reach the server there)
+	Port     int  // SMB port (445 unless Windows cannot reach the server there)
+	Hold     bool // test aid: connect to the share but leave Setup for the person at the keyboard to start
 }
 
 // IPXE is the script that loads the set-up environment: wimboot with the boot files of the ISO and the two files of this package. The same script
@@ -81,8 +82,18 @@ func Cmd(s Settings) string {
 	line("goto end")
 	line(":up")
 	line("echo Starting Windows Setup ...")
-	line(`cd /d Z:\%s`, s.Folder)
-	line(`if exist autounattend.xml (setup.exe /unattend:Z:\%s\autounattend.xml) else (setup.exe)`, s.Folder)
+	if s.Hold {
+		line("echo Held: start Setup by hand.")
+		line("goto end")
+	}
+	// Setup is the one of the set-up environment itself (X:\sources), pointed at the installation image on the share: the setup.exe on the share
+	// is the one for upgrading a running Windows and does nothing here.
+	line(`cd /d %%SystemDrive%%\sources`)
+	line(`set IMAGE=Z:\%s\sources\install.wim`, s.Folder)
+	line(`if not exist %%IMAGE%% set IMAGE=Z:\%s\sources\install.esd`, s.Folder)
+	line(`set OPTIONS=/installfrom:%%IMAGE%%`)
+	line(`if exist Z:\%s\autounattend.xml set OPTIONS=%%OPTIONS%% /unattend:Z:\%s\autounattend.xml`, s.Folder, s.Folder)
+	line(`setup.exe %%OPTIONS%%`)
 	line(":end")
 	return b.String()
 }

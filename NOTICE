@@ -18,7 +18,8 @@ Shipped or planned (update this list the day something is copied or bundled):
 - go-smb-server (https://github.com/sonroyaalmerol/go-smb-server), MIT, Copyright (c) its authors. SHIPPED in third_party/go-smb-server with our changes: the SMB 2
   server that shows an ISO to Windows' set-up environment. Changes (so that Windows 11 can use it): a security blob in the negotiate answer and real times and sizes,
   the NTLM challenge with a full target information and a version, more file and file system information classes, the directory listing classes Windows asks for
-  with listings that continue over several requests, shorter minimum request sizes, and the volume and file system answers laid out as Windows reads them.
+  with listings that continue over several requests, shorter minimum request sizes, and the volume and file system answers laid out as Windows reads them, as many credits as the client asks for (one per answer
+  made Windows' set-up environment stop at its first folder listing), no oplocks, and no "no caching" share flag.
 - Samba (https://www.samba.org), GPL-3.0-or-later. Not used: the built-in share above replaces it.
 - 7-Zip (https://www.7-zip.org), LGPL and BSD parts. Planned: listing ISO contents, run as a separate program.
 

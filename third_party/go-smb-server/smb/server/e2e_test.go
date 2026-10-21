@@ -628,3 +628,25 @@ func buildChangeNotify(sessID uint64, treeID uint32, fid [16]byte, filter uint32
 	m := hdr.Append(nil)
 	return append(m, body[:]...)
 }
+
+// Bootlace: Windows' set-up environment asks for many credits at a time and stops at its first folder listing when it is given one per answer.
+func TestEndToEnd_GrantsTheCreditsAskedFor(t *testing.T) {
+	client, srvConn := newPipeConns()
+	defer client.Close()
+	srv := newTestServer(newMemBackend())
+	cancel := serveOn(srv, srvConn)
+	defer cancel()
+	fc := transport.NewFramedConn(client)
+
+	hdr := wire.NewHeader(wire.CmdNegotiate)
+	hdr.Credit = 33
+	body := make([]byte, 38)
+	binary.LittleEndian.PutUint16(body[0:2], 36)
+	binary.LittleEndian.PutUint16(body[2:4], 1)
+	binary.LittleEndian.PutUint16(body[36:38], wire.DialectSMB302)
+	mustWrite(t, fc, append(hdr.Append(nil), body...))
+	rh, _ := readReply(t, fc.Underlying())
+	if rh.Credit != 33 {
+		t.Fatalf("granted %d credits for a request of 33", rh.Credit)
+	}
+}

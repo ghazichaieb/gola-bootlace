@@ -385,7 +385,15 @@ func (c *conn) handleMessage(ctx context.Context, msg []byte) {
 			chainFailed = true
 		}
 
-		grant := c.srv.maxCredits - c.creditBalance
+		// Bootlace: grant the credits the client asks for (as Samba and Windows do) instead of one per answer; a client that gets one at a time
+		// sends one small request at a time and, it seems, Windows' set-up environment then stops at its first directory listing.
+		grant := uint32(hdr.Credit)
+		if grant < 1 {
+			grant = 1
+		}
+		if room := c.srv.maxCredits - c.creditBalance; grant > room {
+			grant = room
+		}
 		c.creditBalance += grant
 		if grant > 0xFFFF {
 			hdr.Credit = 0xFFFF

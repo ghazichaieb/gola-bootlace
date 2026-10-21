@@ -104,7 +104,7 @@ func (c *conn) filesystemInfo(class uint8) []byte {
 		// than six characters was refused by Windows.
 		name := wire.UTF16ToBytes("NTFS")
 		out := make([]byte, 12+len(name))
-		out[0], out[1], out[2] = 0x07, 0x00, 0x08
+		out[0], out[1], out[2] = 0xff, 0x00, 0x05 // 0x000500ff, what Samba answers (no read-only flag: Windows may treat such a volume differently)
 		out[4] = 255
 		for i := range 4 {
 			out[8+i] = byte(uint32(len(name)) >> (8 * i))
