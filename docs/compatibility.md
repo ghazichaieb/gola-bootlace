@@ -12,6 +12,7 @@ file we tried. BIOS (legacy) boot has not been tested yet.
 | Proxmox VE | 9.1-1 | not tried | yes | **works** | 2026-10-21 | The ISO is given to the kernel as a second start-up disk named `/proxmox.iso`. The graphical installer starts (it warns that the VM has no hardware virtualisation: a property of the test VM). |
 | TrueNAS SCALE | 25.10.7 | not tried | yes | **works** | 2026-10-21 | Debian live style (`fetch=` the squashfs). The installer menu appears. |
 | pfSense CE | 2.7.2 | not tried | yes | **fails** | 2026-10-21 | Handed to the PC as a disk: FreeBSD's loader and kernel start, then the kernel cannot see the disk (the firmware's virtual disk is gone once the kernel runs). Needs the BSD method (issue #9). |
-| Windows Server 2025 and Windows 11 24H2 ISOs | | | | **untested** | | Windows ISOs keep their files in UDF, and need the Windows method (issue #5). |
+| Windows 11 24H2 (FW11HEN, an a Windows image trimming tool build, Pro, English) | 24H2 | not tried | yes | **works** | 2026-10-21 | wimboot loads the ISO's WinPE, which maps Bootlace's built-in SMB share and runs `X:\sources\setup.exe /installfrom:Z:\<id>\sources\install.wim /unattend:...` from the ISO's folder. Installed to an 80 GB disk, rebooted from the disk into the new Windows. Setup went through the whole copy over the network (about 25 minutes in the lab). |
+| Windows 11 FW11HFR / FW11PEN / FW11PFR, Windows Server 2025 | | | | **untested** | | Same method as above; not run yet. |
 
 Result values: **works**, **partial** (boots but a step needs help; see notes), **fails**, **untested**.
