@@ -30,6 +30,13 @@ type FramedConn struct {
 	rawConn net.Conn
 	readBuf []byte
 	hdrBuf  [HeaderLen]byte
+
+	// Where a half-read message stands. A caller that reads with a deadline gets a timeout error in the middle of a frame when the rest of it is a
+	// little late; the next call must go on from the same place, or the bytes that follow are taken for the start of a frame.
+	hdrGot  int
+	bodyGot int
+	bodyLen int
+	inBody  bool
 }
 
 func NewFramedConn(c net.Conn) *FramedConn {
@@ -39,29 +46,43 @@ func NewFramedConn(c net.Conn) *FramedConn {
 	return fc
 }
 
+// ReadMessage returns the next message. After an error that is only a timeout it can be called again and goes on with the message it had started.
 func (f *FramedConn) ReadMessage() ([]byte, error) {
-	if _, err := io.ReadFull(f.r, f.hdrBuf[:]); err != nil {
-		return nil, fmt.Errorf("transport: read frame header: %w", err)
+	if !f.inBody {
+		for f.hdrGot < HeaderLen {
+			n, err := f.r.Read(f.hdrBuf[f.hdrGot:])
+			f.hdrGot += n
+			if f.hdrGot < HeaderLen && err != nil {
+				return nil, fmt.Errorf("transport: read frame header: %w", err)
+			}
+		}
+		if f.hdrBuf[0] != 0x00 {
+			return nil, fmt.Errorf("transport: unexpected frame type byte 0x%02x", f.hdrBuf[0])
+		}
+		n := int(readUint24(f.hdrBuf[1:]))
+		f.hdrGot = 0
+		if n == 0 {
+			f.readBuf = f.readBuf[:0]
+			return f.readBuf, nil
+		}
+		if n > MaxMessageLen {
+			return nil, fmt.Errorf("%w: %d bytes", ErrFrameTooLarge, n)
+		}
+		if cap(f.readBuf) < n {
+			f.readBuf = make([]byte, n)
+		} else {
+			f.readBuf = f.readBuf[:n]
+		}
+		f.bodyLen, f.bodyGot, f.inBody = n, 0, true
 	}
-	if f.hdrBuf[0] != 0x00 {
-		return nil, fmt.Errorf("transport: unexpected frame type byte 0x%02x", f.hdrBuf[0])
+	for f.bodyGot < f.bodyLen {
+		n, err := f.r.Read(f.readBuf[f.bodyGot:f.bodyLen])
+		f.bodyGot += n
+		if err != nil && f.bodyGot < f.bodyLen {
+			return nil, fmt.Errorf("transport: read frame body: %w", err)
+		}
 	}
-	n := int(readUint24(f.hdrBuf[1:]))
-	if n == 0 {
-		f.readBuf = f.readBuf[:0]
-		return f.readBuf, nil
-	}
-	if n > MaxMessageLen {
-		return nil, fmt.Errorf("%w: %d bytes", ErrFrameTooLarge, n)
-	}
-	if cap(f.readBuf) < n {
-		f.readBuf = make([]byte, n)
-	} else {
-		f.readBuf = f.readBuf[:n]
-	}
-	if _, err := io.ReadFull(f.r, f.readBuf); err != nil {
-		return nil, fmt.Errorf("transport: read frame body: %w", err)
-	}
+	f.inBody = false
 	return f.readBuf, nil
 }
 
