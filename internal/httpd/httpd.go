@@ -24,6 +24,7 @@ type Server struct {
 	Base   string // how PCs reach this server, for example http://192.168.88.1:8080 (no trailing slash)
 	Logf   func(format string, args ...any)
 	Menu   menu.Options // which entry is chosen when nobody chooses, and after how many seconds
+	Pick   string       // when not empty: the first entry whose name contains this text is the one chosen when nobody chooses (a test bench's shortcut)
 
 	mu    sync.Mutex
 	known map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
@@ -105,9 +106,18 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot read the ISO folder: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	opts := s.Menu
+	if s.Pick != "" {
+		for i, e := range entries {
+			if strings.Contains(strings.ToLower(e.Name), strings.ToLower(s.Pick)) {
+				opts.Default = i + 1
+				break
+			}
+		}
+	}
 	s.logf("menu for %s: %d ISO file(s)", r.RemoteAddr, len(entries))
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprint(w, menu.ScriptWith(s.Title, entries, s.Menu))
+	fmt.Fprint(w, menu.ScriptWith(s.Title, entries, opts))
 }
 
 func (s *Server) iso(w http.ResponseWriter, r *http.Request) {

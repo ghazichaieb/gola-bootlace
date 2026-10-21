@@ -65,6 +65,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	dnsIP := fs.String("dns", "", "full mode: the DNS server given to PCs (default: none)")
 	pxeOnly := fs.Bool("pxe-only", false, "full mode: hand out addresses to PCs that start a network boot only (a lab where this computer is also on the network)")
 	menuDefault := fs.Int("menu-default", 0, "the menu entry (counting from 1) that starts by itself after -menu-timeout seconds (0: wait for a choice)")
+	menuPick := fs.String("menu-pick", "", "the entry whose name contains this text starts by itself after -menu-timeout seconds (instead of -menu-default)")
 	menuTimeout := fs.Int("menu-timeout", 0, "seconds before the default menu entry starts (0: wait for ever)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -81,7 +82,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	base := fmt.Sprintf("http://%s:%d", ip, *httpPort)
-	web := &httpd.Server{ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Menu: menu.Options{Default: *menuDefault, Timeout: *menuTimeout}}
+	web := &httpd.Server{ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Menu: menu.Options{Default: *menuDefault, Timeout: *menuTimeout}, Pick: *menuPick}
 	errs := make(chan error, 4)
 
 	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
