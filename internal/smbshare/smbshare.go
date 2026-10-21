@@ -159,7 +159,7 @@ func readFrame(c net.Conn) ([]byte, error) {
 		return nil, err
 	}
 	n := int(h[1])<<16 | int(h[2])<<8 | int(h[3])
-	if n == 0 || n > 1<<20 {
+	if n == 0 || n > 1<<24 { // a full read answer is the 1 MiB the server offers plus its headers
 		return nil, errors.New("bad frame")
 	}
 	b := make([]byte, n)

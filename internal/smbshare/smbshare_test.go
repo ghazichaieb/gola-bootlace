@@ -2,6 +2,7 @@ package smbshare
 
 import (
 	"encoding/binary"
+	"net"
 	"testing"
 )
 
@@ -39,5 +40,18 @@ func TestFramesCarryTheirLength(t *testing.T) {
 	f := frame([]byte{1, 2, 3})
 	if len(f) != 7 || f[0] != 0 || f[3] != 3 {
 		t.Fatalf("%x", f)
+	}
+}
+
+// A full read answer is the 1 MiB the server offers plus its headers: the relay must pass it on.
+func TestReadFrameAcceptsAFullReadAnswer(t *testing.T) {
+	a, b := net.Pipe()
+	defer a.Close()
+	defer b.Close()
+	msg := make([]byte, 1<<20+80)
+	go func() { a.Write(frame(msg)) }()
+	got, err := readFrame(b)
+	if err != nil || len(got) != len(msg) {
+		t.Fatalf("got %d bytes, err %v", len(got), err)
 	}
 }
