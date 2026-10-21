@@ -82,6 +82,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if fs.NArg() > 0 { // flag parsing stops at the first stray word and would ignore every option after it, leaving a server with settings nobody chose
+		fmt.Fprintf(stderr, "serve: unexpected argument %q (a folder name with a space must be in quotes); nothing was started\n", fs.Arg(0))
+		return 2
+	}
 	logf := func(format string, a ...any) {
 		fmt.Fprintf(stdout, time.Now().Format("15:04:05")+"  "+format+"\n", a...)
 	}
