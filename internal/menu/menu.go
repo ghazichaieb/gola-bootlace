@@ -37,7 +37,7 @@ func Script(title string, entries []Entry) string { return ScriptWith(title, ent
 
 // Options changes how the menu starts. By default it waits for a choice and offers the iPXE shell first, so that a PC is never sent anywhere by accident.
 type Options struct {
-	Default int // the entry (counting from 1) that is chosen when the time runs out; 0 keeps the shell
+	Default int // the entry (counting from 1) that is chosen when the time runs out; 0 keeps the shell; -1 goes on to the PC's own disk
 	Timeout int // seconds to wait before choosing it; 0 waits for ever
 }
 
@@ -45,7 +45,9 @@ type Options struct {
 func ScriptWith(title string, entries []Entry, o Options) string {
 	var b strings.Builder
 	b.WriteString("#!ipxe\n")
-	if o.Default >= 1 && o.Default <= len(entries) {
+	if o.Default < 0 {
+		b.WriteString("set menu-default local\n")
+	} else if o.Default >= 1 && o.Default <= len(entries) {
 		fmt.Fprintf(&b, "set menu-default %s\n", label(entries[o.Default-1].Name, o.Default-1))
 	} else {
 		b.WriteString("set menu-default shell\n")
@@ -58,6 +60,7 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 		fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), clean(e.Name))
 	}
 	b.WriteString("item --gap --\n")
+	b.WriteString("item local Boot from this PC's own disk\n")
 	b.WriteString("item shell iPXE shell\n")
 	b.WriteString("item reboot Restart this PC\n")
 	if o.Timeout > 0 {
@@ -74,6 +77,6 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 		b.WriteString("goto failed\n\n")
 	}
 	b.WriteString(":failed\necho Booting did not work: read the message above, then press a key for the menu.\nprompt\nchain ${self} || goto shell\n\n")
-	b.WriteString(":reboot\nreboot\n\n:shell\nshell\n")
+	b.WriteString(":local\necho Leaving the network boot: the PC goes on to its own disk.\nexit\n\n:reboot\nreboot\n\n:shell\nshell\n")
 	return b.String()
 }

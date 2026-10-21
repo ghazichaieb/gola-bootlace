@@ -76,6 +76,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	smbPasswordFlag := fs.String("smb-password", "", "the password Windows set-up logs in to the share with (default: a new one at every start; a fixed one is for testing)")
 	smbForward := fs.String("smb-forward", "", "for finding faults: pass the share connections on to this SMB server (host:port) and log them")
 	smbPort := fs.Int("smb-port", 445, "the port of the share that Windows set-up reads its files from")
+	menuLocal := fs.Bool("menu-local", false, "after -menu-timeout seconds the PC goes on to its own disk instead of waiting (useful after an installation has restarted it)")
 	menuPick := fs.String("menu-pick", "", "the entry whose name contains this text starts by itself after -menu-timeout seconds (instead of -menu-default)")
 	menuTimeout := fs.Int("menu-timeout", 0, "seconds before the default menu entry starts (0: wait for ever)")
 	if err := fs.Parse(args); err != nil {
@@ -97,7 +98,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	if smbPassword == "" {
 		smbPassword = randomPassword()
 	}
-	web := &httpd.Server{SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Menu: menu.Options{Default: *menuDefault, Timeout: *menuTimeout}, Pick: *menuPick}
+	web := &httpd.Server{SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Menu: menu.Options{Default: menuChoice(*menuDefault, *menuLocal), Timeout: *menuTimeout}, Pick: *menuPick}
 	errs := make(chan error, 4)
 
 	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
@@ -189,4 +190,12 @@ func privateIP() net.IP {
 		}
 	}
 	return nil
+}
+
+// menuChoice is the menu entry that starts by itself: -menu-local (the PC's own disk) wins over -menu-default.
+func menuChoice(def int, local bool) int {
+	if local {
+		return -1
+	}
+	return def
 }

@@ -46,3 +46,15 @@ func TestLabelsAreUniqueEvenForTheSameName(t *testing.T) {
 		t.Errorf("labels:\n%s", script)
 	}
 }
+
+func TestTheMenuCanLeaveTheNetworkBootForTheOwnDisk(t *testing.T) {
+	s := ScriptWith("Gola Bootlace", []Entry{{Name: "One", Commands: []string{"echo hi"}}}, Options{Default: -1, Timeout: 5})
+	for _, want := range []string{"set menu-default local", "item local ", ":local\n", "\nexit\n", "--timeout 5000"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in\n%s", want, s)
+		}
+	}
+	if strings.Contains(Script("x", nil), "set menu-default local") {
+		t.Error("the own disk must not be the default unless asked for")
+	}
+}
