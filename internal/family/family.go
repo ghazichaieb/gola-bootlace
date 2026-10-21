@@ -37,7 +37,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){alpine, archLinux, debianLive, ubuntu, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){proxmox, alpine, archLinux, debianLive, ubuntu, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -83,25 +83,60 @@ func alpine(t Tree, u URLs) (Boot, bool) {
 	return boot("Alpine Linux", u, kernel, initrd, args), true
 }
 
-// Arch Linux and its relatives (archiso): the boot files and the squashfs come from the web server.
+// Arch Linux and its relatives (archiso, CachyOS ...): the boot files and the squashfs come from the web server. The kernel is the one named
+// vmlinuz-linux or, in a relative, vmlinuz-linux-<name> (the long-term-support one only when it is the only one).
 func archLinux(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/arch/boot/x86_64/vmlinuz-linux") || !t.Exists("/arch/boot/x86_64/initramfs-linux.img") {
+	dir := "/arch/boot/x86_64"
+	names, err := t.List(dir)
+	if err != nil {
 		return Boot{}, false
 	}
-	return boot("Arch Linux", u, "/arch/boot/x86_64/vmlinuz-linux", "/arch/boot/x86_64/initramfs-linux.img",
-		"ip=dhcp archisobasedir=arch archiso_http_srv="+u.FS+"/ console=tty0"), true
+	sort.Strings(names)
+	kernel := ""
+	for _, n := range names {
+		if strings.HasPrefix(n, "vmlinuz-") && (kernel == "" || (strings.Contains(kernel, "lts") && !strings.Contains(n, "lts"))) {
+			kernel = n
+		}
+	}
+	if kernel == "" {
+		return Boot{}, false
+	}
+	initrd := "initramfs-" + strings.TrimPrefix(kernel, "vmlinuz-") + ".img"
+	if !t.Exists(dir + "/" + initrd) {
+		return Boot{}, false
+	}
+	return boot("Arch Linux", u, dir+"/"+kernel, dir+"/"+initrd, "ip=dhcp archisobasedir=arch archiso_http_srv="+u.FS+"/ copytoram=y console=tty0"), true
 }
 
-// Debian live and the distributions built the same way.
+// Debian live and the distributions built the same way (TrueNAS keeps its kernel at the top of the ISO): the squashfs comes from the web server.
 func debianLive(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists("/live/filesystem.squashfs") {
 		return Boot{}, false
 	}
 	kernel, initrd := firstMatch(t, "/live", "vmlinuz"), firstMatch(t, "/live", "initrd")
+	if kernel == "" && t.Exists("/vmlinuz") {
+		kernel = "/vmlinuz"
+	}
+	if initrd == "" && t.Exists("/initrd.img") {
+		initrd = "/initrd.img"
+	}
 	if kernel == "" || initrd == "" {
 		return Boot{}, false
 	}
 	return boot("Debian live", u, kernel, initrd, "boot=live components ip=dhcp fetch="+u.FS+"/live/filesystem.squashfs console=tty0"), true
+}
+
+// Proxmox VE: its installer finds the ISO as a file in the start-up disk, so the ISO is given to the kernel as a second one.
+func proxmox(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/.pve-cd-id.txt") || !t.Exists("/boot/linux26") || !t.Exists("/boot/initrd.img") {
+		return Boot{}, false
+	}
+	return Boot{Family: "Proxmox VE", Commands: []string{
+		"kernel " + u.FS + "/boot/linux26 ro ramdisk_size=16777216 rw quiet splash=silent console=tty0",
+		"initrd " + u.FS + "/boot/initrd.img",
+		"initrd --name proxmox.iso " + u.ISO,
+		"boot",
+	}}, true
 }
 
 // Ubuntu and its flavours (casper): the initramfs downloads the ISO into memory.

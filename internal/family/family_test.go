@@ -70,11 +70,26 @@ func TestOtherFamiliesAreToldApartByTheirFiles(t *testing.T) {
 		"Red Hat family (installer)": {"/images/pxeboot/vmlinuz": true, "/images/pxeboot/initrd.img": true},
 	}
 	for want, tree := range cases {
-		if b, ok := Detect(tree, urls); !ok || b.Family != want {
+		if b, ok := Detect(tree, urls); !ok || b.Family != strings.TrimSpace(want) {
 			t.Errorf("%s: got %v %v", want, b.Family, ok)
 		}
 	}
 	if _, ok := Detect(fake{"/sources/install.wim": true, "/bootmgr": true}, urls); ok {
 		t.Error("a Windows ISO was taken for a Linux")
+	}
+}
+
+func TestAnArchRelativeStartsFromItsOwnKernelNotTheLongTermOne(t *testing.T) {
+	b, ok := Detect(fake{"/arch/boot/x86_64/vmlinuz-linux-cachyos": true, "/arch/boot/x86_64/initramfs-linux-cachyos.img": true, "/arch/boot/x86_64/vmlinuz-linux-cachyos-lts": true,
+		"/arch/boot/x86_64/initramfs-linux-cachyos-lts.img": true}, urls)
+	if !ok || !strings.Contains(lines(b), "vmlinuz-linux-cachyos ") || !strings.Contains(lines(b), "initramfs-linux-cachyos.img") || strings.Contains(lines(b), "-lts") {
+		t.Fatalf("%v %v", b, ok)
+	}
+}
+
+func TestProxmoxGetsItsIsoAsASecondStartUpDisk(t *testing.T) {
+	b, _ := Detect(fake{"/.pve-cd-id.txt": true, "/boot/linux26": true, "/boot/initrd.img": true}, urls)
+	if !strings.Contains(lines(b), "initrd --name proxmox.iso http://s/iso/x.iso") {
+		t.Fatal(lines(b))
 	}
 }

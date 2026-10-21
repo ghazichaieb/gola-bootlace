@@ -27,6 +27,7 @@ func main() {
 const usage = `Gola Bootlace: boots PCs over the network from the ISO files in a folder.
 
   bootlace serve [options]   start the server (answers PXE PCs, serves the boot menu and the ISO files)
+  bootlace inspect <iso>...  say what is inside ISO files and how the server would start them
   bootlace -version          print the version
 
 Run "bootlace serve -h" for the options.
@@ -36,6 +37,9 @@ Run "bootlace serve -h" for the options.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "serve" {
 		return serve(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "inspect" {
+		return inspect(args[1:], stdout, stderr)
 	}
 	fs := flag.NewFlagSet("bootlace", flag.ContinueOnError)
 	fs.SetOutput(stderr)
