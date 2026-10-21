@@ -13,6 +13,8 @@ file we tried. BIOS (legacy) boot has not been tested yet.
 | TrueNAS SCALE | 25.10.7 | not tried | yes | **works** | 2026-10-21 | Debian live style (`fetch=` the squashfs). The installer menu appears. |
 | pfSense CE | 2.7.2 | not tried | yes | **fails** | 2026-10-21 | Handed to the PC as a disk: FreeBSD's loader and kernel start, then the kernel cannot see the disk (the firmware's virtual disk is gone once the kernel runs). Needs the BSD method (issue #9). |
 | Windows 11 24H2 (FW11HEN, an a Windows image trimming tool build, Pro, English) | 24H2 | not tried | yes | **works** | 2026-10-21 | wimboot loads the ISO's WinPE, which maps Bootlace's built-in SMB share and runs `X:\sources\setup.exe /installfrom:Z:\<id>\sources\install.wim /unattend:...` from the ISO's folder. Installed to an 80 GB disk, rebooted from the disk into the new Windows. Setup went through the whole copy over the network (about 25 minutes in the lab). |
-| Windows 11 FW11HFR / FW11PEN / FW11PFR, Windows Server 2025 | | | | **untested** | | Same method as above; not run yet. |
+| Windows 11 FW11PFR (custom-trimmed build, Pro, French) | 24H2 | not tried | yes | **partial** | 2026-10-21 | Same method. French Setup starts and reaches the disk page; the install itself was not run to the end (it is the same path as FW11HEN). |
+| Windows Server 2025 (Standard/Datacenter, Jan 2025 media) | 2025 | not tried | yes | **partial** | 2026-10-21 | Same method. Windows Server Setup starts, and lists its four editions read out of install.wim over the share; not installed to the end. |
+| Windows 11 FW11HFR / FW11PEN | | | | **untested** | | Same method; not run yet. |
 
 Result values: **works**, **partial** (boots but a step needs help; see notes), **fails**, **untested**.
