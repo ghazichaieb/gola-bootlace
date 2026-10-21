@@ -10,7 +10,9 @@
 A network boot server for ISO files: put your ISOs in a folder, and any PC on the network can boot and install from them over PXE.
 No USB sticks. Think of [Ventoy](https://github.com/ventoy/Ventoy), but over the network.
 
-**Status: early design. Nothing here boots anything yet.** The goals below are goals, not features.
+**Status: early, but it works for the ISOs in [docs/compatibility.md](docs/compatibility.md)** (UEFI so far; legacy BIOS PXE starts but is only half
+tested). Alpine, Ubuntu, CachyOS, Proxmox VE and TrueNAS boot from their own ISO, and Windows 11 and Windows Server install over the network from an
+unmodified ISO. FreeBSD/pfSense is in progress. Secure Boot is not supported yet (switch it off on the PC). The goals below are the full plan.
 
 ## Goals
 
@@ -26,6 +28,19 @@ The server speaks proxyDHCP, TFTP and HTTP and hands clients an iPXE boot menu b
 with a small helper that downloads the ISO into RAM and makes it look like a disc; Windows ISOs start their setup environment with a helper that
 attaches the ISO from a network share. Read [docs/start-plan.md](docs/start-plan.md) for the plan and the phases, and
 [docs/compatibility.md](docs/compatibility.md) for what has been tested.
+
+## Trying it
+
+Put ISOs in a folder, then on a computer that is on the same network as the PCs (the network keeps its own DHCP server):
+
+```
+bootlace serve -iso-dir /path/to/isos
+```
+
+and set the PC to boot from the network (PXE). The menu lists every ISO; the web server is on port 8080. Windows installs read their files from a
+read-only share the program serves itself (port 445, or `-smb-port` when something else holds it; Windows' own file sharing does on a Windows host).
+After an installation restarts the PC, choose "Boot from this PC's own disk" (or start the server with `-menu-local -menu-timeout 5`).
+`tools/lab.ps1` builds and starts a Hyper-V test bench; see its header.
 
 ## Building
 
