@@ -38,6 +38,9 @@ type Server struct {
 	Timeout time.Duration // how long to wait for the client's answer before sending again (default 2 s)
 	Retries int           // how many times to send again before giving up (default 5)
 	Logf    func(format string, args ...any)
+	// LocalIP is this server's address as the clients reach it. Answers leave from it: on a computer with several networks the operating system
+	// might otherwise answer from another network's address, which a PC's firmware rejects.
+	LocalIP net.IP
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -67,6 +70,9 @@ func (s *Server) handle(local net.Addr, client net.Addr, packet []byte) {
 		return
 	}
 	host, _, _ := net.SplitHostPort(local.String())
+	if s.LocalIP != nil {
+		host = s.LocalIP.String()
+	}
 	conn, err := net.ListenPacket("udp", net.JoinHostPort(host, "0"))
 	if err != nil {
 		s.logf("tftp: cannot open a transfer socket: %v", err)
@@ -127,6 +133,7 @@ func (s *Server) read(conn net.PacketConn, client net.Addr, raw []byte) error {
 		sendError(conn, client, errNotFound, "file not found")
 		return fmt.Errorf("%s: not a file", name)
 	}
+	s.logf("tftp: %v asks for %s (options %v), %d bytes", client, name, req.options, info.Size())
 	block, oack := defaultBlock, []string{}
 	if v, ok := req.options["blksize"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {

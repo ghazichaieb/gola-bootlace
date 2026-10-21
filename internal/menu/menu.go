@@ -33,10 +33,23 @@ func clean(s string) string {
 
 // Script is the iPXE script: a menu with one item per entry, a way to the iPXE shell, and a timeout-free choice. The commands of an entry
 // run after the user picks it; the script always ends in the shell when a command fails, so the person sees the error instead of a reboot loop.
-func Script(title string, entries []Entry) string {
+func Script(title string, entries []Entry) string { return ScriptWith(title, entries, Options{}) }
+
+// Options changes how the menu starts. By default it waits for a choice and offers the iPXE shell first, so that a PC is never sent anywhere by accident.
+type Options struct {
+	Default int // the entry (counting from 1) that is chosen when the time runs out; 0 keeps the shell
+	Timeout int // seconds to wait before choosing it; 0 waits for ever
+}
+
+// ScriptWith is Script with options.
+func ScriptWith(title string, entries []Entry, o Options) string {
 	var b strings.Builder
 	b.WriteString("#!ipxe\n")
-	b.WriteString("set menu-default shell\n")
+	if o.Default >= 1 && o.Default <= len(entries) {
+		fmt.Fprintf(&b, "set menu-default %s\n", label(entries[o.Default-1].Name, o.Default-1))
+	} else {
+		b.WriteString("set menu-default shell\n")
+	}
 	fmt.Fprintf(&b, "menu %s\n", clean(title))
 	if len(entries) == 0 {
 		b.WriteString("item --gap -- No ISO files were found in the server's folder.\n")
@@ -47,7 +60,11 @@ func Script(title string, entries []Entry) string {
 	b.WriteString("item --gap --\n")
 	b.WriteString("item shell iPXE shell\n")
 	b.WriteString("item reboot Restart this PC\n")
-	b.WriteString("choose --default ${menu-default} selected || goto shell\n")
+	if o.Timeout > 0 {
+		fmt.Fprintf(&b, "choose --default ${menu-default} --timeout %d selected || goto shell\n", o.Timeout*1000)
+	} else {
+		b.WriteString("choose --default ${menu-default} selected || goto shell\n")
+	}
 	b.WriteString("goto ${selected}\n\n")
 	for i, e := range entries {
 		fmt.Fprintf(&b, ":%s\n", label(e.Name, i))

@@ -63,3 +63,23 @@ func TestFullModeAcknowledgesTheRequestAndStaysSilentForAnotherServer(t *testing
 		t.Fatal("answered a request meant for another DHCP server")
 	}
 }
+
+func TestPXEOnlyAnswersAPCThatBootedFromTheNetworkWhenItsSystemAsksLater(t *testing.T) {
+	f := full()
+	f.PXEOnly = true
+	plain := func(mac byte) *Packet {
+		p := discover(mac, false)
+		delete(p.Opts, OptVendorClass)
+		return p
+	}
+	if _, ok := f.Respond(plain(1)); ok {
+		t.Fatal("answered an ordinary PC in PXE-only mode")
+	}
+	f.Respond(discover(1, false)) // the PC network boots
+	if r, ok := f.Respond(plain(1)); !ok || !r.YIAddr.Equal(net.IPv4(10, 0, 0, 100)) {
+		t.Fatalf("its system was not answered: %+v %v", r, ok)
+	}
+	if _, ok := f.Respond(plain(2)); ok {
+		t.Fatal("answered another ordinary PC")
+	}
+}

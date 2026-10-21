@@ -79,6 +79,7 @@ type Full struct {
 	Router      net.IP // optional
 	DNS         net.IP // optional
 	Lease       time.Duration
+	PXEOnly     bool // answer PCs that start a network boot only (and the same PCs afterwards, when their system asks for an address)
 
 	mu     sync.Mutex
 	leases map[string]uint32 // client hardware address -> address
@@ -93,6 +94,9 @@ func (f *Full) Respond(req *Packet) (*Packet, bool) {
 	}
 	t := req.MessageType()
 	if t != Discover && t != Request {
+		return nil, false
+	}
+	if f.PXEOnly && !IsPXE(req) && !f.hasLease(req) { // a PC that booted from the network keeps being answered when its system asks for the address again
 		return nil, false
 	}
 	if id := req.Opts[OptServerID]; len(id) == 4 && !net.IP(id).Equal(f.ServerIP) {
@@ -128,6 +132,13 @@ func (f *Full) Respond(req *Packet) (*Packet, bool) {
 		reply.Opts[67] = []byte(boot.File)
 	}
 	return reply, true
+}
+
+func (f *Full) hasLease(req *Packet) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, ok := f.leases[req.MAC().String()]
+	return ok
 }
 
 // address is the address for this client: the one it has, the one it asks for (when free and in range) or the first free one.

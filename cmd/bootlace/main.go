@@ -9,11 +9,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
 	"github.com/ghazichaieb/gola-bootlace/internal/dhcp"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
+	"github.com/ghazichaieb/gola-bootlace/internal/menu"
 	"github.com/ghazichaieb/gola-bootlace/internal/tftp"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
 )
@@ -61,6 +63,9 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	mask := fs.String("mask", "255.255.255.0", "full mode: the network mask")
 	router := fs.String("router", "", "full mode: the router given to PCs (default: none)")
 	dnsIP := fs.String("dns", "", "full mode: the DNS server given to PCs (default: none)")
+	pxeOnly := fs.Bool("pxe-only", false, "full mode: hand out addresses to PCs that start a network boot only (a lab where this computer is also on the network)")
+	menuDefault := fs.Int("menu-default", 0, "the menu entry (counting from 1) that starts by itself after -menu-timeout seconds (0: wait for a choice)")
+	menuTimeout := fs.Int("menu-timeout", 0, "seconds before the default menu entry starts (0: wait for ever)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -76,7 +81,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	base := fmt.Sprintf("http://%s:%d", ip, *httpPort)
-	web := &httpd.Server{ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf}
+	web := &httpd.Server{ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Menu: menu.Options{Default: *menuDefault, Timeout: *menuTimeout}}
 	errs := make(chan error, 4)
 
 	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
@@ -91,7 +96,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "bootlace: cannot open TFTP port 69: %v\n", err)
 		return 1
 	}
-	go func() { errs <- (&tftp.Server{FS: assets.IPXE(), Logf: logf}).Serve(tftpConn) }()
+	go func() { errs <- (&tftp.Server{FS: assets.IPXE(), Logf: logf, LocalIP: ip}).Serve(tftpConn) }()
 
 	if *mode != "off" {
 		boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Files: map[dhcp.Arch]string{
@@ -109,14 +114,14 @@ func serve(args []string, stdout, stderr io.Writer) int {
 				network := ip.Mask(m).To4()
 				start, end = net.IPv4(network[0], network[1], network[2], 100), net.IPv4(network[0], network[1], network[2], 200)
 			}
-			responder = &dhcp.Full{Boot: boot, First: start, Last: end, Mask: m, Router: net.ParseIP(*router), DNS: net.ParseIP(*dnsIP), Lease: time.Hour}
+			responder = &dhcp.Full{PXEOnly: *pxeOnly, Boot: boot, First: start, Last: end, Mask: m, Router: net.ParseIP(*router), DNS: net.ParseIP(*dnsIP), Lease: time.Hour}
 			logf("DHCP: handing out %s to %s", start, end)
 		} else if *mode != "proxy" {
 			fmt.Fprintf(stderr, "bootlace: -dhcp must be proxy, full or off, not %q\n", *mode)
 			return 2
 		}
 		for _, port := range []int{67, 4011} {
-			conn, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
+			conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: dhcpBindIP(ip), Port: port})
 			if err != nil {
 				fmt.Fprintf(stderr, "bootlace: cannot open DHCP port %d (another DHCP server on this computer?): %v\n", port, err)
 				return 1
@@ -130,6 +135,16 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	return 0
+}
+
+// dhcpBindIP is the address the DHCP sockets bind to. On Windows a socket bound to this server's own address still hears the broadcasts that arrive on
+// that network, and its answers leave on it (a socket bound to every address sends a broadcast out of whichever network Windows prefers, and a PC
+// with a second network card never gets the answer). Elsewhere the sockets hear every network.
+func dhcpBindIP(server net.IP) net.IP {
+	if runtime.GOOS == "windows" {
+		return server
+	}
+	return nil
 }
 
 // privateIP is the first private IPv4 address of this computer (the network the PCs are on).
