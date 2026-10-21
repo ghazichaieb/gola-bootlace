@@ -29,7 +29,7 @@ switch ($Action) {
     'create' {
         if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Stop-VM -Name $vmName -TurnOff -Force -ErrorAction SilentlyContinue; Remove-VM -Name $vmName -Force }
         Remove-Item -Recurse -Force (Join-Path $Folder $vmName) -ErrorAction SilentlyContinue
-        $vm = New-VM -Name $vmName -Generation 2 -MemoryStartupBytes ($MemoryGB * 1GB) -Path $Folder -NewVHDPath (Join-Path $Folder "$vmName\disk.vhdx") -NewVHDSizeBytes 32GB -SwitchName $VSwitch
+        $vm = New-VM -Name $vmName -Generation 2 -MemoryStartupBytes ($MemoryGB * 1GB) -Path $Folder -NewVHDPath (Join-Path $Folder "$vmName\disk.vhdx") -NewVHDSizeBytes 80GB -SwitchName $VSwitch
         Set-VM -VM $vm -StaticMemory -AutomaticCheckpointsEnabled $false -CheckpointType Disabled
         Set-VMProcessor -VM $vm -Count 2
         Set-VMFirmware -VM $vm -EnableSecureBoot Off -BootOrder @((Get-VMNetworkAdapter -VM $vm))

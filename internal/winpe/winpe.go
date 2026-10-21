@@ -80,7 +80,7 @@ func Cmd(s Settings) string {
 	line("goto end")
 	line(":up")
 	line("echo Starting Windows Setup ...")
-	line(`Z:\setup.exe`)
+	line(`if exist Z:\autounattend.xml (Z:\setup.exe /unattend:Z:\autounattend.xml) else (Z:\setup.exe)`)
 	line(":end")
 	return b.String()
 }
