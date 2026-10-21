@@ -303,3 +303,38 @@ func (f *File) Reader() io.ReadSeeker { return io.NewSectionReader(f, 0, f.n.siz
 
 // ModTime is not stored per file here: the web server uses a fixed time, which is fine for files that never change.
 func (f *File) ModTime() time.Time { return time.Unix(0, 0) }
+
+// Entry is what a folder lists.
+type Entry struct {
+	Name string
+	Size int64
+	Dir  bool
+}
+
+// Stat says how big the file or folder at name is, and which of the two it is.
+func (img *Image) Stat(name string) (Entry, error) {
+	n, err := img.find(name)
+	if err != nil {
+		return Entry{}, err
+	}
+	return Entry{Name: n.name, Size: n.size, Dir: n.dir}, nil
+}
+
+// ReadDir lists a folder with the size of each entry.
+func (img *Image) ReadDir(name string) ([]Entry, error) {
+	n, err := img.find(name)
+	if err != nil {
+		return nil, err
+	}
+	if !n.dir {
+		return nil, errors.New("not a folder")
+	}
+	if err := n.load(); err != nil {
+		return nil, err
+	}
+	out := make([]Entry, len(n.kids))
+	for i, k := range n.kids {
+		out[i] = Entry{Name: k.name, Size: k.size, Dir: k.dir}
+	}
+	return out, nil
+}

@@ -18,6 +18,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
+	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
 	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
 )
 
@@ -243,8 +244,8 @@ func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-// ShareName is the SMB share that shows an ISO to Windows' set-up environment.
-func ShareName(iso isos.ISO) string { return "w" + iso.ID }
+// ShareName is the path on the server that shows an ISO to Windows' set-up environment: the share, then a folder named by the ISO's id.
+func ShareName(iso isos.ISO) string { return smbshare.ShareName + `\` + iso.ID }
 
 // isoPath is the URL path of an ISO, escaped.
 func isoPath(name string) string {

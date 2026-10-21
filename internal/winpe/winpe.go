@@ -49,38 +49,38 @@ func ShellIni() string {
 	return `[LaunchApps]` + "\r\n" + `%SYSTEMROOT%\System32\cmd.exe, /k %SYSTEMROOT%\System32\bootlace.cmd` + "\r\n"
 }
 
-// Cmd is the command file WinPE runs: start the network, wait for the server, connect to the ISO's share and start Windows Setup from it.
+// Cmd is the command file WinPE runs: start the network, connect to the ISO's folder on the share (trying again for a while, the network card
+// takes a moment) and start Windows Setup from it.
 func Cmd(s Settings) string {
 	var b strings.Builder
 	line := func(f string, a ...any) { fmt.Fprintf(&b, f+"\r\n", a...) }
+	port := ""
+	if s.Port != 0 && s.Port != 445 {
+		port = fmt.Sprintf(" /TCPPORT:%d", s.Port)
+	}
+	connect := fmt.Sprintf(`net use Z: \\%s\%s /user:%s %s%s`, s.Host, s.Share, s.User, s.Password, port)
 	line("@echo off")
 	line("title Gola Bootlace")
 	line("echo Gola Bootlace: starting the network ...")
 	line("wpeinit")
 	line("set tries=0")
-	line(":wait")
-	line("ping -n 1 %s | find \"TTL=\" > nul && goto up", s.Host)
+	line(":try")
+	line("echo Connecting to the installation files on %s ...", s.Host)
+	line(connect + " > nul 2>&1")
+	line("if not errorlevel 1 goto up")
 	line("set /a tries+=1")
-	line("if %%tries%% geq 60 goto nonet")
-	line("ping -n 3 127.0.0.1 > nul")
-	line("goto wait")
-	line(":nonet")
-	line("echo The server %s cannot be reached from here. Network cards that Windows' set-up environment has no driver for are the usual cause.", s.Host)
+	line("if %%tries%% geq 40 goto failed")
+	line("ping -n 4 127.0.0.1 > nul")
+	line("goto try")
+	line(":failed")
+	line("echo The installation files could not be reached. The last answer was:")
+	line(connect)
+	line("echo.")
 	line("ipconfig /all")
 	line("goto end")
 	line(":up")
-	line("echo Connecting to the installation files on %s ...", s.Host)
-	port := ""
-	if s.Port != 0 && s.Port != 445 {
-		port = fmt.Sprintf(" /TCPPORT:%d", s.Port)
-	}
-	line(`net use Z: \\%s\%s /user:%s %s%s`, s.Host, s.Share, s.User, s.Password, port)
-	line("if errorlevel 1 goto noshare")
 	line("echo Starting Windows Setup ...")
 	line(`Z:\setup.exe`)
-	line("goto end")
-	line(":noshare")
-	line("echo Could not connect to the installation files: read the message above.")
 	line(":end")
 	return b.String()
 }

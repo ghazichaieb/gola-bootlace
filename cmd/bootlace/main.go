@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"flag"
@@ -18,6 +19,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/dhcp"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
+	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
 	"github.com/ghazichaieb/gola-bootlace/internal/tftp"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
 )
@@ -99,6 +101,11 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	go func() { errs <- http.Serve(httpListener, web.Handler()) }()
+
+	go func() {
+		errs <- smbshare.Serve(context.Background(), smbshare.Options{Addr: fmt.Sprintf("%s:%d", ip, *smbPort), ISODir: *isoDir, User: "bootlace", Password: smbPassword, Logf: logf})
+	}()
+	logf(`Windows set-up share: \\%s\%s on port %d`, ip, smbshare.ShareName, *smbPort)
 
 	tftpConn, err := net.ListenPacket("udp4", ":69")
 	if err != nil {
