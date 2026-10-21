@@ -33,7 +33,7 @@ $serverArgs = @('serve', '-iso-dir', $IsoDir, '-ip', $ip, '-dhcp', 'full', '-pxe
 if ($Pick) { $serverArgs += @('-menu-pick', $Pick) }
 if ($SmbForward) { $serverArgs += @('-smb-forward', $SmbForward) }
 $serverArgs = $serverArgs | ForEach-Object { if ("$_" -match '\s') { '"' + $_ + '"' } else { "$_" } }   # Start-Process does not quote: a folder name with a space broke every argument after it
-Start-Process -FilePath (Join-Path $root 'bin\bootlace.exe') -ArgumentList $serverArgs-RedirectStandardOutput (Join-Path $LogDir 'bootlace-out.log') `
+Start-Process -FilePath (Join-Path $root 'bin\bootlace.exe') -ArgumentList $serverArgs -RedirectStandardOutput (Join-Path $LogDir 'bootlace-out.log') `
     -RedirectStandardError (Join-Path $LogDir 'bootlace-err.log') -WindowStyle Hidden
 Start-Sleep -Seconds 2
 & (Join-Path $PSScriptRoot 'pxe_vm.ps1') -Action create -Name $Name -MemoryGB $MemoryGB -Bios:$Bios
