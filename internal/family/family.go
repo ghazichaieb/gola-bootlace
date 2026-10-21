@@ -105,7 +105,7 @@ func archLinux(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists(dir + "/" + initrd) {
 		return Boot{}, false
 	}
-	return boot("Arch Linux", u, dir+"/"+kernel, dir+"/"+initrd, "ip=dhcp archisobasedir=arch archiso_http_srv="+u.FS+"/ copytoram=y console=tty0"), true
+	return boot("Arch Linux", u, dir+"/"+kernel, dir+"/"+initrd, "ip=:::::eth0:dhcp archisobasedir=arch archiso_http_srv="+u.FS+"/ copytoram=y console=tty0"), true
 }
 
 // Debian live and the distributions built the same way (TrueNAS keeps its kernel at the top of the ISO): the squashfs comes from the web server.
