@@ -14,7 +14,8 @@ type Settings struct {
 	FS       string // web address of the inside of the ISO, e.g. http://192.168.88.1:8080/fs/ab12cd34ef
 	Win      string // web address of the generated files, e.g. http://192.168.88.1:8080/w/ab12cd34ef
 	Host     string // the server's address as a name for Windows, e.g. 192.168.88.1
-	Share    string // the SMB share that shows the ISO
+	Share    string // the SMB share
+	Folder   string // the folder of the share that shows this ISO (the share is mapped as a whole: mapping a folder of it makes Windows probe it for ever)
 	User     string
 	Password string
 	Port     int // SMB port (445 unless Windows cannot reach the server there)
@@ -80,7 +81,8 @@ func Cmd(s Settings) string {
 	line("goto end")
 	line(":up")
 	line("echo Starting Windows Setup ...")
-	line(`if exist Z:\autounattend.xml (Z:\setup.exe /unattend:Z:\autounattend.xml) else (Z:\setup.exe)`)
+	line(`cd /d Z:\%s`, s.Folder)
+	line(`if exist autounattend.xml (setup.exe /unattend:Z:\%s\autounattend.xml) else (setup.exe)`, s.Folder)
 	line(":end")
 	return b.String()
 }

@@ -223,7 +223,7 @@ func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad server address", http.StatusInternalServerError)
 			return
 		}
-		set := winpe.Settings{Base: s.Base, FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Host: u.Hostname(), Share: ShareName(iso), User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort}
+		set := winpe.Settings{Base: s.Base, FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Host: u.Hostname(), Share: smbshare.ShareName, Folder: iso.ID, User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort}
 		var body string
 		switch file {
 		case "boot.ipxe":
@@ -243,9 +243,6 @@ func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
 	}
 	http.NotFound(w, r)
 }
-
-// ShareName is the path on the server that shows an ISO to Windows' set-up environment: the share, then a folder named by the ISO's id.
-func ShareName(iso isos.ISO) string { return smbshare.ShareName + `\` + iso.ID }
 
 // isoPath is the URL path of an ISO, escaped.
 func isoPath(name string) string {

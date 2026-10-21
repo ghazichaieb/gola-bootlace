@@ -423,7 +423,7 @@ func relay(to, from net.Conn, who string, logf func(format string, args ...any))
 		}
 		if logf != nil && len(msg) >= 16 && msg[0] == 0xFE {
 			logf("smb: %s: command %d status %#x flags %#x msgid %d (%d bytes)", who, binary.LittleEndian.Uint16(msg[12:]), binary.LittleEndian.Uint32(msg[8:]), binary.LittleEndian.Uint32(msg[16:]), binary.LittleEndian.Uint64(msg[24:]), len(msg))
-			if c := binary.LittleEndian.Uint16(msg[12:]); c <= 1 || (c == 16 && len(msg) < 110 && who == "server") {
+			if c := binary.LittleEndian.Uint16(msg[12:]); c <= 1 || ((c == 16 || c == 5) && who == "server") {
 				logf("smb: %s bytes: % x", who, msg[:min(len(msg), 400)])
 			}
 		}

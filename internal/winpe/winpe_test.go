@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-var set = Settings{Base: "http://10.0.0.1:8080", FS: "http://10.0.0.1:8080/fs/ab", Win: "http://10.0.0.1:8080/w/ab", Host: "10.0.0.1", Share: "wab", User: "bootlace", Password: "s3cret", Port: 4445}
+var set = Settings{Base: "http://10.0.0.1:8080", FS: "http://10.0.0.1:8080/fs/ab", Win: "http://10.0.0.1:8080/w/ab", Host: "10.0.0.1", Share: "iso", Folder: "ab", User: "bootlace", Password: "s3cret", Port: 4445}
 
 func TestTheScriptLoadsWimbootWithTheBootFilesAndOurTwoFiles(t *testing.T) {
 	s := IPXE(set)
@@ -19,7 +19,7 @@ func TestTheScriptLoadsWimbootWithTheBootFilesAndOurTwoFiles(t *testing.T) {
 
 func TestTheCommandFileConnectsToTheShareOnTheRightPortAndStartsSetup(t *testing.T) {
 	c := Cmd(set)
-	if !strings.Contains(c, `net use Z: \\10.0.0.1\wab /user:bootlace s3cret /TCPPORT:4445`) || !strings.Contains(c, `Z:\setup.exe`) || !strings.Contains(c, "wpeinit") {
+	if !strings.Contains(c, `net use Z: \\10.0.0.1\iso /user:bootlace s3cret /TCPPORT:4445`) || !strings.Contains(c, `cd /d Z:\ab`) || !strings.Contains(c, `setup.exe /unattend:Z:\ab\autounattend.xml`) || !strings.Contains(c, "wpeinit") {
 		t.Fatal(c)
 	}
 	set.Port = 445
