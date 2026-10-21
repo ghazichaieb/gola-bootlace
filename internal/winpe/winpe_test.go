@@ -20,7 +20,7 @@ func TestTheScriptLoadsWimbootWithTheBootFilesAndOurTwoFiles(t *testing.T) {
 func TestTheCommandFileConnectsToTheShareOnTheRightPortAndStartsTheSetupOfTheEnvironment(t *testing.T) {
 	c := Cmd(set)
 	for _, want := range []string{`net use Z: \\10.0.0.1\iso /user:bootlace s3cret /TCPPORT:4445`, `set IMAGE=Z:\ab\sources\install.wim`, `install.esd`,
-		`/unattend:Z:\ab\autounattend.xml`, `setup.exe %OPTIONS%`, `cd /d %SystemDrive%\sources`, "wpeinit"} {
+		`/unattend:Z:\ab\autounattend.xml`, `\sources\setup.exe %OPTIONS%`, `cd /d Z:\ab`, "wpeinit"} {
 		if !strings.Contains(c, want) {
 			t.Fatalf("missing %q in\n%s", want, c)
 		}

@@ -86,14 +86,14 @@ func Cmd(s Settings) string {
 		line("echo Held: start Setup by hand.")
 		line("goto end")
 	}
-	// Setup is the one of the set-up environment itself (X:\sources), pointed at the installation image on the share: the setup.exe on the share
-	// is the one for upgrading a running Windows and does nothing here.
-	line(`cd /d %%SystemDrive%%\sources`)
+	// Setup is the one of the set-up environment itself (X:\sources), pointed at the installation image on the share and started from the ISO's
+	// folder (without that it cannot find the licence terms): the setup.exe on the share is the one for upgrading a running Windows and does nothing here.
+	line(`cd /d Z:\%s`, s.Folder)
 	line(`set IMAGE=Z:\%s\sources\install.wim`, s.Folder)
 	line(`if not exist %%IMAGE%% set IMAGE=Z:\%s\sources\install.esd`, s.Folder)
 	line(`set OPTIONS=/installfrom:%%IMAGE%%`)
 	line(`if exist Z:\%s\autounattend.xml set OPTIONS=%%OPTIONS%% /unattend:Z:\%s\autounattend.xml`, s.Folder, s.Folder)
-	line(`setup.exe %%OPTIONS%%`)
+	line(`%%SystemDrive%%\sources\setup.exe %%OPTIONS%%`)
 	line(":end")
 	return b.String()
 }
