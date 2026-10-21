@@ -93,7 +93,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	seen := map[string]bool{}
-	rules := c.Rules[:0:0]
+	rules := []Rule{}
 	for _, r := range c.Rules {
 		mac, ok := NormalizeMAC(r.MAC)
 		if !ok {

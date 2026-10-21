@@ -198,7 +198,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			go func() { errs <- dhcp.Serve(conn, responder, logf) }()
 		}
 	}
-	logf("Gola Bootlace %s: menu at %s/boot.ipxe, ISO folder %q, DHCP mode %s", version.String(), base, *isoDir, *mode)
+	logf("Gola Bootlace %s: menu at %s/boot.ipxe, ISO folder %q, DHCP mode %s", version.Version, base, *isoDir, *mode)
 	if err := <-errs; err != nil {
 		fmt.Fprintf(stderr, "bootlace: %v\n", err)
 		return 1
