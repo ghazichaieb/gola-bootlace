@@ -15,7 +15,11 @@ Shipped or planned (update this list the day something is copied or bundled):
   81a80cf5d3429b4add78015529e46662139e89242478cd3d4215be58f936e4df). They are unsigned: UEFI Secure Boot must be off for them (see issue #10).
 - wimboot 2.9.0 (https://ipxe.org/wimboot), GPL-2.0-or-later, source at https://github.com/ipxe/wimboot. SHIPPED unchanged in internal/assets/ipxe/wimboot (downloaded 2026-10-21
   from the project's release, SHA-256 5f067ccdc4d084d5bf77b6c853bd0f8402dfc2b4cd1b103d358993ae97fae8e3). Starts Windows setup images.
-- Samba (https://www.samba.org), GPL-3.0-or-later. Planned: run as a separate program next to the server, for Windows ISOs.
+- go-smb-server (https://github.com/sonroyaalmerol/go-smb-server), MIT, Copyright (c) its authors. SHIPPED in third_party/go-smb-server with our changes: the SMB 2
+  server that shows an ISO to Windows' set-up environment. Changes (so that Windows 11 can use it): a security blob in the negotiate answer and real times and sizes,
+  the NTLM challenge with a full target information and a version, more file and file system information classes, the directory listing classes Windows asks for
+  with listings that continue over several requests, shorter minimum request sizes, and the volume and file system answers laid out as Windows reads them.
+- Samba (https://www.samba.org), GPL-3.0-or-later. Not used: the built-in share above replaces it.
 - 7-Zip (https://www.7-zip.org), LGPL and BSD parts. Planned: listing ISO contents, run as a separate program.
 
 - Geist (https://vercel.com/font), Copyright (c) Vercel, SIL Open Font License 1.1. The word "Bootlace" in the logo files is set in Geist Bold,

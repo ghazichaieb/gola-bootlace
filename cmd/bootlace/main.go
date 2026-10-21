@@ -73,6 +73,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	dnsIP := fs.String("dns", "", "full mode: the DNS server given to PCs (default: none)")
 	pxeOnly := fs.Bool("pxe-only", false, "full mode: hand out addresses to PCs that start a network boot only (a lab where this computer is also on the network)")
 	menuDefault := fs.Int("menu-default", 0, "the menu entry (counting from 1) that starts by itself after -menu-timeout seconds (0: wait for a choice)")
+	smbPasswordFlag := fs.String("smb-password", "", "the password Windows set-up logs in to the share with (default: a new one at every start; a fixed one is for testing)")
+	smbForward := fs.String("smb-forward", "", "for finding faults: pass the share connections on to this SMB server (host:port) and log them")
 	smbPort := fs.Int("smb-port", 445, "the port of the share that Windows set-up reads its files from")
 	menuPick := fs.String("menu-pick", "", "the entry whose name contains this text starts by itself after -menu-timeout seconds (instead of -menu-default)")
 	menuTimeout := fs.Int("menu-timeout", 0, "seconds before the default menu entry starts (0: wait for ever)")
@@ -91,7 +93,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	base := fmt.Sprintf("http://%s:%d", ip, *httpPort)
-	smbPassword := randomPassword()
+	smbPassword := *smbPasswordFlag
+	if smbPassword == "" {
+		smbPassword = randomPassword()
+	}
 	web := &httpd.Server{SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Menu: menu.Options{Default: *menuDefault, Timeout: *menuTimeout}, Pick: *menuPick}
 	errs := make(chan error, 4)
 
@@ -103,7 +108,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	go func() { errs <- http.Serve(httpListener, web.Handler()) }()
 
 	go func() {
-		errs <- smbshare.Serve(context.Background(), smbshare.Options{Addr: fmt.Sprintf("%s:%d", ip, *smbPort), ISODir: *isoDir, User: "bootlace", Password: smbPassword, Logf: logf})
+		errs <- smbshare.Serve(context.Background(), smbshare.Options{Addr: fmt.Sprintf("%s:%d", ip, *smbPort), Forward: *smbForward, ISODir: *isoDir, User: "bootlace", Password: smbPassword, Logf: logf})
 	}()
 	logf(`Windows set-up share: \\%s\%s on port %d`, ip, smbshare.ShareName, *smbPort)
 

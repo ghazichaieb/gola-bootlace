@@ -45,7 +45,7 @@ switch ($Action) {
     'type' {
         # Hyper-V's own TypeText mangles many characters on a Linux console, so every character is sent as the key press a US keyboard would make
         $keyboard = Get-CimAssociatedInstance -InputObject (Computer) -ResultClassName Msvm_Keyboard
-        $plain = @{ ' ' = 32; '-' = 189; '=' = 187; '/' = 191; '.' = 190; ',' = 188; ';' = 186; "'" = 222; '[' = 219; ']' = 221; '' = 220; '`' = 192 }
+        $plain = @{ ' ' = 32; '-' = 189; '=' = 187; '/' = 191; '.' = 190; ',' = 188; ';' = 186; "'" = 222; '[' = 219; ']' = 221; '\' = 220; '`' = 192 }
         $shifted = @{ '|' = 220; '_' = 189; '+' = 187; '?' = 191; '>' = 190; '<' = 188; ':' = 186; '"' = 222; '{' = 219; '}' = 221; '!' = 49; '@' = 50; '#' = 51; '$' = 52; '%' = 53; '&' = 55; '*' = 56; '(' = 57; ')' = 48 }
         function Press([int] $code, [bool] $shift) {
             if ($shift) { Invoke-CimMethod -InputObject $keyboard -MethodName PressKey -Arguments @{ keyCode = [uint32]16 } | Out-Null }

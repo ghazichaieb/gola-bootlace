@@ -26,7 +26,7 @@ Pop-Location
 $ip = (Get-NetIPAddress -InterfaceAlias 'vEthernet (bootlace-lab)' -AddressFamily IPv4).IPAddress
 $prefix = ($ip -split '\.')[0..2] -join '.'
 $serverArgs = @('serve', '-iso-dir', $IsoDir, '-ip', $ip, '-dhcp', 'full', '-pxe-only', '-mask', '255.255.0.0', '-range-start', "$prefix.150", '-range-end', "$prefix.200",
-          '-menu-default', $Entry, '-menu-timeout', '3', '-smb-port', '4445')   # Windows' own file sharing holds 445 on this PC
+          '-menu-default', $Entry, '-menu-timeout', '3', '-smb-port', '4445', '-smb-password', 'lab-pass-1')   # Windows' own file sharing holds 445 on this PC
 
 if ($Pick) { $serverArgs += @('-menu-pick', $Pick) }
 Start-Process -FilePath (Join-Path $root 'bin\bootlace.exe') -ArgumentList $serverArgs -RedirectStandardOutput (Join-Path $LogDir 'bootlace-out.log') `

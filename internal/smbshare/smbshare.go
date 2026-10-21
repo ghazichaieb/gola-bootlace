@@ -6,10 +6,12 @@ package smbshare
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"iter"
 	"log/slog"
+	"net"
 	"os"
 	"strings"
 	"sync"
@@ -38,21 +40,176 @@ type Options struct {
 	User     string
 	Password string
 	Logf     func(format string, args ...any)
+	Forward  string // for finding faults: pass every connection on to another SMB server (host:port) and log what is said, instead of serving the ISOs
 }
 
-// Serve runs the share until ctx ends.
+// Serve runs the share until ctx ends. Windows opens a connection with an SMB1 "multi-protocol negotiate" that offers SMB 2 among its dialects, and
+// expects the server to answer in SMB 2 and the client to start again; the library speaks SMB 2 only. A small front end on the public address
+// answers that first message and hands every connection on to the library's server, which listens on this computer's loopback address.
 func Serve(ctx context.Context, o Options) error {
-	backend := &Backend{dir: o.ISODir, open: map[string]*opened{}}
+	backend := &Backend{dir: o.ISODir, open: map[string]*opened{}, logf: o.Logf}
+	inner, err := freeLoopbackAddr()
+	if err != nil {
+		return err
+	}
+	if o.Forward != "" {
+		inner = o.Forward
+	}
 	srv, err := server.New(
-		server.WithAddr(o.Addr),
+		server.WithAddr(inner),
 		server.WithShares(vfs.NewDiskShare(ShareName, backend)),
 		server.WithAuth(ntlmssp.NewServer(oneUser{user: o.User, password: o.Password}, "BOOTLACE")),
-		server.WithLogger(slog.New(slog.NewTextHandler(io.Discard, nil))),
+		server.WithLogger(slog.New(slog.NewTextHandler(logWriter(o.Logf), &slog.HandlerOptions{Level: slog.LevelDebug}))),
 	)
 	if err != nil {
 		return err
 	}
+	front, err := net.Listen("tcp", o.Addr)
+	if err != nil {
+		return err
+	}
+	go func() {
+		<-ctx.Done()
+		front.Close()
+	}()
+	go func() {
+		for {
+			c, err := front.Accept()
+			if err != nil {
+				return
+			}
+			go handOn(c, inner, o.Logf)
+		}
+	}()
+	if o.Forward != "" {
+		<-ctx.Done()
+		return nil
+	}
 	return srv.ListenAndServe(ctx)
+}
+
+func freeLoopbackAddr() (string, error) {
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return "", err
+	}
+	defer l.Close()
+	return l.Addr().String(), nil
+}
+
+// handOn connects a client to the library's server. A first message that is an SMB1 negotiate gets the SMB 2 "wildcard" answer here and is not passed on.
+func handOn(client net.Conn, inner string, logf func(format string, args ...any)) {
+	defer client.Close()
+	first, err := readFrame(client)
+	if err != nil {
+		return
+	}
+	backend, err := dialInner(inner)
+	if err != nil {
+		return
+	}
+	defer backend.Close()
+	if len(first) > 4 && first[0] == 0xFF && string(first[1:4]) == "SMB" {
+		if logf != nil {
+			logf("smb: %s opened with an SMB1 negotiate (%d bytes: % x): answering for SMB 2", client.RemoteAddr(), len(first), first[:min(len(first), 120)])
+		}
+		if _, err := client.Write(frame(wildcardNegotiateResponse())); err != nil {
+			return
+		}
+		client.SetReadDeadline(time.Now().Add(5 * time.Second))
+		next, err := readFrame(client)
+		client.SetReadDeadline(time.Time{})
+		if err != nil {
+			if logf != nil {
+				logf("smb: after our answer the client sent nothing usable: %v", err)
+			}
+			return
+		}
+		if logf != nil {
+			logf("smb: the client's next message (%d bytes: % x)", len(next), next[:min(len(next), 100)])
+		}
+		if _, err := backend.Write(frame(next)); err != nil {
+			return
+		}
+	} else if _, err := backend.Write(frame(first)); err != nil {
+		return
+	}
+	done := make(chan struct{}, 2)
+	go func() { relay(backend, client, "client", logf); done <- struct{}{} }()
+	go func() { relay(client, backend, "server", logf); done <- struct{}{} }()
+	<-done
+}
+
+func dialInner(addr string) (net.Conn, error) {
+	var last error
+	for i := 0; i < 20; i++ { // the library's server may still be starting
+		c, err := net.Dial("tcp", addr)
+		if err == nil {
+			return c, nil
+		}
+		last = err
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil, last
+}
+
+// readFrame reads one direct-TCP SMB message: a zero byte, a 3-byte length, the message.
+func readFrame(c net.Conn) ([]byte, error) {
+	var h [4]byte
+	if _, err := io.ReadFull(c, h[:]); err != nil {
+		return nil, err
+	}
+	n := int(h[1])<<16 | int(h[2])<<8 | int(h[3])
+	if n == 0 || n > 1<<20 {
+		return nil, errors.New("bad frame")
+	}
+	b := make([]byte, n)
+	_, err := io.ReadFull(c, b)
+	return b, err
+}
+
+func frame(b []byte) []byte {
+	return append([]byte{0, byte(len(b) >> 16), byte(len(b) >> 8), byte(len(b))}, b...)
+}
+
+// spnegoInit is the security blob a server puts in its first negotiate answer: a SPNEGO token that offers NTLMSSP (and the "please ignore" mechanism
+// that Microsoft's own servers list), the same 42 bytes that Windows and Samba send.
+var spnegoInit = []byte{0x60, 0x28, 0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x02, 0xa0, 0x1e, 0x30, 0x1c, 0xa0, 0x1a, 0x30, 0x18, 0x06, 0x0a, 0x2b, 0x06, 0x01,
+	0x04, 0x01, 0x82, 0x37, 0x02, 0x02, 0x1e, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02, 0x0a}
+
+// wildcardNegotiateResponse is the SMB 2 NEGOTIATE response that answers an SMB1 multi-protocol negotiate: dialect 0x02FF tells the client to
+// start again with an SMB 2 negotiate of its own ([MS-SMB2] 3.3.5.3.1).
+func wildcardNegotiateResponse() []byte {
+	b := make([]byte, 64+64+len(spnegoInit))
+	copy(b, []byte{0xFE, 'S', 'M', 'B'})
+	binary.LittleEndian.PutUint16(b[4:], 64) // header size
+	binary.LittleEndian.PutUint16(b[14:], 1) // credits granted
+	binary.LittleEndian.PutUint32(b[16:], 1) // flags: this is a response
+	body := b[64:]
+	binary.LittleEndian.PutUint16(body[0:], 65)                                                                            // structure size
+	binary.LittleEndian.PutUint16(body[2:], 1)                                                                             // security mode: signing enabled
+	binary.LittleEndian.PutUint16(body[4:], 0x02FF)                                                                        // dialect: wildcard
+	copy(body[8:], []byte{0x42, 0x6f, 0x6f, 0x74, 0x6c, 0x61, 0x63, 0x65, 0x47, 0x6f, 0x6c, 0x61, 0x53, 0x76, 0x63, 0x01}) // server guid
+	binary.LittleEndian.PutUint32(body[28:], 0x100000)
+	binary.LittleEndian.PutUint32(body[32:], 0x100000)
+	binary.LittleEndian.PutUint32(body[36:], 0x100000)
+	now := uint64(time.Now().UnixNano()/100) + 116444736000000000 // Windows file time
+	binary.LittleEndian.PutUint64(body[40:], now)
+	binary.LittleEndian.PutUint64(body[48:], now)
+	binary.LittleEndian.PutUint16(body[56:], 128) // security buffer offset, from the start of the message
+	binary.LittleEndian.PutUint16(body[58:], uint16(len(spnegoInit)))
+	copy(body[64:], spnegoInit)
+	return b
+}
+
+// logWriter turns the server library's log lines into lines of our own log.
+type logWriter func(format string, args ...any)
+
+func (w logWriter) Write(p []byte) (int, error) {
+	if w != nil {
+		w("smb: %s", strings.TrimSpace(string(p)))
+	}
+	return len(p), nil
 }
 
 // oneUser accepts the one account the set-up environment logs in with, whatever domain name the client sends.
@@ -67,6 +224,7 @@ func (u oneUser) LookupNTOWFv2(_ context.Context, domain, user string) ([]byte, 
 
 // Backend is the read-only file system of the share.
 type Backend struct {
+	logf func(format string, args ...any)
 	dir  string
 	mu   sync.Mutex
 	open map[string]*opened // by ISO id: the file and its contents, kept open while the server runs
@@ -109,8 +267,16 @@ func (b *Backend) disc(id string) (*opened, error) {
 }
 
 // Open implements vfs.Backend. Anything that would change a file is refused.
-func (b *Backend) Open(_ context.Context, opts vfs.OpenOptions) (vfs.Handle, error) {
-	if opts.Disposition != vfs.DispositionOpen && opts.Disposition != vfs.DispositionOpenIf || opts.CreateDir {
+func (b *Backend) Open(ctx context.Context, opts vfs.OpenOptions) (vfs.Handle, error) {
+	h, err := b.open_(ctx, opts)
+	if b.logf != nil {
+		b.logf("smb: open %q disposition %d dir=%v: %v", opts.Path, opts.Disposition, opts.CreateDir, err)
+	}
+	return h, err
+}
+
+func (b *Backend) open_(_ context.Context, opts vfs.OpenOptions) (vfs.Handle, error) {
+	if opts.Disposition != vfs.DispositionOpen && opts.Disposition != vfs.DispositionOpenIf { // making, replacing or emptying a file: refused (CreateDir is only Windows saying "this must be a folder")
 		return nil, os.ErrPermission
 	}
 	p := strings.Trim(strings.ReplaceAll(opts.Path, "\\", "/"), "/")
@@ -246,4 +412,23 @@ func wildcard(p, s string) bool {
 		p, s = p[1:], s[1:]
 	}
 	return len(s) == 0
+}
+
+// relay passes SMB messages from one side to the other and notes what they are (the command, and the status of an answer) when the log is on.
+func relay(to, from net.Conn, who string, logf func(format string, args ...any)) {
+	for {
+		msg, err := readFrame(from)
+		if err != nil {
+			return
+		}
+		if logf != nil && len(msg) >= 16 && msg[0] == 0xFE {
+			logf("smb: %s: command %d status %#x flags %#x msgid %d (%d bytes)", who, binary.LittleEndian.Uint16(msg[12:]), binary.LittleEndian.Uint32(msg[8:]), binary.LittleEndian.Uint32(msg[16:]), binary.LittleEndian.Uint64(msg[24:]), len(msg))
+			if c := binary.LittleEndian.Uint16(msg[12:]); c <= 1 || (c == 16 && len(msg) < 110 && who == "server") {
+				logf("smb: %s bytes: % x", who, msg[:min(len(msg), 400)])
+			}
+		}
+		if _, err := to.Write(frame(msg)); err != nil {
+			return
+		}
+	}
 }
