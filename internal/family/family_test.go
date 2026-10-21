@@ -89,7 +89,7 @@ func TestAnArchRelativeStartsFromItsOwnKernelNotTheLongTermOne(t *testing.T) {
 
 func TestProxmoxGetsItsIsoAsASecondStartUpDisk(t *testing.T) {
 	b, _ := Detect(fake{"/.pve-cd-id.txt": true, "/boot/linux26": true, "/boot/initrd.img": true}, urls)
-	if !strings.Contains(lines(b), "initrd --name proxmox.iso http://s/iso/x.iso") {
+	if !strings.Contains(lines(b), "initrd --name /proxmox.iso http://s/iso/x.iso /proxmox.iso") {
 		t.Fatal(lines(b))
 	}
 }

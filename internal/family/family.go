@@ -134,7 +134,7 @@ func proxmox(t Tree, u URLs) (Boot, bool) {
 	return Boot{Family: "Proxmox VE", Commands: []string{
 		"kernel " + u.FS + "/boot/linux26 ro ramdisk_size=16777216 rw quiet splash=silent console=tty0",
 		"initrd " + u.FS + "/boot/initrd.img",
-		"initrd --name proxmox.iso " + u.ISO,
+		"initrd --name /proxmox.iso " + u.ISO + " /proxmox.iso mode=0644",
 		"boot",
 	}}, true
 }
