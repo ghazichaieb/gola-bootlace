@@ -124,7 +124,7 @@ net="name=eth0,bridge=$BRIDGE,firewall=0,ip=$CT_IP"
 [ "$CT_IP" = dhcp ] || { [ -n "$CT_GW" ] && net="$net,gw=$CT_GW"; }
 
 args=(--hostname "$CT_HOSTNAME" --cores "$CT_CORES" --memory "$CT_MEMORY" --swap 0 --rootfs "$ROOTFS_STORAGE:$CT_DISK"
-	--net0 "$net" --unprivileged 1 --onboot 1 --ostype debian --description "Gola Bootlace network boot server (made by bootlace-lxc.sh)")
+	--net0 "$net" --unprivileged 1 --features nesting=1 --onboot 1 --ostype debian --description "Gola Bootlace network boot server (made by bootlace-lxc.sh)")
 if [ -d "$ISO_PATH" ]; then
 	args+=(--mp0 "$ISO_PATH,mp=/srv/isos,ro=1")
 else
