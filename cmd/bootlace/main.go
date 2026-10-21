@@ -122,7 +122,9 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "bootlace: cannot open TFTP port 69: %v\n", err)
 		return 1
 	}
-	go func() { errs <- (&tftp.Server{FS: assets.IPXE(), Logf: logf, LocalIP: ip}).Serve(tftpConn) }()
+	go func() {
+		errs <- (&tftp.Server{FS: assets.IPXE(), Logf: logf, LocalIP: ip, Lookup: web.TFTPLookup}).Serve(tftpConn)
+	}()
 
 	if *mode != "off" {
 		boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Files: map[dhcp.Arch]string{

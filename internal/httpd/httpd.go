@@ -33,8 +33,9 @@ type Server struct {
 	SMBPassword string       // what Windows' set-up environment logs in with (made up when the server starts)
 	Pick        string       // when not empty: the first entry whose name contains this text is the one chosen when nobody chooses (a test bench's shortcut)
 
-	mu    sync.Mutex
-	known map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
+	mu     sync.Mutex
+	known  map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
+	chosen map[string]string     // for FreeBSD ISOs: the ISO (by id) whose loader each PC (by address) fetched; its TFTP requests are answered from it
 }
 
 type recognised struct {
@@ -177,6 +178,9 @@ func (s *Server) inside(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			http.NotFound(w, r)
 			return
+		}
+		if isLoaderName(name) {
+			s.rememberChoice(r.RemoteAddr, iso.ID)
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
 		if r.Header.Get("Range") == "" || strings.HasPrefix(r.Header.Get("Range"), "bytes=0-") {

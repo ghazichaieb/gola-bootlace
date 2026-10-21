@@ -93,3 +93,13 @@ func TestProxmoxGetsItsIsoAsASecondStartUpDisk(t *testing.T) {
 		t.Fatal(lines(b))
 	}
 }
+
+func TestFreeBSDStartsItsOwnLoaderFromTheIso(t *testing.T) {
+	b, ok := Detect(fake{"/boot/kernel/kernel": true, "/boot/loader.efi": true, "/boot/pxeboot": true}, urls)
+	if !ok || b.Family != "FreeBSD" || !strings.Contains(lines(b), "chain http://s/fs/abc/boot/loader.efi") || !strings.Contains(lines(b), "chain http://s/fs/abc/boot/pxeboot") {
+		t.Fatalf("%v %v", b, ok)
+	}
+	if _, ok := Detect(fake{"/boot/kernel/kernel": true}, urls); ok {
+		t.Fatal("a kernel without the UEFI loader is not enough")
+	}
+}

@@ -39,7 +39,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, debianLive, ubuntu, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, debianLive, ubuntu, freeBSD, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -170,4 +170,16 @@ func windows(t Tree, u URLs) (Boot, bool) {
 		return Boot{}, false
 	}
 	return Boot{Family: "Windows setup", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
+}
+
+// FreeBSD and what is built on it (pfSense, OPNsense, TrueNAS CORE): FreeBSD's own loader is started from the ISO and then reads everything else,
+// the kernel and the ISO itself as a memory disk, by TFTP from this server (see package httpd, which chooses the files by who asks).
+func freeBSD(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/boot/kernel/kernel") || !t.Exists("/boot/loader.efi") {
+		return Boot{}, false
+	}
+	return Boot{Family: "FreeBSD", Commands: []string{
+		"echo Starting the FreeBSD loader. It reads the kernel and the ISO from this server by TFTP: this takes a while",
+		"iseq ${platform} efi && chain " + u.FS + "/boot/loader.efi || chain " + u.FS + "/boot/pxeboot",
+	}}, true
 }

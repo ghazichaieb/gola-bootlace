@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io/fs"
 	"net"
 	"strings"
 	"testing"
@@ -143,5 +144,30 @@ func TestWritingIsRefused(t *testing.T) {
 	n, _, err := conn.ReadFrom(buf)
 	if err != nil || binary.BigEndian.Uint16(buf) != opERROR || binary.BigEndian.Uint16(buf[2:]) != errAccess {
 		t.Fatalf("expected an access violation error, got %v %v", n, err)
+	}
+}
+
+// A lookup that depends on who asks is tried before the files of the FS, and the FS answers whatever it does not know.
+func TestALookupAnswersBeforeTheFilesDo(t *testing.T) {
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	files := fstest.MapFS{"a.txt": {Data: []byte("from the fs")}, "b.txt": {Data: []byte("also the fs")}}
+	s := &Server{FS: files, Timeout: 300 * time.Millisecond, Retries: 3, Lookup: func(client net.IP, name string) (fs.File, bool) {
+		if name != "a.txt" || !client.IsLoopback() {
+			return nil, false
+		}
+		f, err := fstest.MapFS{"a.txt": {Data: []byte("from the lookup")}}.Open("a.txt")
+		return f, err == nil
+	}}
+	go s.Serve(conn)
+	addr := conn.LocalAddr().(*net.UDPAddr)
+	if data, _, msg := get(t, addr, "a.txt"); string(data) != "from the lookup" {
+		t.Fatalf("a.txt: %q %q", data, msg)
+	}
+	if data, _, msg := get(t, addr, "b.txt"); string(data) != "also the fs" {
+		t.Fatalf("b.txt: %q %q", data, msg)
 	}
 }

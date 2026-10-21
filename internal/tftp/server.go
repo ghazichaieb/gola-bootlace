@@ -38,6 +38,9 @@ type Server struct {
 	Timeout time.Duration // how long to wait for the client's answer before sending again (default 2 s)
 	Retries int           // how many times to send again before giving up (default 5)
 	Logf    func(format string, args ...any)
+	// Lookup is asked first for every file a client wants: it can answer from something that depends on who is asking (FreeBSD's loader reads its
+	// kernel and files by TFTP, from the ISO that client chose). When it has no answer the files of FS are served.
+	Lookup func(client net.IP, name string) (fs.File, bool)
 	// LocalIP is this server's address as the clients reach it. Answers leave from it: on a computer with several networks the operating system
 	// might otherwise answer from another network's address, which a PC's firmware rejects.
 	LocalIP net.IP
@@ -122,10 +125,20 @@ func (s *Server) read(conn net.PacketConn, client net.Addr, raw []byte) error {
 		sendError(conn, client, errNotFound, "file not found")
 		return fmt.Errorf("refused the path %q", req.file)
 	}
-	f, err := s.FS.Open(name)
-	if err != nil {
-		sendError(conn, client, errNotFound, "file not found")
-		return fmt.Errorf("%s: not found", name)
+	var f fs.File
+	if s.Lookup != nil {
+		if udp, ok := client.(*net.UDPAddr); ok {
+			if lf, ok := s.Lookup(udp.IP, name); ok {
+				f = lf
+			}
+		}
+	}
+	if f == nil {
+		var err error
+		if f, err = s.FS.Open(name); err != nil {
+			sendError(conn, client, errNotFound, "file not found")
+			return fmt.Errorf("%s: not found", name)
+		}
 	}
 	defer f.Close()
 	info, err := f.Stat()

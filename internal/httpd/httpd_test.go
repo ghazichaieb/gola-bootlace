@@ -57,3 +57,15 @@ func TestIsosAreServedWithRangesAndUnknownNamesAreRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestFreeBSDsLoaderConfigurationGetsTheMemoryDiskLines(t *testing.T) {
+	got := string(loaderConf([]byte("autoboot_delay=\"2\"")))
+	for _, want := range []string{"autoboot_delay=\"2\"\n", "mdroot_load=\"YES\"", "mdroot_type=\"md_image\"", "mdroot_name=\"/boot.iso\"", "vfs.root.mountfrom=\"cd9660:/dev/md0\""} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in\n%s", want, got)
+		}
+	}
+	if !isLoaderName("boot/loader.efi") || !isLoaderName("boot/pxeboot") || isLoaderName("boot/kernel/kernel") {
+		t.Error("only the two loaders say which ISO a PC chose")
+	}
+}
