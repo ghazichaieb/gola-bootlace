@@ -17,8 +17,10 @@ type Tree interface {
 
 // URLs says where the web server offers this ISO: the whole file, and its contents file by file (both without a trailing slash).
 type URLs struct {
-	ISO string
-	FS  string
+	ISO  string
+	FS   string
+	Win  string // generated files for Windows set-up (see package winpe)
+	Base string // the server
 }
 
 // Boot is how to start one ISO.
@@ -37,7 +39,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){proxmox, alpine, archLinux, debianLive, ubuntu, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, debianLive, ubuntu, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -160,4 +162,12 @@ func fedoraLike(t Tree, u URLs) (Boot, bool) {
 		return boot("Fedora (live)", u, "/images/pxeboot/vmlinuz", "/images/pxeboot/initrd.img", "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"), true
 	}
 	return boot("Red Hat family (installer)", u, "/images/pxeboot/vmlinuz", "/images/pxeboot/initrd.img", "ip=dhcp inst.repo="+u.FS+" console=tty0"), true
+}
+
+// Windows installation media: Windows' own set-up environment is loaded with wimboot, and the installation files come from a share (see package winpe).
+func windows(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/sources/boot.wim") || !t.Exists("/boot/boot.sdi") || !t.Exists("/efi/boot/bootx64.efi") || !t.Exists("/efi/microsoft/boot/bcd") {
+		return Boot{}, false
+	}
+	return Boot{Family: "Windows setup", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
 }

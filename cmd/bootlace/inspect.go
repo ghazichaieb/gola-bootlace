@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
-	"github.com/ghazichaieb/gola-bootlace/internal/iso9660"
 )
 
 // inspect opens each ISO named on the command line and says what the server finds: the top level of its file system and the way it would be started.
@@ -32,7 +32,7 @@ func inspect(args []string, stdout, stderr io.Writer) int {
 		}
 		info, _ := f.Stat()
 		fmt.Fprintf(stdout, "%s (%.2f GB)\n", name, float64(info.Size())/(1<<30))
-		img, err := iso9660.Open(f, info.Size())
+		img, err := disc.Open(f, info.Size())
 		if err != nil {
 			fmt.Fprintf(stdout, "  no ISO 9660 file system: %v\n", err)
 			f.Close()

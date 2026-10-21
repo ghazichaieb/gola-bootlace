@@ -5,26 +5,32 @@ package httpd
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"sync"
+	"time"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/assets"
+	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
-	"github.com/ghazichaieb/gola-bootlace/internal/iso9660"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
+	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
 )
 
 // Server builds the handler. ISODir is read at every request, so an ISO copied into the folder shows up in the next menu without a restart.
 type Server struct {
-	ISODir string
-	Title  string // the heading of the menu
-	Base   string // how PCs reach this server, for example http://192.168.88.1:8080 (no trailing slash)
-	Logf   func(format string, args ...any)
-	Menu   menu.Options // which entry is chosen when nobody chooses, and after how many seconds
-	Pick   string       // when not empty: the first entry whose name contains this text is the one chosen when nobody chooses (a test bench's shortcut)
+	ISODir      string
+	Title       string // the heading of the menu
+	Base        string // how PCs reach this server, for example http://192.168.88.1:8080 (no trailing slash)
+	Logf        func(format string, args ...any)
+	Menu        menu.Options // which entry is chosen when nobody chooses, and after how many seconds
+	SMBPort     int          // the port of the share that shows an ISO to Windows' set-up environment (445 unless something else holds it)
+	SMBPassword string       // what Windows' set-up environment logs in with (made up when the server starts)
+	Pick        string       // when not empty: the first entry whose name contains this text is the one chosen when nobody chooses (a test bench's shortcut)
 
 	mu    sync.Mutex
 	known map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
@@ -47,6 +53,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/boot.ipxe", s.menu)
 	mux.HandleFunc("/iso/", s.iso)
 	mux.HandleFunc("/fs/", s.inside)
+	mux.HandleFunc("/ipxe/", s.loader)
+	mux.HandleFunc("/w/", s.windows)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
 	return mux
 }
@@ -62,8 +70,8 @@ func (s *Server) recognise(iso isos.ISO) (family.Boot, bool) {
 	s.mu.Unlock()
 	var result recognised
 	if f, err := os.Open(iso.Path); err == nil {
-		if img, err := iso9660.Open(f, iso.Size); err == nil {
-			result.boot, result.ok = family.Detect(img, family.URLs{ISO: s.Base + isoPath(iso.Name), FS: s.Base + "/fs/" + iso.ID})
+		if img, err := disc.Open(f, iso.Size); err == nil {
+			result.boot, result.ok = family.Detect(img, family.URLs{ISO: s.Base + isoPath(iso.Name), FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Base: s.Base})
 		}
 		f.Close()
 	}
@@ -159,7 +167,7 @@ func (s *Server) inside(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer f.Close()
-		img, err := iso9660.Open(f, iso.Size)
+		img, err := disc.Open(f, iso.Size)
 		if err != nil {
 			http.Error(w, "this ISO has no readable file system", http.StatusUnprocessableEntity)
 			return
@@ -178,6 +186,65 @@ func (s *Server) inside(w http.ResponseWriter, r *http.Request) {
 	}
 	http.NotFound(w, r)
 }
+
+// loader serves the boot loaders embedded in the program (wimboot, for Windows).
+func (s *Server) loader(w http.ResponseWriter, r *http.Request) {
+	name := strings.TrimPrefix(r.URL.Path, "/ipxe/")
+	f, err := assets.IPXE().Open(name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+	rs, ok := f.(io.ReadSeeker)
+	if !ok {
+		http.Error(w, "cannot read the file", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	http.ServeContent(w, r, name, time.Time{}, rs)
+}
+
+// windows serves the files made for one Windows ISO: /w/<id>/boot.ipxe, winpeshl.ini and bootlace.cmd.
+func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
+	id, file, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/w/"), "/")
+	list, err := isos.Scan(s.ISODir)
+	if err != nil {
+		http.Error(w, "cannot read the ISO folder", http.StatusInternalServerError)
+		return
+	}
+	for _, iso := range list {
+		if iso.ID != id {
+			continue
+		}
+		u, err := url.Parse(s.Base)
+		if err != nil {
+			http.Error(w, "bad server address", http.StatusInternalServerError)
+			return
+		}
+		set := winpe.Settings{Base: s.Base, FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Host: u.Hostname(), Share: ShareName(iso), User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort}
+		var body string
+		switch file {
+		case "boot.ipxe":
+			body = winpe.IPXE(set)
+		case "winpeshl.ini":
+			body = winpe.ShellIni()
+		case "bootlace.cmd":
+			body = winpe.Cmd(set)
+		default:
+			http.NotFound(w, r)
+			return
+		}
+		s.logf("%s fetches %s for %s", r.RemoteAddr, file, iso.Title)
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		fmt.Fprint(w, body)
+		return
+	}
+	http.NotFound(w, r)
+}
+
+// ShareName is the SMB share that shows an ISO to Windows' set-up environment.
+func ShareName(iso isos.ISO) string { return "w" + iso.ID }
 
 // isoPath is the URL path of an ISO, escaped.
 func isoPath(name string) string {

@@ -13,7 +13,8 @@ Shipped or planned (update this list the day something is copied or bundled):
   e1e6abf3fce99e6310ba2fe29bf64695df6879de6b503618c3237a86e1a76f42), snponly.efi (x86_64-efi/snponly.efi, SHA-256
   42f83339c1458dc69f8a2475df16fa432a444f54bf5901911fcce5963a210627), undionly.kpxe (SHA-256
   81a80cf5d3429b4add78015529e46662139e89242478cd3d4215be58f936e4df). They are unsigned: UEFI Secure Boot must be off for them (see issue #10).
-- wimboot (https://ipxe.org/wimboot), GPL-2.0-or-later. Planned: used to start Windows setup images.
+- wimboot 2.9.0 (https://ipxe.org/wimboot), GPL-2.0-or-later, source at https://github.com/ipxe/wimboot. SHIPPED unchanged in internal/assets/ipxe/wimboot (downloaded 2026-10-21
+  from the project's release, SHA-256 5f067ccdc4d084d5bf77b6c853bd0f8402dfc2b4cd1b103d358993ae97fae8e3). Starts Windows setup images.
 - Samba (https://www.samba.org), GPL-3.0-or-later. Planned: run as a separate program next to the server, for Windows ISOs.
 - 7-Zip (https://www.7-zip.org), LGPL and BSD parts. Planned: listing ISO contents, run as a separate program.
 
