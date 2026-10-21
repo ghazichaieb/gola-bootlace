@@ -5,6 +5,7 @@
 package family
 
 import (
+	"path"
 	"sort"
 	"strings"
 )
@@ -178,8 +179,11 @@ func freeBSD(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists("/boot/kernel/kernel") || !t.Exists("/boot/loader.efi") {
 		return Boot{}, false
 	}
-	return Boot{Family: "FreeBSD", Commands: []string{
-		"echo Starting the FreeBSD loader. It reads the kernel and the ISO from this server by TFTP: this takes a while",
-		"iseq ${platform} efi && chain " + u.FS + "/boot/loader.efi || chain " + u.FS + "/boot/pxeboot",
+	// FreeBSD's loader cannot use the network card while iPXE holds it, so iPXE says which PC chose this ISO and restarts it: the next network boot
+	// of that PC gets the loader as boot file straight from the firmware (see package handoff).
+	return Boot{Family: "FreeBSD, experimental", Commands: []string{
+		"echo Restarting this PC to start the FreeBSD loader from the firmware. It reads the kernel and the ISO by TFTP: this takes a while",
+		"imgfetch --name handoff " + u.Base + "/next?iso=" + path.Base(u.FS) + "&mac=${net0/mac}&ip=${net0/ip}",
+		"reboot",
 	}}, true
 }

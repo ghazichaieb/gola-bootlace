@@ -73,6 +73,8 @@ type Boot struct {
 	ServerIP net.IP          // this server, as the client reaches it
 	Files    map[Arch]string // boot loader file name (served by TFTP) for each architecture
 	Script   string          // what a client that already runs iPXE should load, normally http://<server>:<port>/boot.ipxe
+	// Handoff may name another boot file for one PC (by MAC) that is starting for the second time because iPXE sent it away to run FreeBSD's loader.
+	Handoff func(mac string, efi bool) (string, bool)
 }
 
 // Reply builds the proxy answer to a PXE request: an offer to a discover, an acknowledgement to a request. It returns false when the client
@@ -83,8 +85,10 @@ func (b Boot) Reply(req *Packet) (*Packet, bool) {
 	}
 	file := b.Script
 	if !IsIPXE(req) {
-		var ok bool
-		if file, ok = b.Files[ClientArch(req).Canonical()]; !ok {
+		a := ClientArch(req).Canonical()
+		if f, ok := b.handoff(req, a); ok {
+			file = f
+		} else if file, ok = b.Files[a]; !ok {
 			return nil, false
 		}
 	}
@@ -116,4 +120,11 @@ func Destination(req *Packet, port int) *net.UDPAddr {
 		return &net.UDPAddr{IP: req.CIAddr, Port: port}
 	}
 	return &net.UDPAddr{IP: net.IPv4bcast, Port: port}
+}
+
+func (b Boot) handoff(req *Packet, a Arch) (string, bool) {
+	if b.Handoff == nil {
+		return "", false
+	}
+	return b.Handoff(req.MAC().String(), a != ArchBIOS)
 }

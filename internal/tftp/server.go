@@ -64,6 +64,9 @@ func (s *Server) Serve(conn net.PacketConn) error {
 			return err
 		}
 		request := append([]byte(nil), buf[:n]...)
+		if n >= 2 && binary.BigEndian.Uint16(request) == opRRQ {
+			s.logf("tftp: read request from %v: %q", client, strings.ReplaceAll(string(request[2:]), "\x00", " "))
+		}
 		go s.handle(conn.LocalAddr(), client, request)
 	}
 }

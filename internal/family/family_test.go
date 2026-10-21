@@ -94,9 +94,9 @@ func TestProxmoxGetsItsIsoAsASecondStartUpDisk(t *testing.T) {
 	}
 }
 
-func TestFreeBSDStartsItsOwnLoaderFromTheIso(t *testing.T) {
-	b, ok := Detect(fake{"/boot/kernel/kernel": true, "/boot/loader.efi": true, "/boot/pxeboot": true}, urls)
-	if !ok || b.Family != "FreeBSD" || !strings.Contains(lines(b), "chain http://s/fs/abc/boot/loader.efi") || !strings.Contains(lines(b), "chain http://s/fs/abc/boot/pxeboot") {
+func TestFreeBSDRestartsThePcSoThatItsFirmwareStartsTheLoader(t *testing.T) {
+	b, ok := Detect(fake{"/boot/kernel/kernel": true, "/boot/loader.efi": true, "/boot/pxeboot": true}, URLs{ISO: "http://s/iso/x.iso", FS: "http://s/fs/abc", Base: "http://s"})
+	if !ok || !strings.HasPrefix(b.Family, "FreeBSD") || !strings.Contains(lines(b), "imgfetch --name handoff http://s/next?iso=abc&mac=${net0/mac}&ip=${net0/ip}") || !strings.Contains(lines(b), "reboot") {
 		t.Fatalf("%v %v", b, ok)
 	}
 	if _, ok := Detect(fake{"/boot/kernel/kernel": true}, urls); ok {

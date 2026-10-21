@@ -17,6 +17,7 @@ import (
 
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
 	"github.com/ghazichaieb/gola-bootlace/internal/dhcp"
+	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
 	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
@@ -102,7 +103,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	if smbPassword == "" {
 		smbPassword = randomPassword()
 	}
-	web := &httpd.Server{SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Menu: menu.Options{Default: menuChoice(*menuDefault, *menuLocal), Timeout: *menuTimeout}, Pick: *menuPick}
+	registry := &handoff.Registry{}
+	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Menu: menu.Options{Default: menuChoice(*menuDefault, *menuLocal), Timeout: *menuTimeout}, Pick: *menuPick}
 	errs := make(chan error, 4)
 
 	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
@@ -127,7 +129,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}()
 
 	if *mode != "off" {
-		boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Files: map[dhcp.Arch]string{
+		boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Handoff: registry.BootFile, Files: map[dhcp.Arch]string{
 			dhcp.ArchBIOS: "undionly.kpxe", dhcp.ArchX64EFI: "ipxe.efi",
 		}}
 		var responder dhcp.Responder = boot

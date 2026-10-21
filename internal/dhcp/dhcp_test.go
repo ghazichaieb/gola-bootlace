@@ -126,3 +126,28 @@ func TestRepliesGoToTheRightPlace(t *testing.T) {
 		t.Errorf("the relay expected, got %v", d)
 	}
 }
+
+func TestAPCSentToFreeBSDsLoaderGetsTheLoaderAsBootFileFromItsFirmwareOnly(t *testing.T) {
+	b := boot()
+	b.Handoff = func(mac string, efi bool) (string, bool) {
+		if mac != "00:15:5d:08:02:2d" {
+			return "", false
+		}
+		if efi {
+			return "boot/loader.efi", true
+		}
+		return "boot/pxeboot", true
+	}
+	req, _ := Parse(pxeRequest(Discover, 7, ""))
+	if reply, ok := b.Reply(req); !ok || reply.File != "boot/loader.efi" {
+		t.Fatalf("efi: %+v %v", reply, ok)
+	}
+	req, _ = Parse(pxeRequest(Discover, 0, ""))
+	if reply, _ := b.Reply(req); reply.File != "boot/pxeboot" {
+		t.Fatalf("bios: %q", reply.File)
+	}
+	req, _ = Parse(pxeRequest(Discover, 7, "iPXE"))
+	if reply, _ := b.Reply(req); reply.File != "http://192.168.1.10:8080/boot.ipxe" {
+		t.Fatalf("a client that already runs iPXE keeps its script: %q", reply.File)
+	}
+}

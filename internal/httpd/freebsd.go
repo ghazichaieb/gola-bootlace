@@ -5,9 +5,11 @@ package httpd
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
+	"net/http"
 	"os"
 	"path"
 	"time"
@@ -29,30 +31,45 @@ func loaderConf(own []byte) []byte {
 	return b.Bytes()
 }
 
-// rememberChoice notes that this PC fetched the loader of an ISO: its TFTP requests are answered from that ISO from now on.
-func (s *Server) rememberChoice(remoteAddr, id string) {
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err != nil {
+// next is what iPXE calls for an ISO that needs FreeBSD's loader started by the PC's own firmware: it says which PC (MAC and address) chose which ISO,
+// then restarts the PC. The next network boot of that PC is then answered with the loader as boot file.
+func (s *Server) next(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	mac, ip, id := q.Get("mac"), q.Get("ip"), q.Get("iso")
+	if s.Handoff == nil || mac == "" || ip == "" || id == "" || net.ParseIP(ip) == nil {
+		http.Error(w, "mac, ip and iso are needed", http.StatusBadRequest)
 		return
 	}
-	s.mu.Lock()
-	if s.chosen == nil {
-		s.chosen = map[string]string{}
+	list, err := isos.Scan(s.ISODir)
+	if err != nil {
+		http.Error(w, "cannot read the ISO folder", http.StatusInternalServerError)
+		return
 	}
-	s.chosen[host] = id
-	s.mu.Unlock()
+	for _, iso := range list {
+		if iso.ID == id {
+			s.Handoff.Set(mac, ip, id)
+			s.logf("%s (%s) will start %s with FreeBSD's loader at its next network boot", mac, ip, iso.Title)
+			fmt.Fprintln(w, "ok")
+			return
+		}
+	}
+	http.NotFound(w, r)
 }
 
-// isLoaderName says whether a path inside an ISO is one of FreeBSD's boot loaders (fetched over HTTP by iPXE).
+// isLoaderName says whether a path inside an ISO is one of FreeBSD's boot loaders.
 func isLoaderName(name string) bool { return name == "boot/loader.efi" || name == "boot/pxeboot" }
 
 // TFTPLookup answers a TFTP request from the ISO the client chose; it has no answer for clients that did not choose a FreeBSD ISO.
 func (s *Server) TFTPLookup(client net.IP, name string) (fs.File, bool) {
-	s.mu.Lock()
-	id, ok := s.chosen[client.String()]
-	s.mu.Unlock()
+	if s.Handoff == nil {
+		return nil, false
+	}
+	id, ok := s.Handoff.ISO(client.String())
 	if !ok {
 		return nil, false
+	}
+	if isLoaderName(name) {
+		s.Handoff.Fetched(client.String())
 	}
 	list, err := isos.Scan(s.ISODir)
 	if err != nil {

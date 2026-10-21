@@ -113,6 +113,7 @@ func (f *Full) Respond(req *Packet) (*Packet, bool) {
 		return nil, false // no address left: say nothing
 	}
 	reply.YIAddr = ip
+	reply.SIAddr = f.ServerIP // "next server": FreeBSD's loader, which does its own DHCP, reads its files by TFTP from here
 	reply.Opts[OptMessageType] = []byte{Offer}
 	if t == Request {
 		reply.Opts[OptMessageType] = []byte{ACK}
