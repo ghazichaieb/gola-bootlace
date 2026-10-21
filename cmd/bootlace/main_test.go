@@ -18,12 +18,12 @@ func TestVersionNamesTheProjectAndCarriesTheAttributionLine(t *testing.T) {
 	}
 }
 
-func TestNoArgumentsSaysThereIsNothingToRunYet(t *testing.T) {
+func TestNoArgumentsShowsHowToStartTheServer(t *testing.T) {
 	var out, errOut bytes.Buffer
 	if code := run(nil, &out, &errOut); code == 0 {
 		t.Fatal("expected a non-zero exit code")
 	}
-	if !strings.Contains(errOut.String(), "early design") {
+	if !strings.Contains(errOut.String(), "bootlace serve") {
 		t.Errorf("unexpected message %q", errOut.String())
 	}
 }
