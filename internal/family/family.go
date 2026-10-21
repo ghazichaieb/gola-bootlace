@@ -150,7 +150,7 @@ func ubuntu(t Tree, u URLs) (Boot, bool) {
 	if initrd == "" {
 		return Boot{}, false
 	}
-	return boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp url="+u.ISO+" boot=casper console=tty0"), true
+	return boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp url="+u.ISO+" boot=casper cloud-init=disabled console=tty0"), true
 }
 
 // Fedora, CentOS, Rocky, Alma and other Red Hat family ISOs: an installer reads its packages from the web server, a live ISO is fetched whole.
