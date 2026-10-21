@@ -40,6 +40,7 @@ type Options struct {
 	User     string
 	Password string
 	Logf     func(format string, args ...any)
+	Debug    bool   // log every message and every file opening (a lot: for finding faults); without it only each new connection is logged
 	Forward  string // for finding faults: pass every connection on to another SMB server (host:port) and log what is said, instead of serving the ISOs
 }
 
@@ -47,7 +48,12 @@ type Options struct {
 // expects the server to answer in SMB 2 and the client to start again; the library speaks SMB 2 only. A small front end on the public address
 // answers that first message and hands every connection on to the library's server, which listens on this computer's loopback address.
 func Serve(ctx context.Context, o Options) error {
-	backend := &Backend{dir: o.ISODir, open: map[string]*opened{}, logf: o.Logf}
+	trace := o.Logf
+	level := slog.LevelDebug
+	if !o.Debug {
+		trace, level = nil, slog.LevelWarn
+	}
+	backend := &Backend{dir: o.ISODir, open: map[string]*opened{}, logf: trace}
 	inner, err := freeLoopbackAddr()
 	if err != nil {
 		return err
@@ -58,7 +64,7 @@ func Serve(ctx context.Context, o Options) error {
 	opts := []server.Option{server.WithAddr(inner),
 		server.WithShares(vfs.NewDiskShare(ShareName, backend)),
 		server.WithAuth(ntlmssp.NewServer(oneUser{user: o.User, password: o.Password}, "BOOTLACE")),
-		server.WithLogger(slog.New(slog.NewTextHandler(logWriter(o.Logf), &slog.HandlerOptions{Level: slog.LevelDebug})))}
+		server.WithLogger(slog.New(slog.NewTextHandler(logWriter(o.Logf), &slog.HandlerOptions{Level: level})))}
 	srv, err := server.New(opts...)
 	if err != nil {
 		return err
@@ -77,7 +83,10 @@ func Serve(ctx context.Context, o Options) error {
 			if err != nil {
 				return
 			}
-			go handOn(c, inner, o.Forward != "", o.Logf)
+			if o.Logf != nil {
+				o.Logf("smb: %s connected", c.RemoteAddr())
+			}
+			go handOn(c, inner, o.Forward != "", trace)
 		}
 	}()
 	if o.Forward != "" {

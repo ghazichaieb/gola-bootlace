@@ -78,7 +78,8 @@ Wants=network-online.target
 
 [Service]
 EnvironmentFile=/etc/default/bootlace
-ExecStart=/usr/local/bin/bootlace serve -iso-dir /srv/isos -dhcp proxy $BOOTLACE_ARGS
+StateDirectory=bootlace
+ExecStart=/usr/local/bin/bootlace serve -iso-dir /srv/isos -dhcp proxy -config /var/lib/bootlace/config.json $BOOTLACE_ARGS
 Restart=on-failure
 RestartSec=3
 
@@ -95,6 +96,9 @@ if [ -n "${CTID:-}" ] && pct status "$CTID" >/dev/null 2>&1; then
 	pct status "$CTID" | grep -q running || pct start "$CTID"
 	pct exec "$CTID" -- systemctl stop bootlace || true
 	pct push "$CTID" "$tmp/bootlace" /usr/local/bin/bootlace --perms 755
+	write_unit
+	pct push "$CTID" "$tmp/bootlace.service" /etc/systemd/system/bootlace.service
+	pct exec "$CTID" -- systemctl daemon-reload
 	pct exec "$CTID" -- systemctl start bootlace
 	say "Done. Bootlace in container $CTID is updated and running."
 	exit 0
@@ -155,13 +159,19 @@ pct exec "$CTID" -- systemctl enable --now bootlace
 sleep 2
 pct exec "$CTID" -- systemctl is-active bootlace >/dev/null || { pct exec "$CTID" -- journalctl -u bootlace -n 20 --no-pager; die "Bootlace did not start"; }
 
+password=$(pct exec "$CTID" -- journalctl -u bootlace --no-pager 2>/dev/null | sed -n 's/.*the password was made up: \([^ ]*\) .*//p' | tail -n 1)
+
 cat <<DONE
 
 Gola Bootlace is running in container $CTID at $addr.
 
+  web page    http://$addr:8080/admin/   (ISOs, PCs and their rules, menu settings, live log)
+  password    ${password:-"set earlier: see Account in the web page, or: pct exec $CTID -- journalctl -u bootlace | grep -i password"}
+
   ISOs        put them in $ISO_PATH on this host (shown to the container read-only), then they appear in the menu at once
   menu        http://$addr:8080/boot.ipxe
   log         pct exec $CTID -- journalctl -u bootlace -f
+  settings    kept in the container: /var/lib/bootlace/config.json (changed in the web page)
   update      CTID=$CTID bash -c "\$(curl -fsSL <link to this script>)"
   remove      pct stop $CTID && pct destroy $CTID
 

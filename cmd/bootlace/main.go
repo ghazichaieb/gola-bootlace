@@ -15,11 +15,13 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/admin"
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
+	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/dhcp"
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
-	"github.com/ghazichaieb/gola-bootlace/internal/menu"
+	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
 	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
 	"github.com/ghazichaieb/gola-bootlace/internal/tftp"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
@@ -80,6 +82,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	menuLocal := fs.Bool("menu-local", false, "after -menu-timeout seconds the PC goes on to its own disk instead of waiting (useful after an installation has restarted it)")
 	menuPick := fs.String("menu-pick", "", "the entry whose name contains this text starts by itself after -menu-timeout seconds (instead of -menu-default)")
 	menuTimeout := fs.Int("menu-timeout", 0, "seconds before the default menu entry starts (0: wait for ever)")
+	configPath := fs.String("config", "bootlace.json", "the file where the settings made in the web interface are kept (the menu options above only give its first contents)")
+	adminPassword := fs.String("admin-password", os.Getenv("BOOTLACE_ADMIN_PASSWORD"), "the password of the web interface (default: made up the first time and written in the log; also read from BOOTLACE_ADMIN_PASSWORD)")
+	noAdmin := fs.Bool("no-admin", false, "do not offer the web interface")
+	debugSMB := fs.Bool("debug-smb", false, "log every message of the Windows file share (a lot: for finding faults)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -87,8 +93,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "serve: unexpected argument %q (a folder name with a space must be in quotes); nothing was started\n", fs.Arg(0))
 		return 2
 	}
+	history := logbuf.New(2000) // the last lines of the log, for the web interface
 	logf := func(format string, a ...any) {
 		fmt.Fprintf(stdout, time.Now().Format("15:04:05")+"  "+format+"\n", a...)
+		history.Logf(format, a...)
 	}
 	ip := net.ParseIP(*ipFlag)
 	if ip == nil {
@@ -104,7 +112,38 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		smbPassword = randomPassword()
 	}
 	registry := &handoff.Registry{}
-	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Menu: menu.Options{Default: menuChoice(*menuDefault, *menuLocal), Timeout: *menuTimeout}, Pick: *menuPick}
+	seed := config.Config{Title: "Gola Bootlace", MenuTimeout: *menuTimeout, Hidden: map[string]bool{}, Titles: map[string]string{}}
+	switch {
+	case *menuPick != "":
+		seed.Default = "pick:" + *menuPick
+	case *menuLocal:
+		seed.Default = "local"
+	case *menuDefault > 0:
+		seed.Default = fmt.Sprintf("index:%d", *menuDefault)
+	}
+	store, created, err := config.Open(*configPath, seed)
+	if err != nil {
+		fmt.Fprintf(stderr, "bootlace: cannot use the settings file: %v\n", err)
+		return 1
+	}
+	if created {
+		logf("settings file %s made from the command-line menu options", store.Path())
+	}
+	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Title: "Gola Bootlace", Base: base, Logf: logf, Config: store}
+	if !*noAdmin {
+		generated, err := admin.EnsurePassword(store, *adminPassword)
+		if err != nil {
+			fmt.Fprintf(stderr, "bootlace: cannot set the web interface password: %v\n", err)
+			return 1
+		}
+		if generated != "" {
+			logf("web interface: the password was made up: %s  (change it under Account; it is shown only this once)", generated)
+		}
+		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
+			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}
+		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, ISODir: *isoDir, Logf: logf}).Mount()
+		logf("web interface: %s/admin/", base)
+	}
 	errs := make(chan error, 4)
 
 	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
@@ -115,7 +154,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	go func() { errs <- http.Serve(httpListener, web.Handler()) }()
 
 	go func() {
-		errs <- smbshare.Serve(context.Background(), smbshare.Options{Addr: fmt.Sprintf("%s:%d", ip, *smbPort), Forward: *smbForward, ISODir: *isoDir, User: "bootlace", Password: smbPassword, Logf: logf})
+		errs <- smbshare.Serve(context.Background(), smbshare.Options{Addr: fmt.Sprintf("%s:%d", ip, *smbPort), Forward: *smbForward, ISODir: *isoDir, User: "bootlace", Password: smbPassword, Logf: logf, Debug: *debugSMB})
 	}()
 	logf(`Windows set-up share: \\%s\%s on port %d`, ip, smbshare.ShareName, *smbPort)
 
@@ -198,12 +237,4 @@ func privateIP() net.IP {
 		}
 	}
 	return nil
-}
-
-// menuChoice is the menu entry that starts by itself: -menu-local (the PC's own disk) wins over -menu-default.
-func menuChoice(def int, local bool) int {
-	if local {
-		return -1
-	}
-	return def
 }

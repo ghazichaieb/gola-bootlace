@@ -11,6 +11,7 @@ Defaults: next free container number, name `bootlace`, 1 core, 512 MB, 4 GB disk
 `CT_IP=192.168.1.50/24 CT_GW=192.168.1.1`), ISOs from `/var/lib/vz/template/iso` (where the Proxmox web interface keeps uploaded ISOs; change with
 `ISO_PATH`). The list of every setting is at the top of the script.
 
+* Web page: `http://<container address>:8080/admin/`. The script prints the password it was started with; it is also in `journalctl -u bootlace`.
 * ISOs: upload or copy them into the ISO folder of the host; the menu looks at the folder for every PC that boots, so no restart is needed.
 * Update: run the script again with `CTID=<number>`; it replaces the program and restarts the service.
 * Remove: `pct stop <number> && pct destroy <number>`.

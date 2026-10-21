@@ -37,7 +37,7 @@ Put ISOs in a folder, then on a computer that is on the same network as the PCs 
 bootlace serve -iso-dir /path/to/isos
 ```
 
-and set the PC to boot from the network (PXE). The menu lists every ISO; the web server is on port 8080. Windows installs read their files from a
+and set the PC to boot from the network (PXE). The menu lists every ISO. The management page is at `http://<server>:8080/admin/` (password in the log the first time: [docs/web-interface.md](docs/web-interface.md)). Windows installs read their files from a
 read-only share the program serves itself (port 445, or `-smb-port` when something else holds it; Windows' own file sharing does on a Windows host).
 After an installation restarts the PC, choose "Boot from this PC's own disk" (or start the server with `-menu-local -menu-timeout 5`).
 `tools/lab.ps1` builds and starts a Hyper-V test bench; see its header.

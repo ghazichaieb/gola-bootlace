@@ -58,3 +58,13 @@ func TestTheMenuCanLeaveTheNetworkBootForTheOwnDisk(t *testing.T) {
 		t.Error("the own disk must not be the default unless asked for")
 	}
 }
+
+func TestDirectAndLocalScriptsHaveNoMenu(t *testing.T) {
+	d := Direct("Rule: this PC starts X", Entry{Name: "X", Commands: []string{"echo a", "boot"}})
+	if strings.Contains(d, "choose") || !strings.Contains(d, "echo a || goto failed\n") || !strings.Contains(d, ":failed") || !strings.HasPrefix(d, "#!ipxe\necho Rule: this PC starts X\n") {
+		t.Fatal(d)
+	}
+	if l := Local("own disk"); l != "#!ipxe\necho own disk\nexit\n" {
+		t.Fatal(l)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
+	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
@@ -34,8 +35,16 @@ type Server struct {
 	SMBPassword string       // what Windows' set-up environment logs in with (made up when the server starts)
 	Pick        string       // when not empty: the first entry whose name contains this text is the one chosen when nobody chooses (a test bench's shortcut)
 
-	mu    sync.Mutex
-	known map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
+	// Config holds the settings made in the web interface; without it the fields above are the settings.
+	Config *config.Store
+	// Mount adds handlers (the web interface) to the paths of the server.
+	Mount map[string]http.Handler
+
+	started   time.Time
+	clientsMu sync.Mutex
+	clients   map[string]*Client
+	mu        sync.Mutex
+	known     map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
 	// Handoff holds the PCs that iPXE sent to FreeBSD's loader; their TFTP requests are answered from the ISO they chose.
 	Handoff *handoff.Registry
 }
@@ -53,13 +62,20 @@ func (s *Server) logf(format string, args ...any) {
 
 // Handler serves /boot.ipxe (the menu), /iso/<name> (the files), /fs/<id>/<path> (what is inside an ISO) and /health.
 func (s *Server) Handler() http.Handler {
+	if s.started.IsZero() {
+		s.started = time.Now()
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/boot.ipxe", s.menu)
+	mux.HandleFunc("/boot.ipxe", s.bootScript)
+	mux.HandleFunc("/menu", s.menu)
 	mux.HandleFunc("/iso/", s.iso)
 	mux.HandleFunc("/fs/", s.inside)
 	mux.HandleFunc("/ipxe/", s.loader)
 	mux.HandleFunc("/w/", s.windows)
 	mux.HandleFunc("/next", s.next)
+	for path, h := range s.Mount {
+		mux.Handle(path, h)
+	}
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
 	return mux
 }
@@ -89,50 +105,6 @@ func (s *Server) recognise(iso isos.ISO) (family.Boot, bool) {
 	return result.boot, result.ok
 }
 
-// Entries are the menu lines: one per ISO. An ISO of a known Linux is started from its own kernel; any other is handed to the PC as a disk.
-func (s *Server) Entries() ([]menu.Entry, error) {
-	list, err := isos.Scan(s.ISODir)
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]menu.Entry, 0, len(list))
-	for _, iso := range list {
-		size := fmt.Sprintf("%.1f GB", float64(iso.Size)/(1<<30))
-		if b, ok := s.recognise(iso); ok {
-			entries = append(entries, menu.Entry{Name: fmt.Sprintf("%s  [%s, %s]", iso.Title, b.Family, size), Commands: b.Commands})
-			continue
-		}
-		entries = append(entries, menu.Entry{
-			Name: fmt.Sprintf("%s  [as a disk, %s]", iso.Title, size),
-			Commands: []string{
-				"echo Loading " + oneWord(iso.Title) + " ... the whole ISO is read into memory first, this takes a while",
-				"sanboot --no-describe --drive 0x80 " + s.Base + isoPath(iso.Name),
-			},
-		})
-	}
-	return entries, nil
-}
-
-func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.Entries()
-	if err != nil {
-		http.Error(w, "cannot read the ISO folder: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	opts := s.Menu
-	if s.Pick != "" {
-		for i, e := range entries {
-			if strings.Contains(strings.ToLower(e.Name), strings.ToLower(s.Pick)) {
-				opts.Default = i + 1
-				break
-			}
-		}
-	}
-	s.logf("menu for %s: %d ISO file(s)", r.RemoteAddr, len(entries))
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprint(w, menu.ScriptWith(s.Title, entries, opts))
-}
-
 func (s *Server) iso(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/iso/")
 	iso, ok := isos.Find(s.ISODir, name)
@@ -148,6 +120,7 @@ func (s *Server) iso(w http.ResponseWriter, r *http.Request) {
 	defer f.Close()
 	if r.Method == http.MethodGet && r.Header.Get("Range") == "" {
 		s.logf("%s downloads %s", r.RemoteAddr, iso.Name)
+		s.noteFetch(r.RemoteAddr, iso.Title)
 	}
 	w.Header().Set("Content-Type", "application/x-iso9660-image")
 	http.ServeContent(w, r, iso.Name, iso.ModTime, f) // answers range requests and HEAD itself
@@ -185,6 +158,7 @@ func (s *Server) inside(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		if r.Header.Get("Range") == "" || strings.HasPrefix(r.Header.Get("Range"), "bytes=0-") {
 			s.logf("%s fetches %s from inside %s", r.RemoteAddr, name, iso.Title)
+			s.noteFetch(r.RemoteAddr, iso.Title)
 		}
 		http.ServeContent(w, r, name, iso.ModTime, file.Reader())
 		return

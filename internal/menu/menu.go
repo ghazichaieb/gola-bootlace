@@ -80,3 +80,21 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	b.WriteString(":local\necho Leaving the network boot: the PC goes on to its own disk.\nexit\n\n:reboot\nreboot\n\n:shell\nshell\n")
 	return b.String()
 }
+
+// Direct is the script for a PC that a rule sends straight to one entry: no menu, the entry's commands, and the same way out when they fail.
+func Direct(why string, e Entry) string {
+	var b strings.Builder
+	b.WriteString("#!ipxe\n")
+	fmt.Fprintf(&b, "echo %s\n", clean(why))
+	for _, c := range e.Commands {
+		fmt.Fprintf(&b, "%s || goto failed\n", c)
+	}
+	b.WriteString("goto failed\n\n")
+	b.WriteString(":failed\necho Booting did not work: read the message above, then press a key for the shell.\nprompt\nshell\n")
+	return b.String()
+}
+
+// Local is the script for a PC that a rule sends to its own disk.
+func Local(why string) string {
+	return "#!ipxe\necho " + clean(why) + "\nexit\n"
+}

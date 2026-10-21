@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gola Bootlace</title>
+<link rel="icon" type="image/svg+xml" href="/admin/mark.svg">
+<style>
+:root{
+  --bg:#f4f5f6; --panel:#ffffff; --panel2:#f0f1f3; --line:#d9dce0; --text:#1b1d20; --muted:#5b616b;
+  --accent:#c10016; --accent-text:#ffffff; --accent-soft:#fbe9ec; --ok:#17794a; --ok-soft:#e3f4ea; --warn:#8a5a00; --warn-soft:#fff3d6; --bad:#b3261e;
+  --focus:#1a5fd0; --shadow:0 1px 2px rgba(0,0,0,.06),0 4px 18px rgba(0,0,0,.05);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#16181b; --panel:#1f2124; --panel2:#272a2e; --line:#33373c; --text:#eceef0; --muted:#a2a8b0;
+  --accent:#e0243a; --accent-text:#ffffff; --accent-soft:#3a1d22; --ok:#4cc98a; --ok-soft:#15301f; --warn:#f0b84a; --warn-soft:#352a0f; --bad:#ff7b72;
+  --focus:#7aa7ff; --shadow:none}}
+:root[data-theme="dark"]{
+  --bg:#16181b; --panel:#1f2124; --panel2:#272a2e; --line:#33373c; --text:#eceef0; --muted:#a2a8b0;
+  --accent:#e0243a; --accent-text:#ffffff; --accent-soft:#3a1d22; --ok:#4cc98a; --ok-soft:#15301f; --warn:#f0b84a; --warn-soft:#352a0f; --bad:#ff7b72;
+  --focus:#7aa7ff; --shadow:none}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+a{color:var(--accent)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:6px}
+button,input,select{font:inherit;color:inherit}
+header.top{position:sticky;top:0;z-index:5;background:var(--panel);border-bottom:1px solid var(--line)}
+.bar{max-width:1120px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:17px;letter-spacing:.2px}
+.brand img{width:32px;height:32px}
+.brand small{font-weight:500;color:var(--muted);font-size:12px}
+nav{display:flex;gap:4px;overflow-x:auto;flex:1;min-width:0;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+nav::-webkit-scrollbar{display:none}
+nav button{background:none;border:0;padding:9px 13px;min-height:44px;border-radius:8px;cursor:pointer;color:var(--muted);font-weight:600;white-space:nowrap}
+nav button:hover{background:var(--panel2);color:var(--text)}
+nav button[aria-current="page"]{color:var(--accent);background:var(--accent-soft)}
+.tools{display:flex;gap:6px}
+.icon{min-width:44px;min-height:44px;border:1px solid var(--line);background:var(--panel);border-radius:8px;cursor:pointer}
+.icon:hover{background:var(--panel2)}
+main{max-width:1120px;margin:0 auto;padding:18px 16px 60px}
+h1{font-size:22px;margin:4px 0 14px}
+h2{font-size:16px;margin:0 0 10px}
+.grid{display:grid;gap:14px}
+.stats{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.two{grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+.stat .n{font-size:28px;font-weight:700;line-height:1.1}
+.stat .l{color:var(--muted);font-size:13px}
+.muted{color:var(--muted)}
+.small{font-size:13px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}
+.tablewrap{overflow-x:auto}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;font-size:13px}
+.badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;background:var(--panel2);color:var(--muted);white-space:nowrap}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.warn{background:var(--warn-soft);color:var(--warn)}
+.badge.red{background:var(--accent-soft);color:var(--accent)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:8px 16px;border-radius:9px;border:1px solid var(--line);background:var(--panel);cursor:pointer;font-weight:600}
+.btn:hover{background:var(--panel2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-text)}
+.btn.primary:hover{filter:brightness(1.1)}
+.btn.small{min-height:36px;padding:4px 12px;font-size:13px}
+.btn.danger{color:var(--bad)}
+.btn:disabled{opacity:.55;cursor:default}
+label{display:block;font-weight:600;margin:0 0 4px}
+input[type=text],input[type=password],input[type=number],select{width:100%;min-height:44px;padding:8px 11px;border:1px solid var(--line);border-radius:9px;background:var(--panel);}
+input[type=text].inline,select.inline{min-height:38px;padding:5px 9px}
+.field{margin:0 0 14px;max-width:560px}
+.hint{color:var(--muted);font-size:13px;margin:4px 0 0}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.switch{position:relative;display:inline-block;width:46px;height:26px;flex:none}
+.switch input{opacity:0;position:absolute;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.switch span{position:absolute;inset:0;background:var(--line);border-radius:99px;transition:.15s;pointer-events:none}
+.switch span::after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;background:#fff;border-radius:50%;transition:.15s}
+.switch input:checked + span{background:var(--accent)}
+.switch input:checked + span::after{transform:translateX(20px)}
+.switch input:focus-visible + span{outline:3px solid var(--focus);outline-offset:2px}
+.login{max-width:380px;margin:12vh auto 0}
+.login .brand{justify-content:center;margin-bottom:16px;font-size:20px}
+.err{color:var(--bad);min-height:22px;margin:8px 0 0}
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 18px;border-radius:10px;max-width:90vw;z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.3)}
+.toast.bad{background:var(--bad);color:#fff}
+.log{background:#0e1012;color:#d5d9de;border-radius:10px;padding:10px 12px;height:60vh;min-height:280px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+.log .t{color:#6f7782}.log .k-dhcp{color:#7fb4ff}.log .k-tftp{color:#c3a3ff}.log .k-smb{color:#79d7c4}.log .k-menu{color:#ffd37a}.log .k-web{color:#ff9aa5}
+.menu-preview{background:#0b53c9;color:#fff;border-radius:6px;padding:12px 18px;font-family:ui-monospace,Consolas,monospace;font-size:13px;max-width:560px}
+.menu-preview .h{text-align:center;font-weight:700;margin-bottom:8px}
+.menu-preview .sel{background:#c8201f;margin:0 -8px;padding:0 8px}
+.steps{margin:0;padding-left:20px}
+.steps li{margin:4px 0}
+.empty{padding:26px;text-align:center;color:var(--muted)}
+footer{max-width:1120px;margin:0 auto;padding:0 16px 28px;color:var(--muted);font-size:12px}
+td.k{color:var(--muted);white-space:nowrap}
+@media (max-width:640px){
+  .bar{padding:8px 12px;gap:8px}
+  nav{order:3;flex-basis:100%}
+  h1{font-size:20px}
+  table.rt thead{display:none}
+  table.rt tr{display:block;padding:8px 0;border-bottom:1px solid var(--line)}
+  table.rt tr:last-child{border-bottom:0}
+  table.rt td{display:block;border:0;padding:4px 6px}
+  table.rt td[data-l]::before{content:attr(data-l);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  table.rt td.hide-s{display:block}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const state = { view: "dash", isos: [], defaultAction: "", pcs: [], status: null, settings: null, logLast: 0, logLines: [], timers: [], authed: false, version: "" };
+const views = [["dash", "Dashboard"], ["isos", "ISOs"], ["pcs", "PCs"], ["menu", "Menu"], ["log", "Log"], ["account", "Account"]];
+
+async function api(path, method = "GET", body) {
+  const opt = { method, headers: { "X-Bootlace": "1" }, credentials: "same-origin" };
+  if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  const res = await fetch(path, opt);
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* no body */ }
+  if (res.status === 401 && path !== "/api/login") { state.authed = false; render(); throw new Error("log in again"); }
+  if (!res.ok) throw new Error(data.error || ("error " + res.status));
+  return data;
+}
+
+let toastTimer;
+function toast(msg, bad) {
+  const t = $("#toast"); t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, bad ? 6000 : 2600);
+}
+const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message, true); } };
+
+function ago(iso) {
+  if (!iso || iso.startsWith("0001")) return "never";
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 45) return "just now";
+  if (s < 3600) return Math.round(s / 60) + " min ago";
+  if (s < 86400) return Math.round(s / 3600) + " h ago";
+  return Math.round(s / 86400) + " days ago";
+}
+function bytes(n) { return n >= 2 ** 30 ? (n / 2 ** 30).toFixed(1) + " GB" : n >= 2 ** 20 ? Math.round(n / 2 ** 20) + " MB" : Math.round(n / 1024) + " KB"; }
+function uptime(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`; }
+function actionLabel(a) {
+  if (!a || a === "menu") return "Show the menu";
+  if (a === "local") return "Own disk";
+  if (a.startsWith("iso:")) { const i = state.isos.find(x => x.id === a.slice(4)); return i ? i.title : "(missing ISO)"; }
+  return a;
+}
+function actionOptions(sel, withMenu = true) {
+  let o = withMenu ? `<option value="menu"${sel === "menu" || !sel ? " selected" : ""}>Show the menu</option>` : "";
+  o += `<option value="local"${sel === "local" ? " selected" : ""}>Boot from its own disk</option>`;
+  o += state.isos.map(i => `<option value="iso:${i.id}"${sel === "iso:" + i.id ? " selected" : ""}>Start ${esc(i.title)}</option>`).join("");
+  return o;
+}
+
+// ---- shell
+function clearTimers() { state.timers.forEach(clearInterval); state.timers = []; }
+function every(ms, fn) { state.timers.push(setInterval(() => fn().catch(() => {}), ms)); }
+
+function render() {
+  clearTimers();
+  const app = $("#app");
+  if (!state.authed) { app.innerHTML = loginHTML(); wireLogin(); return; }
+  app.innerHTML = `
+  <header class="top"><div class="bar">
+    <div class="brand"><img src="/admin/mark.svg" alt=""><span>Gola Bootlace <small>${esc(state.version)}</small></span></div>
+    <nav aria-label="Pages">${views.map(([k, l]) => `<button data-v="${k}"${k === state.view ? ' aria-current="page"' : ""}>${l}</button>`).join("")}</nav>
+    <div class="tools"><button class="icon" id="theme" title="Light or dark" aria-label="Switch between light and dark">◐</button><button class="icon" id="out" style="padding:0 12px;font-weight:600">Log out</button></div>
+  </div></header>
+  <main id="page" tabindex="-1"></main>
+  <footer>Gola Bootlace, by Gola Services. Copyright (c) 2026 Gola Services SUARL. GPL-3.0-or-later.</footer>`;
+  app.querySelectorAll("nav button").forEach(b => b.onclick = () => { state.view = b.dataset.v; location.hash = state.view; render(); });
+  $("#theme").onclick = toggleTheme;
+  $("#out").onclick = guard(async () => { await api("/api/logout", "POST", {}); state.authed = false; render(); });
+  ({ dash: pageDash, isos: pageISOs, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
+}
+
+function toggleTheme() {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("bootlace-theme", next); } catch (e) { /* private window */ }
+}
+try { const t = localStorage.getItem("bootlace-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* ignore */ }
+
+function loginHTML() {
+  return `<div class="login card"><div class="brand"><img src="/admin/mark.svg" alt=""><span>Gola Bootlace</span></div>
+  <form id="lf"><label for="pw">Password</label><input id="pw" type="password" autocomplete="current-password" autofocus required>
+  <p class="hint">The first time, the server made the password and wrote it in its log: <code>journalctl -u bootlace | grep -i password</code> (or it was set with <code>-admin-password</code>).</p>
+  <p class="err" id="lerr" role="alert"></p><button class="btn primary" style="width:100%">Log in</button></form></div>`;
+}
+function wireLogin() {
+  $("#lf").onsubmit = async e => {
+    e.preventDefault();
+    const b = $("#lf button"); b.disabled = true;
+    try { await api("/api/login", "POST", { password: $("#pw").value }); state.authed = true; render(); }
+    catch (err) { $("#lerr").textContent = err.message; $("#pw").select(); }
+    b.disabled = false;
+  };
+}
+
+// ---- dashboard
+async function loadCommon() {
+  const [isos, pcs] = await Promise.all([api("/api/isos"), api("/api/pcs")]);
+  state.isos = isos.isos || []; state.defaultAction = isos.default || ""; state.pcs = pcs.pcs || [];
+}
+async function pageDash() {
+  const page = $("#page");
+  page.innerHTML = `<h1>Dashboard</h1><div id="dstats" class="grid stats"></div><div class="grid two" style="margin-top:14px"><div class="card"><h2>How PCs reach this server</h2><div id="facts" class="small"></div></div><div class="card"><h2>Start a PC from the network</h2>
+  <ol class="steps"><li>Plug the PC into the same network (a cable: Wi‑Fi cannot network-boot).</li><li>Turn Secure Boot off in its firmware (not supported yet).</li><li>Start it and open the boot menu (F12, F8, F11 or Esc), pick the network entry (<em>UEFI: IPv4</em> / PXE).</li><li>The Gola Bootlace menu appears; pick an ISO.</li></ol></div></div>
+  <div class="card" style="margin-top:14px"><h2>Recent activity</h2><div id="recent" class="small mono"></div></div>`;
+  const draw = async () => {
+    const [st, log] = await Promise.all([api("/api/status"), api("/api/log?limit=8")]);
+    $("#dstats").innerHTML = [[st.isoCount, "ISOs in the menu" + (st.isoHidden ? ` (${st.isoHidden} hidden)` : "")], [st.pcs, "PCs seen"], [bytes(st.isoBytes), "of ISOs"], [uptime(st.uptimeSeconds), "running"]]
+      .map(([n, l]) => `<div class="card stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join("");
+    $("#facts").innerHTML = `<table>${st.facts.map(f => `<tr><td class="k">${esc(f.name)}</td><td class="mono">${esc(f.value)}</td></tr>`).join("")}<tr><td class="k">ISO folder</td><td class="mono">${esc(st.isoDir)}</td></tr><tr><td class="k">Settings file</td><td class="mono">${esc(st.configFile)}</td></tr></table>`;
+    $("#recent").innerHTML = (log.lines || []).length ? (log.lines || []).map(l => `<div>${esc(l.text)}</div>`).join("") : `<span class="muted">Nothing yet.</span>`;
+  };
+  await guard(draw)();
+  every(4000, draw);
+}
+
+// ---- ISOs
+async function pageISOs() {
+  const page = $("#page");
+  page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>ISOs</h1><button class="btn" id="rescan">Look inside the ISOs again</button></div>
+  <p class="muted small">Every <code>.iso</code> file in the ISO folder is listed here and in the menu. Rename an entry, hide it from the menu, or choose which one starts by itself.</p><div class="card tablewrap" id="isotable"></div>`;
+  $("#rescan").onclick = guard(async () => { await api("/api/rescan", "POST", {}); toast("Looking inside the ISOs again at the next menu"); await draw(); });
+  const draw = async () => {
+    await loadCommon();
+    $("#isotable").innerHTML = state.isos.length ? `<table class="rt"><thead><tr><th>Name in the menu</th><th class="hide-s">Starts as</th><th class="hide-s">Size</th><th>In the menu</th><th>By itself</th></tr></thead><tbody>${state.isos.map(i => `<tr>
+      <td data-l="Name in the menu"><input class="inline" type="text" value="${esc(i.title)}" data-id="${i.id}" data-orig="${esc(i.original)}" aria-label="Name of ${esc(i.original)} in the menu" maxlength="120"><div class="muted small mono">${esc(i.name)}</div></td>
+      <td class="hide-s" data-l="Starts as">${i.method === "recognised" ? `<span class="badge ok">${esc(i.family)}</span>` : `<span class="badge warn" title="Handed to the PC as a disk: needs a lot of memory and works for few systems">as a disk</span>`}</td>
+      <td class="hide-s" data-l="Size">${bytes(i.size)}</td>
+      <td data-l="In the menu"><label class="switch"><input type="checkbox" data-hide="${i.id}" ${i.hidden ? "" : "checked"} aria-label="Show ${esc(i.title)} in the menu"><span></span></label></td>
+      <td data-l="By itself"><label class="row small" style="margin:0;font-weight:500"><input type="radio" name="dflt" data-dflt="${i.id}" ${state.defaultAction === "iso:" + i.id ? "checked" : ""}> starts</label></td></tr>`).join("")}</tbody></table>
+      <p class="hint" style="margin:10px">${state.defaultAction.startsWith("iso:") ? "" : "Nothing starts by itself now (" + esc(defaultText()) + "). "}"By itself" starts after the menu's timeout; set the timeout under <a href="#menu" data-go="menu">Menu</a>.</p>` : `<div class="empty">No ISO files found in the ISO folder yet. Copy some in: they appear here and in the menu at once.</div>`;
+    page.querySelectorAll("input[data-id]").forEach(inp => inp.onchange = guard(async () => {
+      const v = inp.value.trim() === inp.dataset.orig ? "" : inp.value.trim();
+      await api("/api/isos/" + inp.dataset.id, "PUT", { title: v }); toast("Saved"); await draw();
+    }));
+    page.querySelectorAll("input[data-hide]").forEach(inp => inp.onchange = guard(async () => { await api("/api/isos/" + inp.dataset.hide, "PUT", { hidden: !inp.checked }); toast(inp.checked ? "Shown in the menu" : "Hidden from the menu"); await draw(); }));
+    page.querySelectorAll("input[data-dflt]").forEach(inp => inp.onchange = guard(async () => { const s = await api("/api/settings"); await api("/api/settings", "PUT", { ...s, default: "iso:" + inp.dataset.dflt }); toast("Saved"); await draw(); }));
+    page.querySelectorAll("[data-go]").forEach(a => a.onclick = e => { e.preventDefault(); state.view = a.dataset.go; render(); });
+  };
+  await guard(draw)();
+}
+function defaultText() { const d = state.defaultAction; return !d ? "the menu waits for a choice" : d === "local" ? "the PC's own disk starts" : d.startsWith("iso:") ? actionLabel(d) : "set on the command line: " + d; }
+
+// ---- PCs
+async function pagePCs() {
+  const page = $("#page");
+  page.innerHTML = `<h1>PCs</h1><p class="muted small">PCs that started from the network and asked for a menu. A rule sends one PC somewhere without showing it the menu: for example always to its own disk, or straight into an installer.</p>
+  <div class="card tablewrap" id="pctable"></div>
+  <div class="card" style="margin-top:14px"><h2>Add a rule for a PC that is not listed</h2><form id="rf" class="row" style="align-items:flex-end">
+    <div style="flex:1;min-width:200px"><label for="rmac">MAC address</label><input id="rmac" type="text" placeholder="aa:bb:cc:dd:ee:ff" required pattern="[0-9A-Fa-f]{2}([:\\-][0-9A-Fa-f]{2}){5}"></div>
+    <div style="flex:1;min-width:200px"><label for="ract">Action</label><select id="ract"></select></div>
+    <div style="flex:1;min-width:160px"><label for="rnote">Note</label><input id="rnote" type="text" maxlength="120" placeholder="optional"></div><button class="btn primary">Add rule</button></form></div>`;
+  const draw = async () => {
+    await loadCommon();
+    $("#ract").innerHTML = actionOptions("local", false);
+    $("#pctable").innerHTML = state.pcs.length ? `<table class="rt"><thead><tr><th>PC</th><th class="hide-s">Address</th><th class="hide-s">Last seen</th><th class="hide-s">Doing</th><th>What it does at start</th><th></th></tr></thead><tbody>${state.pcs.map(p => `<tr>
+      <td><strong>${esc([p.manufacturer, p.product].filter(Boolean).join(" ") || "Unknown PC")}</strong><div class="muted small mono">${esc(p.mac)}</div>${p.rule && p.rule.note ? `<div class="small">${esc(p.rule.note)}</div>` : ""}</td>
+      <td class="hide-s mono small" data-l="Address">${esc(p.ip || "")}<div>${p.platform === "efi" ? "UEFI" : p.platform === "pcbios" ? "BIOS" : ""}</div></td>
+      <td class="hide-s small" data-l="Last seen">${ago(p.lastSeen)}${p.count ? `<div class="muted">${p.count}× menu</div>` : ""}</td>
+      <td class="hide-s small" data-l="Doing">${esc(p.lastAction || "")}</td>
+      <td data-l="What it does at start"><select class="inline" data-mac="${esc(p.mac)}" aria-label="What ${esc(p.mac)} does at start">${actionOptions(p.rule ? p.rule.action : "menu")}</select></td>
+      <td>${p.rule ? `<button class="btn small danger" data-del="${esc(p.mac)}" aria-label="Remove the rule of ${esc(p.mac)}">Remove</button>` : ""}</td></tr>`).join("")}</tbody></table>` : `<div class="empty">No PC has asked for a menu since the server started.</div>`;
+    page.querySelectorAll("select[data-mac]").forEach(sel => sel.onchange = guard(async () => {
+      const p = state.pcs.find(x => x.mac === sel.dataset.mac);
+      if (sel.value === "menu") { if (p && p.rule) await api("/api/rules/" + encodeURIComponent(sel.dataset.mac), "DELETE"); }
+      else await api("/api/rules", "POST", { mac: sel.dataset.mac, action: sel.value, note: p && p.rule ? p.rule.note : "" });
+      toast("Saved"); await draw();
+    }));
+    page.querySelectorAll("button[data-del]").forEach(b => b.onclick = guard(async () => { await api("/api/rules/" + encodeURIComponent(b.dataset.del), "DELETE"); toast("Rule removed"); await draw(); }));
+  };
+  $("#rf").onsubmit = guard(async e => {
+    e.preventDefault();
+    await api("/api/rules", "POST", { mac: $("#rmac").value, action: $("#ract").value, note: $("#rnote").value });
+    $("#rf").reset(); toast("Rule added"); await draw();
+  });
+  await guard(draw)();
+  every(5000, async () => { if (!page.contains(document.activeElement) || document.activeElement === document.body) await draw(); });
+}
+
+// ---- menu
+async function pageMenu() {
+  const page = $("#page");
+  await guard(async () => { await loadCommon(); state.settings = await api("/api/settings"); })();
+  const s = state.settings || { title: "", menuTimeout: 0, default: "" };
+  const legacy = s.default && !["local"].includes(s.default) && !s.default.startsWith("iso:");
+  page.innerHTML = `<h1>Menu</h1><div class="grid two"><form class="card" id="mf">
+    <div class="field"><label for="mt">Heading</label><input id="mt" type="text" maxlength="60" value="${esc(s.title)}"></div>
+    <div class="field"><label for="mo">Seconds before the choice below starts by itself</label><input id="mo" type="number" min="0" max="3600" value="${s.menuTimeout}"><p class="hint">0 means the menu waits for someone to choose, for ever.</p></div>
+    <div class="field"><label for="md">What starts by itself</label><select id="md"><option value=""${!s.default ? " selected" : ""}>Nothing: wait for a choice</option>
+      <option value="local"${s.default === "local" ? " selected" : ""}>Boot from the PC's own disk</option>
+      ${state.isos.map(i => `<option value="iso:${i.id}"${s.default === "iso:" + i.id ? " selected" : ""}>${esc(i.title)}</option>`).join("")}
+      ${legacy ? `<option value="${esc(s.default)}" selected>Set on the command line: ${esc(s.default)}</option>` : ""}</select>
+      <p class="hint">Useful for a PC without a keyboard, and for PCs that restart in the middle of an installation: "own disk" lets them go on to the installed system.</p></div>
+    <button class="btn primary">Save</button></form>
+    <div class="card"><h2>What a PC sees</h2><div class="menu-preview" id="prev"></div><p class="hint">The menu is made again for every PC that starts, so a change applies at its next start.</p></div></div>`;
+  const preview = () => {
+    const d = $("#md").value, t = parseInt($("#mo").value || "0", 10);
+    const items = state.isos.filter(i => !i.hidden).map(i => ({ k: "iso:" + i.id, t: i.title + (i.method === "recognised" ? "  [" + i.family + "]" : "  [as a disk]") }));
+    items.push({ k: "local", t: "Boot from this PC's own disk" }, { k: "shell", t: "iPXE shell" }, { k: "reboot", t: "Restart this PC" });
+    const sel = items.find(x => x.k === d) || items.find(x => x.k === "shell");
+    $("#prev").innerHTML = `<div class="h">${esc($("#mt").value || "Gola Bootlace")}</div>` + items.map(x => `<div class="${x === sel ? "sel" : ""}">${esc(x.t)}</div>`).join("") + `<div style="margin-top:8px;opacity:.8">${t > 0 && d ? "Starts the highlighted line after " + t + " s." : "Waits for a choice."}</div>`;
+  };
+  ["mt", "mo", "md"].forEach(id => $("#" + id).oninput = preview); preview();
+  $("#mf").onsubmit = guard(async e => {
+    e.preventDefault();
+    await api("/api/settings", "PUT", { title: $("#mt").value, menuTimeout: parseInt($("#mo").value || "0", 10), default: $("#md").value });
+    toast("Saved: the next PC to start gets it");
+  });
+}
+
+// ---- log
+async function pageLog() {
+  const page = $("#page");
+  page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Log</h1><div class="row"><label class="row small" style="margin:0;font-weight:500"><input type="checkbox" id="follow" checked> Follow</label><input id="flt" class="inline" type="text" placeholder="Filter" style="width:180px" aria-label="Filter the log"></div></div><div class="log" id="logbox" tabindex="0" aria-label="Server log"></div>`;
+  const box = $("#logbox");
+  const kind = t => /dhcp:/.test(t) ? "dhcp" : /tftp:/.test(t) ? "tftp" : /smb:|share/.test(t) ? "smb" : /menu|rule/.test(t) ? "menu" : /web interface/.test(t) ? "web" : "";
+  const paint = () => {
+    const f = $("#flt").value.toLowerCase();
+    box.innerHTML = state.logLines.filter(l => !f || l.text.toLowerCase().includes(f)).map(l => `<div class="k-${kind(l.text)}"><span class="t">${new Date(l.time).toLocaleTimeString()}</span>  ${esc(l.text)}</div>`).join("");
+    if ($("#follow").checked) box.scrollTop = box.scrollHeight;
+  };
+  const poll = async () => {
+    const r = await api("/api/log?after=" + state.logLast + "&limit=500");
+    if (r.last < state.logLast) { state.logLines = []; state.logLast = 0; }
+    if ((r.lines || []).length) { state.logLines = state.logLines.concat(r.lines).slice(-1000); state.logLast = r.last; paint(); }
+  };
+  $("#flt").oninput = paint; $("#follow").onchange = paint;
+  state.logLines = []; state.logLast = 0;
+  await guard(poll)();
+  every(1500, poll);
+}
+
+// ---- account
+function pageAccount() {
+  $("#page").innerHTML = `<h1>Account</h1><form class="card" id="pf" style="max-width:520px"><h2>Change the password</h2>
+  <div class="field"><label for="p0">Current password</label><input id="p0" type="password" autocomplete="current-password" required></div>
+  <div class="field"><label for="p1">New password</label><input id="p1" type="password" autocomplete="new-password" minlength="8" required><p class="hint">At least 8 characters. Other open sessions are logged out.</p></div>
+  <div class="field"><label for="p2">New password again</label><input id="p2" type="password" autocomplete="new-password" minlength="8" required></div><button class="btn primary">Change password</button></form>
+  <p class="muted small" style="margin-top:14px">Anyone on the network can open this page, so keep the password to yourself. PCs that start from the network do not need it.</p>`;
+  $("#pf").onsubmit = guard(async e => {
+    e.preventDefault();
+    if ($("#p1").value !== $("#p2").value) throw new Error("the two new passwords differ");
+    await api("/api/password", "POST", { current: $("#p0").value, new: $("#p1").value });
+    $("#pf").reset(); toast("Password changed");
+  });
+}
+
+// ---- start
+(async () => {
+  const h = location.hash.slice(1);
+  if (views.some(v => v[0] === h)) state.view = h;
+  try { const s = await fetch("/api/session", { credentials: "same-origin" }).then(r => r.json()); state.authed = !!s.authenticated; state.version = s.version || ""; } catch (e) { state.authed = false; }
+  render();
+})();
+</script>
+</body>
+</html>

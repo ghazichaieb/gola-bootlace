@@ -38,6 +38,10 @@ func get(t *testing.T, url string, header map[string]string) (int, string) {
 func TestTheMenuListsTheIsosAndBootsThemOverHTTP(t *testing.T) {
 	ts, _ := server(t)
 	code, body := get(t, ts.URL+"/boot.ipxe", nil)
+	if code != 200 || !strings.Contains(body, "chain http://10.0.0.1:8080/menu?mac=${mac}") {
+		t.Fatalf("the boot script must ask for the menu with the PC's identity: %d %q", code, body)
+	}
+	code, body = get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:ff&ip=10.0.0.9", nil)
 	if code != 200 || !strings.HasPrefix(body, "#!ipxe") || !strings.Contains(body, "My Linux") || !strings.Contains(body, "sanboot --no-describe --drive 0x80 http://10.0.0.1:8080/iso/My%20Linux.iso") || !strings.Contains(body, "as a disk") {
 		t.Fatalf("%d %q", code, body)
 	}
