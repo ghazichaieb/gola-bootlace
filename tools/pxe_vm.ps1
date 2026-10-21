@@ -15,6 +15,7 @@ param(
     [Parameter(Mandatory)] [string] $Name,
     [string] $VSwitch = 'bootlace-lab',
     [int] $MemoryGB = 4,
+    [switch] $Bios,            # a generation 1 (legacy BIOS) VM instead of a UEFI one
     [string] $Out = '',
     [int] $Key = 0,
     [string] $Text = '',
@@ -29,10 +30,18 @@ switch ($Action) {
     'create' {
         if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Stop-VM -Name $vmName -TurnOff -Force -ErrorAction SilentlyContinue; Remove-VM -Name $vmName -Force }
         Remove-Item -Recurse -Force (Join-Path $Folder $vmName) -ErrorAction SilentlyContinue
-        $vm = New-VM -Name $vmName -Generation 2 -MemoryStartupBytes ($MemoryGB * 1GB) -Path $Folder -NewVHDPath (Join-Path $Folder "$vmName\disk.vhdx") -NewVHDSizeBytes 80GB -SwitchName $VSwitch
+        $generation = if ($Bios) { 1 } else { 2 }
+        $vm = New-VM -Name $vmName -Generation $generation -MemoryStartupBytes ($MemoryGB * 1GB) -Path $Folder -NewVHDPath (Join-Path $Folder "$vmName\disk.vhdx") -NewVHDSizeBytes 80GB -SwitchName $VSwitch
         Set-VM -VM $vm -StaticMemory -AutomaticCheckpointsEnabled $false -CheckpointType Disabled
         Set-VMProcessor -VM $vm -Count 2
-        Set-VMFirmware -VM $vm -EnableSecureBoot Off -BootOrder @((Get-VMNetworkAdapter -VM $vm))
+        if ($Bios) {
+            # a generation 1 VM starts from the network only through a "legacy" network card (the BIOS PXE ROM)
+            Get-VMNetworkAdapter -VM $vm | Remove-VMNetworkAdapter
+            Add-VMNetworkAdapter -VM $vm -IsLegacy $true -SwitchName $VSwitch
+            Set-VMBios -VM $vm -StartupOrder @('LegacyNetworkAdapter', 'IDE', 'CD', 'Floppy')
+        } else {
+            Set-VMFirmware -VM $vm -EnableSecureBoot Off -BootOrder @((Get-VMNetworkAdapter -VM $vm))
+        }
         Start-VM -VM $vm
         "started $vmName"
     }

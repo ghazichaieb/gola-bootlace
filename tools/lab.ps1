@@ -13,6 +13,7 @@ param(
     [int] $Entry = 1,
     [string] $Pick = '',
     [string] $Name = 'uefi1',
+    [switch] $Bios,                     # a legacy BIOS (generation 1) VM instead of a UEFI one
     [string] $SmbForward = '',          # for finding faults: pass the share connections on to another SMB server (host:port) and log them
     [string] $LogDir = 'C:\bootlace-lab'
 )
@@ -34,4 +35,4 @@ if ($SmbForward) { $serverArgs += @('-smb-forward', $SmbForward) }
 Start-Process -FilePath (Join-Path $root 'bin\bootlace.exe') -ArgumentList $serverArgs -RedirectStandardOutput (Join-Path $LogDir 'bootlace-out.log') `
     -RedirectStandardError (Join-Path $LogDir 'bootlace-err.log') -WindowStyle Hidden
 Start-Sleep -Seconds 2
-& (Join-Path $PSScriptRoot 'pxe_vm.ps1') -Action create -Name $Name -MemoryGB $MemoryGB
+& (Join-Path $PSScriptRoot 'pxe_vm.ps1') -Action create -Name $Name -MemoryGB $MemoryGB -Bios:$Bios
