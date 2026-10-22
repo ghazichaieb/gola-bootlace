@@ -65,6 +65,13 @@ func firstMatch(t Tree, dir, prefix string) string {
 	return ""
 }
 
+// withExtra adds the extra initramfs archive (the network disk's helper and nfsmount stand-in) after the ISO's own.
+func withExtra(b Boot, u URLs) Boot {
+	b.ExtraInitrd = u.Extra
+	b.Commands = []string{b.Commands[0], b.Commands[1], "initrd " + u.Extra, "boot"}
+	return b
+}
+
 func boot(family string, u URLs, kernel, initrd, args string) Boot {
 	return Boot{Family: family, Kernel: kernel, Initrd: initrd, Args: args, Commands: []string{
 		"kernel " + u.FS + kernel + " " + args,
@@ -134,6 +141,10 @@ func debianLive(t Tree, u URLs) (Boot, bool) {
 	if kernel == "" || initrd == "" {
 		return Boot{}, false
 	}
+	if u.NBD != "" && u.Extra != "" && strings.HasPrefix(kernel, "/live/") { // the usual layout: live-boot mounts the ISO through nfsmount, which Bootlace replaces (package initrd)
+		b := boot("Debian live", u, kernel, initrd, "boot=live components netboot=nfs nfsroot="+u.NBD+" console=tty0")
+		return withExtra(b, u), true
+	}
 	return boot("Debian live", u, kernel, initrd, "boot=live components ip=dhcp fetch="+u.FS+"/live/filesystem.squashfs console=tty0"), true
 }
 
@@ -160,10 +171,7 @@ func ubuntu(t Tree, u URLs) (Boot, bool) {
 		return Boot{}, false
 	}
 	if u.NBD != "" && u.Extra != "" { // the ISO is read over the network a piece at a time: any amount of RAM will do (see package initrd)
-		b := boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+" cloud-init=disabled console=tty0")
-		b.ExtraInitrd = u.Extra
-		b.Commands = []string{b.Commands[0], b.Commands[1], "initrd " + u.Extra, "boot"}
-		return b, true
+		return withExtra(boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+" cloud-init=disabled console=tty0"), u), true
 	}
 	return boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp url="+u.ISO+" boot=casper cloud-init=disabled console=tty0"), true
 }
