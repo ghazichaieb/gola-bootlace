@@ -151,8 +151,8 @@ func TestALongMenuIsShownAPageAtATime(t *testing.T) {
 	defer ts.Close()
 
 	_, p1 := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=pcbios", nil)
-	if !strings.Contains(p1, "page 1 of 4") || !strings.Contains(p1, "iso00") || strings.Contains(p1, "iso07") || !strings.Contains(p1, "item next") || strings.Contains(p1, "item prev") {
-		t.Fatalf("first page (BIOS, 7 a page):\n%s", p1)
+	if !strings.Contains(p1, "page 1 of 4") || !strings.Contains(p1, "iso00") || strings.Contains(p1, "iso08") || !strings.Contains(p1, "item next") || strings.Contains(p1, "item prev") {
+		t.Fatalf("first page (BIOS, 8 a page):\n%s", p1)
 	}
 	if !strings.Contains(p1, "&page=2") {
 		t.Fatalf("the next page's address is missing:\n%s", p1)

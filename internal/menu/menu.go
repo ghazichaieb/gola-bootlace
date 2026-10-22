@@ -58,26 +58,42 @@ type Options struct {
 	// reached with the buttons, so that going on through the pages takes one key press each.
 	Focus string
 
-	// Ascii draws the text screen as a frame and table in plain ASCII, with the lace mark above it. For a BIOS PC, whose screen is code page 437: the blanks
-	// that line things up are the byte 0xFF there (see Banner).
+	// Ascii draws the text screen as a minimal list on black, with the logo (see Logo) above it. For a BIOS PC, whose screen is code page 437: the blanks
+	// that line things up are the byte 0xFF there.
 	Ascii bool
 }
 
-// Banner is the picture a text-mode PC (BIOS, or a screen that cannot show the logo) gets above the list: the lace mark and the name, in plain ASCII.
-// iPXE joins the words of an item with single spaces, so the spaces that line the mark up are written as byte 0xFF, which a BIOS text screen (code page 437)
-// shows as a blank.
-var Banner = []string{
-	`  o \ / o`,
-	`  o  X  o    GOLA Bootlace`,
-	`  o / \ o    network boot for ISO files`,
+// Logo is the picture a text-mode PC (BIOS, or a screen that cannot show the logo) gets above the list: the lace mark, with the name and what the program is at its
+// right. iPXE joins the words of an item with single spaces, so the spaces that line it up are written as byte 0xFF, which a BIOS text screen (code page 437) shows
+// as a blank. (Large letters and block characters were tried: a BIOS text screen shows them badly.)
+func Logo() []string {
+	rows := []string{
+		`o \ / o`,
+		`o  X  o    GOLA Bootlace`,
+		`o / \ o    network boot for ISO files and disk images`,
+	}
+	// the rows are moved together, so that the circles stay in line: the widest one is centred
+	widest := 0
+	for _, r := range rows {
+		if len(r) > widest {
+			widest = len(r)
+		}
+	}
+	pad := (lineLen - widest) / 2
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, strings.ReplaceAll(strings.Repeat(" ", pad)+r, " ", blank)) // (a backslash is shown as it is, but one at the very end of a line would join the next line: none of the rows ends in one)
+	}
+	return out
 }
 
-// Widths of the ASCII table's columns, and of the frame: "| " name " | " kind " | " size " |".
+// Widths of the list: "  " size "  " name "  " kind, and of the lines across the screen.
 const (
-	colName  = 40
+	colName  = 46
 	colKind  = 16
 	colSize  = 8
-	frameLen = 2 + colName + 3 + colKind + 3 + colSize + 2
+	lineLen  = 2 + colSize + 2 + colName + 2 + colKind
+	logoLeft = 12
 )
 
 // blank is what lines text up in a BIOS text screen: iPXE joins the words of an item with single spaces, so a real space cannot be repeated.
@@ -98,13 +114,35 @@ func cell(s string, n int, right bool) string {
 	return strings.ReplaceAll(s, " ", blank)
 }
 
-func border() string { return "+" + strings.Repeat("-", frameLen-2) + "+" }
-
-// tableRow is one row with three columns, and fullRow one with a single text across the frame.
-func tableRow(name, kind, size string) string {
-	return "|" + blank + cell(name, colName, false) + blank + "|" + blank + cell(kind, colKind, false) + blank + "|" + blank + cell(size, colSize, true) + blank + "|"
+// centre puts text in the middle of the list's width (blanks as the filler).
+func centre(text string) string {
+	w := 0
+	for range text {
+		w++
+	}
+	if w >= lineLen {
+		return strings.ReplaceAll(text, " ", blank)
+	}
+	return strings.ReplaceAll(strings.Repeat(" ", (lineLen-w)/2)+text, " ", blank)
 }
-func fullRow(text string) string { return "|" + blank + cell(text, frameLen-4, false) + blank + "|" }
+
+// section is a line across the list with a title in the middle: "------ ISO Boot Menu ------".
+func section(title string) string {
+	t := " " + title + " "
+	fill := lineLen - len(t)
+	if fill < 4 {
+		return strings.ReplaceAll(t, " ", blank)
+	}
+	return strings.Repeat("-", fill/2) + strings.ReplaceAll(t, " ", blank) + strings.Repeat("-", fill-fill/2)
+}
+
+// listRow is one ISO of the list: its size, its name and what kind of start it gets.
+func listRow(name, kind, size string) string {
+	return blank + blank + cell(size, colSize, true) + blank + blank + cell(name, colName, false) + blank + blank + cell(kind, colKind, false)
+}
+
+// plainRow is a line of text in the list's margin.
+func plainRow(text string) string { return blank + blank + cell(text, lineLen-2, false) }
 
 // ScriptWith is Script with options.
 func ScriptWith(title string, entries []Entry, o Options) string {
@@ -126,22 +164,20 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	items := func(ascii bool) {
 		line := func(label, text string) {
 			if ascii {
-				fmt.Fprintf(&b, "item %s %s\n", label, fullRow(text))
+				fmt.Fprintf(&b, "item %s %s\n", label, plainRow(text))
 			} else {
 				fmt.Fprintf(&b, "item %s %s\n", label, text)
 			}
 		}
 		if ascii {
-			for _, l := range Banner {
-				gap(strings.ReplaceAll(l, " ", blank))
+			for _, l := range Logo() {
+				gap(l)
 			}
-			gap(border())
-			gap(tableRow("Name", "Starts as", "Size"))
-			gap(border())
+			gap(section("ISO Boot Menu" + pageNote(o, " - ")))
 		}
 		if len(entries) == 0 {
 			if ascii {
-				gap(fullRow("No ISO files were found in the server's folder."))
+				gap(plainRow("No ISO files were found in the server's folder."))
 			} else {
 				gap("No ISO files were found in the server's folder.")
 			}
@@ -151,13 +187,10 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 			case !ascii:
 				fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), clean(e.Name))
 			case e.Title != "":
-				fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), tableRow(e.Title, e.Kind, e.Size))
+				fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), listRow(e.Title, e.Kind, e.Size))
 			default:
-				fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), tableRow(e.Name, "", ""))
+				fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), listRow(e.Name, "", ""))
 			}
-		}
-		if ascii {
-			gap(border())
 		}
 		if o.Prev != "" || o.Next != "" {
 			if !ascii {
@@ -170,15 +203,14 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 				line("next", "Next page >>")
 			}
 		}
-		if !ascii {
+		if ascii {
+			gap(section("Tools"))
+		} else {
 			gap("")
 		}
 		line("local", "Boot from this PC's own disk")
 		line("shell", "iPXE shell")
 		line("reboot", "Restart this PC")
-		if ascii {
-			gap(border())
-		}
 	}
 	if o.Picture != "" {
 		// the picture carries the logo, so the menu's own heading only says what to do; a PC that cannot show it falls back to the text menu with the name
@@ -190,7 +222,7 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	}
 	// the text screen: Gola's red for the chosen line, on black
 	// (the BIOS build of iPXE has no colour command: the guard keeps the script going)
-	b.WriteString("cpair --foreground 7 --background 0 0 || set colours default\ncpair --foreground 7 --background 1 2 || set colours default\n")
+	b.WriteString("cpair --foreground 7 --background 0 0 || set colours default\ncpair --foreground 7 --background 0 1 || set colours default\ncpair --foreground 7 --background 1 2 || set colours default\ncpair --foreground 1 --background 0 3 || set colours default\n")
 	fmt.Fprintf(&b, "menu %s%s\n", clean(title), pageNote(o, " - "))
 	if !o.Ascii {
 		gap("")

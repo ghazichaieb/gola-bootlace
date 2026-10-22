@@ -149,7 +149,7 @@ func entriesPerPage(platform string) int {
 	case "efi":
 		return 12
 	case "pcbios":
-		return 7 // the frame and the table's heading take more lines
+		return 8 // the logo takes three lines
 	}
 	return 10
 }
