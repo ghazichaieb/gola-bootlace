@@ -182,7 +182,7 @@ func sockets(fd int) []byte {
 
 // serveNetlink attaches the export to /dev/nbdN through netlink and keeps it connected for ever: when the kernel says the connection is dead, a new one is made and handed
 // over. It returns an error only when netlink cannot be used at all (then the caller falls back to the older way).
-func serveNetlink(host, port, name string, index int, c net.Conn, size uint64, flags uint64) error {
+func serveNetlink(host, port, name string, index int, c net.Conn, size uint64, flags uint64, block uint64) error {
 	g, err := openGenl()
 	if err != nil {
 		return err
@@ -196,7 +196,6 @@ func serveNetlink(host, port, name string, index int, c net.Conn, size uint64, f
 	if err != nil {
 		return err
 	}
-	const block = 2048
 	body := append([]byte{}, attrU32(nbdAttrIndex, uint32(index))...)
 	body = append(body, attrU64(nbdAttrSizeBytes, size-size%block)...)
 	body = append(body, attrU64(nbdAttrBlockSize, block)...)

@@ -74,7 +74,16 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 			e.Title = t
 		}
 		size := fmt.Sprintf("%.1f GB", float64(iso.Size)/(1<<30))
+		var diskBoot family.Boot
+		diskKnown := false
 		if iso.Disk {
+			diskBoot, diskKnown = s.recogniseDisk(iso) // a disk image with a Linux on it that is started from the files inside
+		}
+		if diskKnown {
+			e.Boot, e.Known = diskBoot, true
+			e.Display = fmt.Sprintf("%s  [%s, from a disk image, %s]", e.Title, diskBoot.Family, size)
+			e.Entry = menu.Entry{Name: e.Display, Commands: addArgs(diskBoot.Commands, cfg.Args[iso.ID]), Title: e.Title, Kind: diskBoot.Family, Size: size}
+		} else if iso.Disk {
 			e.Display, e.Entry, e.Known, e.Boot = s.diskEntry(iso, e.Title, size)
 		} else if b, ok := s.recognise(iso); ok {
 			e.Boot, e.Known = b, true

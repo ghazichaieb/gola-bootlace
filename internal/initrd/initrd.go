@@ -50,6 +50,15 @@ type Settings struct {
 	Host string // the server
 	Port int    // its NBD port
 	Name string // the ISO's id: the NBD export
+	// Block is the block size of the disk: 0 for an ISO's 2048 bytes, 512 for a partition of a disk image (a FAT file system cannot be mounted on a device with larger blocks)
+	Block int
+}
+
+func (s Settings) block() int {
+	if s.Block == 0 {
+		return 2048
+	}
+	return s.Block
 }
 
 // nfsmount is what casper runs where it would mount an NFS share: "nfsmount -o options server:path mountpoint". It attaches the ISO as a network block disk
@@ -99,12 +108,14 @@ for conf in /run/net-*.conf; do
 done
 modprobe nbd >/dev/null 2>&1
 modprobe isofs >/dev/null 2>&1
-/usr/bin/bootlace-nbd -host %[1]s -port %[2]d -name %[3]s -dev /dev/nbd0 &
+modprobe vfat >/dev/null 2>&1
+/usr/bin/bootlace-nbd -host %[1]s -port %[2]d -name %[3]s -dev /dev/nbd0 -block %[5]d &
 i=0
 while [ "$i" -lt 30 ]; do
 	size=$(cat /sys/block/nbd0/size 2>/dev/null)
 	if [ -n "$size" ] && [ "$size" -gt 0 ]; then
-		if mount -t iso9660 -o ro /dev/nbd0 "$mnt"; then
+		# an ISO, or (a disk image's partition: Tails) a FAT file system
+		if mount -t iso9660 -o ro /dev/nbd0 "$mnt" 2>/dev/null || mount -t vfat -o ro /dev/nbd0 "$mnt"; then
 			exit 0
 		fi
 		break
@@ -146,7 +157,7 @@ func Extra(s Settings, helper []byte) []byte {
 	return Archive([]File{
 		{Name: "usr", Mode: 0o755, Dir: true},
 		{Name: "usr/bin", Mode: 0o755, Dir: true},
-		{Name: "usr/bin/nfsmount", Mode: 0o755, Data: []byte(fmt.Sprintf(nfsmount, shellWord(s.Host), s.Port, shellWord(s.Name), fallback))},
+		{Name: "usr/bin/nfsmount", Mode: 0o755, Data: []byte(fmt.Sprintf(nfsmount, shellWord(s.Host), s.Port, shellWord(s.Name), fallback, s.block()))},
 		{Name: "usr/bin/bootlace-nbd", Mode: 0o755, Data: helper},
 		// the same program under the name of the client that Arch's start-up disk calls: it connects again when the connection is lost (see cmd/bootlace-nbd)
 		{Name: "usr/bin/nbd-client", Mode: 0o755, Data: helper},

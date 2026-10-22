@@ -7,19 +7,14 @@
 package pve
 
 import (
-	"bufio"
-	"compress/gzip"
 	"errors"
 	"fmt"
-	"io"
 	"path"
 	"strings"
 
-	"github.com/CalebQ42/squashfs"
-	"github.com/klauspost/compress/zstd"
-
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
+	"github.com/ghazichaieb/gola-bootlace/internal/initread"
 )
 
 // Settings say where the ISO is offered as a network block disk.
@@ -34,24 +29,17 @@ func Is(t interface{ Exists(string) bool }) bool {
 	return t.Exists("/.pve-cd-id.txt") && t.Exists("/boot/initrd.img") && t.Exists("/pve-installer.squashfs")
 }
 
-// nicModules are the network card drivers worth bringing along, by file name: the common wired cards of PCs and servers and the virtual cards of the usual hypervisors.
-// Those the installer's start-up disk already has are skipped; a driver whose card is not there does nothing.
-var nicModules = []string{
-	"e1000", "e1000e", "igb", "igc", "ixgbe", "i40e", "ice", "r8169", "realtek", "tg3", "bnx2", "bnxt_en", "vmxnet3", "hv_netvsc", "8139too", "8139cp",
-	"forcedeth", "atlantic", "sky2", "r8152", "cdc_ether", "ax88179_178a", "virtio_net",
-}
-
 // Extra builds the archive for one ISO. img is the ISO's file system; the installer's start-up disk and its system image are read from it.
 func Extra(img disc.FS, s Settings, helper []byte) ([]byte, error) {
 	f, err := img.Open("/boot/initrd.img")
 	if err != nil {
 		return nil, err
 	}
-	init, version, have, err := readInitrd(f.Reader())
+	in, err := initread.Read(f.Reader(), "init")
 	if err != nil {
 		return nil, fmt.Errorf("the installer's start-up disk: %w", err)
 	}
-	patched, ok := Patch(string(init), s)
+	patched, ok := Patch(string(in.Files["init"]), s)
 	if !ok {
 		return nil, errors.New("the installer's start-up script has a form that is not known here")
 	}
@@ -59,7 +47,7 @@ func Extra(img disc.FS, s Settings, helper []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	mods, err := modules(sq, version, have)
+	mods, err := initread.Modules(sq, in.Version, in.Have, initread.NICModules)
 	if err != nil {
 		return nil, fmt.Errorf("the network drivers: %w", err)
 	}
@@ -71,7 +59,7 @@ func Extra(img disc.FS, s Settings, helper []byte) ([]byte, error) {
 		{Name: "bootlace/modules", Mode: 0o755, Dir: true},
 	}
 	for i, m := range mods {
-		files = append(files, initrd.File{Name: fmt.Sprintf("bootlace/modules/%02d-%s", i, path.Base(m.path)), Mode: 0o644, Data: m.data})
+		files = append(files, initrd.File{Name: fmt.Sprintf("bootlace/modules/%02d-%s", i, path.Base(m.Path)), Mode: 0o644, Data: m.Data})
 	}
 	return initrd.Archive(files), nil
 }
@@ -140,219 +128,3 @@ fi
 
 // shellWord keeps a value from being read as anything but one word.
 func shellWord(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-
-// readInitrd takes an initramfs apart as far as needed: the start-up script, the kernel's version and the modules it already carries. An initramfs is one or more cpio
-// archives (the first often only microcode), the last one compressed.
-func readInitrd(r io.Reader) (init []byte, version string, have map[string]bool, err error) {
-	br := bufio.NewReaderSize(r, 1<<20)
-	have = map[string]bool{}
-	for {
-		// skip padding between archives
-		for {
-			b, e := br.Peek(1)
-			if e != nil {
-				return nil, "", nil, errors.New("no compressed archive found")
-			}
-			if b[0] != 0 {
-				break
-			}
-			_, _ = br.ReadByte()
-		}
-		magic, e := br.Peek(6)
-		if e != nil {
-			return nil, "", nil, e
-		}
-		var cr io.Reader = br
-		switch {
-		case string(magic) == "070701":
-		case magic[0] == 0x28 && magic[1] == 0xb5 && magic[2] == 0x2f && magic[3] == 0xfd:
-			zr, e := zstd.NewReader(br)
-			if e != nil {
-				return nil, "", nil, e
-			}
-			defer zr.Close()
-			cr = zr
-		case magic[0] == 0x1f && magic[1] == 0x8b:
-			zr, e := gzip.NewReader(br)
-			if e != nil {
-				return nil, "", nil, e
-			}
-			cr = zr
-		default:
-			return nil, "", nil, fmt.Errorf("unknown archive start %x", magic)
-		}
-		found := false
-		e = walkCPIO(cr, func(name string, size int64, body io.Reader) error {
-			switch {
-			case name == "init":
-				found = true
-				b, e := io.ReadAll(body)
-				init = b
-				return e
-			case strings.HasPrefix(name, "lib/modules/") && strings.HasSuffix(name, ".ko"):
-				parts := strings.SplitN(strings.TrimPrefix(name, "lib/modules/"), "/", 2)
-				version = parts[0]
-				have[strings.TrimSuffix(path.Base(name), ".ko")] = true
-			}
-			return nil
-		})
-		if e != nil {
-			return nil, "", nil, e
-		}
-		if found && version != "" {
-			return init, version, have, nil
-		}
-		if string(magic) != "070701" {
-			return nil, "", nil, errors.New("the start-up script or the kernel modules were not found")
-		}
-	}
-}
-
-// walkCPIO reads a "newc" cpio archive up to its end marker, calling fn with each file's name and a reader for its contents.
-func walkCPIO(r io.Reader, fn func(name string, size int64, body io.Reader) error) error {
-	br := bufio.NewReaderSize(r, 1<<20)
-	var pos int64
-	skip := func(n int64) error {
-		m, err := io.CopyN(io.Discard, br, n)
-		pos += m
-		return err
-	}
-	for {
-		hdr := make([]byte, 110)
-		if _, err := io.ReadFull(br, hdr); err != nil {
-			return err
-		}
-		pos += 110
-		if string(hdr[:6]) != "070701" {
-			return errors.New("not a cpio archive")
-		}
-		size := hexNum(hdr[54:62])
-		nsize := hexNum(hdr[94:102])
-		nb := make([]byte, nsize)
-		if _, err := io.ReadFull(br, nb); err != nil {
-			return err
-		}
-		pos += nsize
-		name := strings.TrimSuffix(string(nb), "\x00")
-		if err := skip((4 - pos%4) % 4); err != nil {
-			return err
-		}
-		if name == "TRAILER!!!" {
-			return nil
-		}
-		lr := &io.LimitedReader{R: br, N: size}
-		if err := fn(strings.TrimPrefix(name, "./"), size, lr); err != nil {
-			return err
-		}
-		if lr.N > 0 {
-			if err := skip(lr.N); err != nil {
-				return err
-			}
-		}
-		pos += size - lr.N
-		if err := skip((4 - pos%4) % 4); err != nil {
-			return err
-		}
-	}
-}
-
-func hexNum(b []byte) int64 {
-	var n int64
-	for _, c := range b {
-		n <<= 4
-		switch {
-		case c >= '0' && c <= '9':
-			n |= int64(c - '0')
-		case c >= 'a' && c <= 'f':
-			n |= int64(c-'a') + 10
-		case c >= 'A' && c <= 'F':
-			n |= int64(c-'A') + 10
-		}
-	}
-	return n
-}
-
-type module struct {
-	path string
-	data []byte
-}
-
-// modules reads the wanted network drivers, and what they need, out of the system image: the kernel's modules, uncompressed, are there under usr/lib/modules.
-func modules(sq disc.File, version string, have map[string]bool) ([]module, error) {
-	rd, err := squashfs.NewReader(readerAt{sq})
-	if err != nil {
-		return nil, err
-	}
-	base := "usr/lib/modules/" + version + "/"
-	dep, err := sqRead(rd, base+"modules.dep")
-	if err != nil {
-		return nil, err
-	}
-	deps := map[string][]string{} // module path -> the paths it needs
-	byName := map[string]string{}
-	for _, line := range strings.Split(string(dep), "\n") {
-		p, rest, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		deps[p] = strings.Fields(rest)
-		byName[strings.TrimSuffix(path.Base(p), ".ko")] = p
-	}
-	var order []string
-	seen := map[string]bool{}
-	var add func(p string)
-	add = func(p string) {
-		if seen[p] {
-			return
-		}
-		seen[p] = true
-		for _, d := range deps[p] {
-			add(d)
-		}
-		if !have[strings.TrimSuffix(path.Base(p), ".ko")] {
-			order = append(order, p)
-		}
-	}
-	for _, n := range nicModules {
-		if p, ok := byName[n]; ok && !have[n] {
-			add(p)
-		}
-	}
-	var out []module
-	for _, p := range order {
-		b, err := sqRead(rd, base+p)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-		out = append(out, module{p, b})
-	}
-	if len(out) == 0 {
-		return nil, errors.New("no network driver found in the system image")
-	}
-	return out, nil
-}
-
-// sqRead reads a file out of the squashfs, one path component at a time (the reader's own path handling turns the slashes into backslashes on Windows).
-func sqRead(rd squashfs.Reader, p string) ([]byte, error) {
-	cur := rd.FS
-	parts := strings.Split(p, "/")
-	for i, part := range parts {
-		f, err := cur.OpenFile(part)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-		if i == len(parts)-1 {
-			defer f.Close()
-			return io.ReadAll(f)
-		}
-		if cur, err = f.FS(); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-	}
-	return nil, errors.New("empty path")
-}
-
-// readerAt shows a disc file as the io.ReaderAt that the squashfs reader wants.
-type readerAt struct{ f disc.File }
-
-func (r readerAt) ReadAt(p []byte, off int64) (int, error) { return r.f.ReadAt(p, off) }

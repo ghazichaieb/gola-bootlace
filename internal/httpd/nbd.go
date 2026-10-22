@@ -8,22 +8,24 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
-	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
 	"github.com/ghazichaieb/gola-bootlace/internal/iscsi"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/nbd"
 	"github.com/ghazichaieb/gola-bootlace/internal/pve"
+	"github.com/ghazichaieb/gola-bootlace/internal/tails"
 )
 
 // familyURLs says where the web server offers an ISO.
-func (s *Server) familyURLs(iso isos.ISO) family.URLs {
-	u := family.URLs{ISO: s.Base + isoPath(iso.Name), FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Base: s.Base}
+func (s *Server) familyURLs(iso isos.ISO) family.URLs { return s.familyURLsFor(iso, iso.ID) }
+
+// familyURLsFor is familyURLs for what a spec names: an ISO, or a partition of a disk image (see diskboot.go).
+func (s *Server) familyURLsFor(iso isos.ISO, spec string) family.URLs {
+	u := family.URLs{ISO: s.Base + isoPath(iso.Name), FS: s.Base + "/fs/" + spec, Win: s.Base + "/w/" + iso.ID, Base: s.Base}
 	u.ISCSI = s.iscsiURL(iso)
 	if u.ISCSI != "" {
 		if pu, err := url.Parse(s.Base); err == nil {
@@ -32,9 +34,9 @@ func (s *Server) familyURLs(iso isos.ISO) family.URLs {
 	}
 	if s.NBDPort != 0 {
 		if pu, err := url.Parse(s.Base); err == nil {
-			u.NBD = pu.Hostname() + ":/" + iso.ID // what casper's nfsroot= shows; the helper gets the real address from the archive
-			u.NBDHost, u.NBDPort, u.NBDName = pu.Hostname(), s.NBDPort, iso.ID
-			u.Extra = s.Base + "/x/" + iso.ID + "/extra.cpio"
+			u.NBD = pu.Hostname() + ":/" + spec // what casper's nfsroot= shows; the helper gets the real address from the archive
+			u.NBDHost, u.NBDPort, u.NBDName = pu.Hostname(), s.NBDPort, spec
+			u.Extra = s.Base + "/x/" + spec + "/extra.cpio"
 		}
 	}
 	return u
@@ -42,22 +44,16 @@ func (s *Server) familyURLs(iso isos.ISO) family.URLs {
 
 // NBDExport is the NBD server's way to a file: the ISO whose id is the export's name.
 func (s *Server) NBDExport(name string) (nbd.Export, bool) {
-	list, err := isos.Scan(s.ISODir)
+	src, err := s.openSource(name)
 	if err != nil {
 		return nbd.Export{}, false
 	}
-	for _, iso := range list {
-		if iso.ID != name {
-			continue
-		}
-		f, err := os.Open(iso.Path)
-		if err != nil {
-			return nbd.Export{}, false
-		}
-		s.logf("nbd: a PC reads %s as a disk", iso.Title)
-		return nbd.Export{R: f, Size: iso.Size, Done: func() { f.Close() }}, true
+	if _, part := splitSpec(name); part != 0 {
+		s.logf("nbd: a PC reads partition %d of %s as a disk", part, src.ISO.Title)
+	} else {
+		s.logf("nbd: a PC reads %s as a disk", src.ISO.Title)
 	}
-	return nbd.Export{}, false
+	return nbd.Export{R: src.R, Size: src.Size, Done: src.Close}, true
 }
 
 // NBDNames lists the ISOs.
@@ -75,20 +71,54 @@ func (s *Server) ServeNBD(l net.Listener) error {
 	return (&nbd.Server{Open: s.NBDExport, Names: s.NBDNames, Logf: s.logf}).Serve(l)
 }
 
-// extraArchive is the archive for one ISO: the one for Proxmox VE (its installer finds its ISO in its own way, see package pve) or the usual one.
-func (s *Server) extraArchive(iso isos.ISO, set initrd.Settings) ([]byte, error) {
-	if f, err := os.Open(iso.Path); err == nil {
-		defer f.Close()
-		if img, err := disc.Open(f, iso.Size); err == nil && pve.Is(img) {
-			return pve.Extra(img, pve.Settings{Host: set.Host, Port: set.Port, Name: set.Name}, assets.NBDHelper())
+// extraArchive is the archive for one ISO or partition: the one for Proxmox VE (its installer finds its ISO in its own way, see package pve), the one for Tails (its start-up
+// disk has no network card drivers, see package tails) or the usual one.
+func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) {
+	src, err := s.openSource(spec)
+	if err != nil {
+		return nil, err
+	}
+	defer src.Close()
+	if src.FS == nil || !(pve.Is(src.FS) || tails.Is(src.FS)) {
+		return initrd.Extra(set, assets.NBDHelper()), nil
+	}
+	// those two archives take seconds to make (drivers are read out of the system image and unpacked), so the last few are kept
+	key := fmt.Sprintf("%s|%s|%d|%d|%s", spec, src.ISO.Path, src.Size, src.ISO.ModTime.UnixNano(), set.Host)
+	s.mu.Lock()
+	for _, c := range s.extras {
+		if c.key == key {
+			s.mu.Unlock()
+			return c.data, nil
 		}
 	}
-	return initrd.Extra(set, assets.NBDHelper()), nil
+	s.mu.Unlock()
+	var data []byte
+	if pve.Is(src.FS) {
+		data, err = pve.Extra(src.FS, pve.Settings{Host: set.Host, Port: set.Port, Name: set.Name}, assets.NBDHelper())
+	} else {
+		data, err = tails.Extra(src.FS, set, assets.NBDHelper())
+	}
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.extras = append(s.extras, extraCache{key, data})
+	if len(s.extras) > 3 {
+		s.extras = s.extras[1:]
+	}
+	s.mu.Unlock()
+	return data, nil
+}
+
+type extraCache struct {
+	key  string
+	data []byte
 }
 
 // extraInitrd is /x/<id>/extra.cpio: the archive that makes a live Linux read this ISO over the network.
 func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
-	id, file, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/x/"), "/")
+	spec, file, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/x/"), "/")
+	id, _ := splitSpec(spec)
 	if file != "extra.cpio" || s.NBDPort == 0 {
 		http.NotFound(w, r)
 		return
@@ -105,8 +135,11 @@ func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, iso := range list {
 		if iso.ID == id {
-			set := initrd.Settings{Host: pu.Hostname(), Port: s.NBDPort, Name: iso.ID}
-			data, err := s.extraArchive(iso, set)
+			set := initrd.Settings{Host: pu.Hostname(), Port: s.NBDPort, Name: spec}
+			if _, part := splitSpec(spec); part != 0 {
+				set.Block = 512 // a disk image's partition (an ISO's blocks are 2048 bytes)
+			}
+			data, err := s.extraArchive(spec, set)
 			if err != nil {
 				s.logf("cannot make the network-disk archive for %s: %v", iso.Title, err)
 				http.Error(w, "cannot make the archive", http.StatusInternalServerError)

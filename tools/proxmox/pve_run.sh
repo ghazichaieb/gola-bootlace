@@ -36,7 +36,7 @@ print(m[0]['id'] if len(m) == 1 else 'AMBIGUOUS:%d' % len(m))" "$pat")
   if [ "$mode" = uefi ]; then
     ssh "$HOST" "bash -s $vmid $mem $mac $vmname" < "$(dirname "$0")/pve_uefi_vm.sh" || { echo "could not create the UEFI VM for $pat"; continue; }
   else
-    ssh "$HOST" "qm stop $vmid >/dev/null 2>&1; qm destroy $vmid --purge >/dev/null 2>&1; qm create $vmid --name $vmname --memory $((mem * 1024)) --cores 2 --cpu host --net0 e1000e=$mac,bridge=vmbr0 --bios seabios --boot order=net0 --vga std --ostype l26 --scsihw virtio-scsi-pci >/dev/null" || { echo "could not create VM for $pat"; continue; }
+    ssh "$HOST" "qm stop $vmid >/dev/null 2>&1; qm destroy $vmid --purge >/dev/null 2>&1; qm create $vmid --name $vmname --memory $((mem * 1024)) --cores 2 --cpu host --net0 e1000e=$mac,bridge=vmbr0 --bios seabios --boot order=net0 --vga std --ostype l26 --scsihw virtio-scsi-pci --serial0 socket >/dev/null" || { echo "could not create VM for $pat"; continue; }
   fi
   api -d "{\"mac\":\"$(echo $mac | tr A-Z a-z)\",\"action\":\"iso:$id\",\"note\":\"pve_run\"}" "$BASE/api/rules" > /dev/null
   vms+=($vmid); macs+=($(echo $mac | tr A-Z a-z)); names+=("$pat"); waits+=($wait); starts+=(0)
@@ -44,7 +44,12 @@ print(m[0]['id'] if len(m) == 1 else 'AMBIGUOUS:%d' % len(m))" "$pat")
 done
 # start them one after the other (the container reads the ISOs from the NAS), then take pictures until every test has had its time
 t0=$(date +%s)
-for i in "${!vms[@]}"; do ssh "$HOST" "qm start ${vms[$i]}" > /dev/null; starts[$i]=$(date +%s); sleep 15; done
+for i in "${!vms[@]}"; do
+  ssh "$HOST" "qm start ${vms[$i]}" > /dev/null; starts[$i]=$(date +%s)
+  # PVE_SERIAL=1 also keeps what the VM writes to its serial port (a test can add "console=ttyS0,115200n8" as extra kernel arguments in the web interface)
+  [ -n "${PVE_SERIAL:-}" ] && ssh "$HOST" "rm -f /tmp/serial${vms[$i]}.log; (timeout $(( ${waits[$i]} + 60 )) socat -u UNIX-CONNECT:/var/run/qemu-server/${vms[$i]}.serial0 - > /tmp/serial${vms[$i]}.log 2>&1 &)" > /dev/null
+  sleep 15
+done
 pending=${#vms[@]}
 done_flags=()
 shot() { # vmid file
@@ -70,8 +75,11 @@ while [ $pending -gt 0 ]; do
     shot "${vms[$i]}" "$OUT/$safe"
     if [ $el -ge ${waits[$i]} ]; then
       cp "$OUT/$safe.png" "$OUT/$safe-final.png" 2>/dev/null
-      ssh "$HOST" "qm stop ${vms[$i]} >/dev/null 2>&1; qm destroy ${vms[$i]} --purge >/dev/null 2>&1"
-      api -X DELETE "$BASE/api/rules/${macs[$i]}" > /dev/null
+      [ -n "${PVE_SERIAL:-}" ] && ssh "$HOST" "cat /tmp/serial${vms[$i]}.log" > "$OUT/$safe.serial.log" 2>/dev/null
+      if [ -z "${PVE_KEEP:-}" ]; then # (PVE_KEEP=1 leaves the VMs and their rules for looking at by hand: remove them afterwards)
+        ssh "$HOST" "qm stop ${vms[$i]} >/dev/null 2>&1; qm destroy ${vms[$i]} --purge >/dev/null 2>&1"
+        api -X DELETE "$BASE/api/rules/${macs[$i]}" > /dev/null
+      fi
       done_flags[$i]=1; pending=$((pending - 1))
       echo "${names[$i]}: final picture $OUT/$safe-final.png after ${el}s"
     fi

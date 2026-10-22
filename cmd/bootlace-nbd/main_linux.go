@@ -79,19 +79,20 @@ func main() {
 	port := flag.Int("port", 10809, "its NBD port")
 	name := flag.String("name", "", "the export (the ISO's id)")
 	dev := flag.String("dev", "/dev/nbd0", "the network block device")
+	block := flag.Int("block", 2048, "the block size of the disk: 2048 for an ISO, 512 for a disk image's partition")
 	flag.Parse()
 	if *host == "" || *name == "" {
 		fmt.Fprintln(os.Stderr, "bootlace-nbd: -host and -name are needed")
 		os.Exit(2)
 	}
-	os.Exit(serve(*host, strconv.Itoa(*port), *name, *dev))
+	os.Exit(serve(*host, strconv.Itoa(*port), *name, *dev, *block))
 }
 
 // nbdClient is the command line of nbd-client: "nbd-client host [port] [-N name] [options] /dev/nbdN" and "nbd-client -d /dev/nbdN". It attaches the disk, leaves a copy of this
 // program running in the background to keep it connected, and returns when the device is there (as nbd-client does).
 func nbdClient(args []string) int {
 	var host, port, name, dev string
-	port = "10809"
+	port, block := "10809", "2048"
 	disconnect := false
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -103,7 +104,12 @@ func nbdClient(args []string) int {
 				i++
 				name = args[i]
 			}
-		case a == "-timeout" || a == "-b" || a == "-block-size" || a == "-C" || a == "-connections" || a == "-t":
+		case a == "-b" || a == "-block-size":
+			if i+1 < len(args) {
+				i++
+				block = args[i]
+			}
+		case a == "-timeout" || a == "-C" || a == "-connections" || a == "-t":
 			i++ // their values are not needed here
 		case strings.HasPrefix(a, "-"):
 			// -persist, -systemd-mark, -nofork ...: this program always stays connected
@@ -127,7 +133,7 @@ func nbdClient(args []string) int {
 		fmt.Fprintln(os.Stderr, "nbd-client: no server given")
 		return 1
 	}
-	cmd := exec.Command("/proc/self/exe", "-host", host, "-port", port, "-name", name, "-dev", dev)
+	cmd := exec.Command("/proc/self/exe", "-host", host, "-port", port, "-name", name, "-dev", dev, "-block", block)
 	cmd.Args[0] = "bootlace-nbd"
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -147,7 +153,7 @@ func nbdClient(args []string) int {
 }
 
 // serve attaches the export and stays attached; it returns only when that is over or failed.
-func serve(host, port, name, dev string) int {
+func serve(host, port, name, dev string, block int) int {
 	c, err := net.Dial("tcp", net.JoinHostPort(host, port))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "bootlace-nbd:", err)
@@ -159,17 +165,17 @@ func serve(host, port, name, dev string) int {
 		return 1
 	}
 	// the usual way: through netlink, which can connect again when the connection is lost
-	err = serveNetlink(host, port, name, deviceIndex(dev), c, uint64(size), uint64(flags))
+	err = serveNetlink(host, port, name, deviceIndex(dev), c, uint64(size), uint64(flags), uint64(block))
 	if err == nil {
 		return 0
 	}
 	fmt.Fprintln(os.Stderr, "bootlace-nbd: netlink not used:", err)
-	return serveIoctl(c, dev, size, flags)
+	return serveIoctl(c, dev, size, flags, block)
 }
 
 // serveIoctl is the older way (it cannot connect again).
-func serveIoctl(c net.Conn, dev string, size int64, flags uint16) int {
-	const block = 2048 // an ISO's block size
+func serveIoctl(c net.Conn, dev string, size int64, flags uint16, blockSize int) int {
+	block := uintptr(blockSize)
 	f, err := os.OpenFile(dev, os.O_RDWR, 0)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "bootlace-nbd:", err)
@@ -186,7 +192,7 @@ func serveIoctl(c net.Conn, dev string, size int64, flags uint16) int {
 		req, arg uintptr
 	}{
 		{"SET_BLKSIZE", setBlksize, block},
-		{"SET_SIZE_BLOCKS", setSizeBlocks, uintptr(size / block)},
+		{"SET_SIZE_BLOCKS", setSizeBlocks, uintptr(size) / block},
 		{"CLEAR_SOCK", clearSock, 0},
 		{"SET_SOCK", setSock, sock.Fd()},
 		{"SET_FLAGS", setFlags, uintptr(flags)},

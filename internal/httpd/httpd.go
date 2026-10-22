@@ -4,6 +4,7 @@
 package httpd
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -58,6 +59,7 @@ type Server struct {
 	saveMu      sync.Mutex
 	savePending bool
 	mu          sync.Mutex
+	extras      []extraCache          // the last few extra initramfs archives that take long to make (see extraArchive)
 	known       map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
 	// Handoff holds the PCs that iPXE sent to FreeBSD's loader; their TFTP requests are answered from the ISO they chose.
 	Handoff *handoff.Registry
@@ -153,41 +155,32 @@ func (s *Server) iso(w http.ResponseWriter, r *http.Request) {
 // inside serves one file from the inside of an ISO: /fs/<id>/<path in the ISO>.
 func (s *Server) inside(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/fs/")
-	id, name, _ := strings.Cut(rest, "/")
-	list, err := isos.Scan(s.ISODir)
+	spec, name, _ := strings.Cut(rest, "/")
+	src, err := s.openSource(spec)
 	if err != nil {
-		http.Error(w, "cannot read the ISO folder", http.StatusInternalServerError)
-		return
-	}
-	for _, iso := range list {
-		if iso.ID != id {
-			continue
-		}
-		f, err := os.Open(iso.Path)
-		if err != nil {
-			http.Error(w, "cannot open the ISO", http.StatusInternalServerError)
-			return
-		}
-		defer f.Close()
-		img, err := disc.Open(f, iso.Size)
-		if err != nil {
-			http.Error(w, "this ISO has no readable file system", http.StatusUnprocessableEntity)
-			return
-		}
-		file, err := img.Open(name)
-		if err != nil {
+		if errors.Is(err, errNoSuchISO) {
 			http.NotFound(w, r)
-			return
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-		w.Header().Set("Content-Type", "application/octet-stream")
-		if r.Header.Get("Range") == "" || strings.HasPrefix(r.Header.Get("Range"), "bytes=0-") {
-			s.logf("%s fetches %s from inside %s", r.RemoteAddr, name, iso.Title)
-			s.noteFetch(r.RemoteAddr, iso.Title)
-		}
-		http.ServeContent(w, r, name, iso.ModTime, file.Reader())
 		return
 	}
-	http.NotFound(w, r)
+	defer src.Close()
+	if src.FS == nil {
+		http.Error(w, "this ISO has no readable file system", http.StatusUnprocessableEntity)
+		return
+	}
+	file, err := src.FS.Open(name)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if r.Header.Get("Range") == "" || strings.HasPrefix(r.Header.Get("Range"), "bytes=0-") {
+		s.logf("%s fetches %s from inside %s", r.RemoteAddr, name, src.ISO.Title)
+		s.noteFetch(r.RemoteAddr, src.ISO.Title)
+	}
+	http.ServeContent(w, r, name, src.ISO.ModTime, file.Reader())
 }
 
 // loader serves the boot loaders embedded in the program (wimboot, for Windows).

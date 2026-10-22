@@ -56,7 +56,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, gentooLive, tinyCore, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, gentooLive, tinyCore, tails, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -167,6 +167,19 @@ func isVyOS(t Tree) bool {
 		}
 	}
 	return false
+}
+
+// Tails: a Debian live system that comes as a disk image with one FAT partition (kernel and initramfs in /live, the module name in /live/Tails.module). The arguments are
+// Tails's own, but for the ones that find the start-up medium: live-boot is told to take the system from the network disk instead.
+func tails(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/live/Tails.module") || !t.Exists("/live/vmlinuz") || !t.Exists("/live/initrd.img") || !t.Exists("/live/filesystem.squashfs") {
+		return Boot{}, false
+	}
+	hardening := "slab_nomerge slub_debug=FZ mce=0 vsyscall=none init_on_free=1 mds=full,nosmt page_alloc.shuffle=1 randomize_kstack_offset=on efi_pstore.pstore_disable=1 erst_disable spec_store_bypass_disable=on systemd.condition_needs_update=no proc_mem.force_override=ptrace"
+	if u.NBD != "" && u.Extra != "" {
+		return withExtra(boot("Tails", u, "/live/vmlinuz", "/live/initrd.img", "boot=live config nopersistence noprompt timezone=Etc/UTC splash noautologin module=Tails netboot=nfs nfsroot="+u.NBD+" "+hardening+" console=tty0"), u), true
+	}
+	return boot("Tails", u, "/live/vmlinuz", "/live/initrd.img", "boot=live config nopersistence noprompt timezone=Etc/UTC splash noautologin module=Tails ip=dhcp fetch="+u.FS+"/live/filesystem.squashfs "+hardening+" console=tty0"), true
 }
 
 func debianLive(t Tree, u URLs) (Boot, bool) {
