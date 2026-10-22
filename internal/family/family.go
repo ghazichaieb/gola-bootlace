@@ -33,6 +33,9 @@ type URLs struct {
 	ISCSIPort           int
 	NBDPort             int
 	Base                string // the server
+	// KernelFS is where the kernel and initramfs are fetched from when they are not in the ISO's own files (an ISO whose kernel sits in the start-up image inside it): the
+	// files of that image, offered like the ISO's.
+	KernelFS string
 }
 
 // Boot is how to start one ISO.
@@ -56,7 +59,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, gentooLive, tinyCore, tails, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, gentooLive, tinyCore, tails, libreELEC, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -81,9 +84,13 @@ func withExtra(b Boot, u URLs) Boot {
 }
 
 func boot(family string, u URLs, kernel, initrd, args string) Boot {
+	base := u.FS
+	if u.KernelFS != "" {
+		base = u.KernelFS
+	}
 	return Boot{Family: family, Kernel: kernel, Initrd: initrd, Args: args, Commands: []string{
-		"kernel " + u.FS + kernel + " " + args,
-		"initrd " + u.FS + initrd,
+		"kernel " + base + kernel + " " + args,
+		"initrd " + base + initrd,
 		"boot",
 	}}
 }
@@ -148,6 +155,26 @@ func archiso(family string, u URLs, ip, basedir, kernel, initrd string) Boot {
 	return boot(family, u, kernel, initrd, ip+" archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y console=tty0")
 }
 
+// DetectInImage is Detect for an ISO whose kernel is not among its files but in the start-up image inside it (the EFI system partition that the ISO's partition table
+// shows): the files of the ISO are t, those of that image esp, and espFS is where the web server offers the image's files. ChimeraOS is one: an archiso whose boot loader
+// (systemd-boot) and kernel are in that image and the system, airootfs.sfs, in the ISO.
+func DetectInImage(t, esp Tree, u URLs, espFS string) (Boot, bool) {
+	if !t.Exists("/arch/x86_64/airootfs.sfs") {
+		return Boot{}, false
+	}
+	dir := "/arch/boot/x86_64"
+	kernel := firstMatch(esp, dir, "vmlinuz-")
+	if kernel == "" {
+		return Boot{}, false
+	}
+	initrd := dir + "/initramfs-" + strings.TrimPrefix(kernel, dir+"/vmlinuz-") + ".img"
+	if !esp.Exists(initrd) {
+		return Boot{}, false
+	}
+	u.KernelFS = espFS
+	return archiso("Arch Linux (kernel in the EFI image)", u, "ip=:::::eth0:dhcp", "arch", kernel, initrd), true
+}
+
 // SystemRescue: archiso with its own folder name.
 func systemRescue(t Tree, u URLs) (Boot, bool) {
 	const dir = "/sysresccd/boot/x86_64"
@@ -167,6 +194,21 @@ func isVyOS(t Tree) bool {
 		}
 	}
 	return false
+}
+
+// LibreELEC and the systems built from it (Lakka): the kernel has its initramfs inside and mounts the boot partition itself; "boot=NBD=host:port" makes it read that partition
+// over the network (an nbd-client comes in the extra archive, see package libreelec), and without "disk=" its storage is in memory. Only a disk image's partition looks like
+// this, and only the network disk way works (the kernel cannot see a disk that the firmware reads over iSCSI).
+func libreELEC(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/KERNEL") || !t.Exists("/SYSTEM") || t.Exists("/live") || u.NBD == "" || u.Extra == "" || u.NBDHost == "" {
+		return Boot{}, false
+	}
+	args := "boot=NBD=" + u.NBDHost + ":" + strconv.Itoa(u.NBDPort) + " ip=dhcp rdinit=/bootlace-init quiet"
+	return Boot{Family: "Lakka / LibreELEC", Kernel: "/KERNEL", Args: args, ExtraInitrd: u.Extra, Commands: []string{ // (no initrd of its own: the extra archive is the only one)
+		"kernel " + u.FS + "/KERNEL " + args,
+		"initrd " + u.Extra,
+		"boot",
+	}}, true
 }
 
 // Tails: a Debian live system that comes as a disk image with one FAT partition (kernel and initramfs in /live, the module name in /live/Tails.module). The arguments are

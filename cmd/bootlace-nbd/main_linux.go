@@ -133,6 +133,9 @@ func nbdClient(args []string) int {
 		fmt.Fprintln(os.Stderr, "nbd-client: no server given")
 		return 1
 	}
+	if name == "" { // started without an export name (LibreELEC's start-up disk does): the extra archive says which one each device is
+		name, block = lookupName(dev, block)
+	}
 	cmd := exec.Command("/proc/self/exe", "-host", host, "-port", port, "-name", name, "-dev", dev, "-block", block)
 	cmd.Args[0] = "bootlace-nbd"
 	cmd.Stderr = os.Stderr
@@ -150,6 +153,26 @@ func nbdClient(args []string) int {
 	}
 	fmt.Fprintln(os.Stderr, "nbd-client: the network disk did not come up")
 	return 1
+}
+
+// namesFile is where the extra archive lists the export of each device, one per line: "nbd0 <name> <block size>".
+const namesFile = "/etc/bootlace-nbd"
+
+func lookupName(dev, block string) (name, blockSize string) {
+	b, err := os.ReadFile(namesFile)
+	if err != nil {
+		return "", block
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(line)
+		if len(f) >= 2 && f[0] == filepath.Base(dev) {
+			if len(f) >= 3 {
+				block = f[2]
+			}
+			return f[1], block
+		}
+	}
+	return "", block
 }
 
 // serve attaches the export and stays attached; it returns only when that is over or failed.

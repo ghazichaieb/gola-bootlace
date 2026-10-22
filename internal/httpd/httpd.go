@@ -119,6 +119,9 @@ func (s *Server) recognise(iso isos.ISO) (family.Boot, bool) {
 	if f, err := os.Open(iso.Path); err == nil {
 		if img, err := disc.Open(f, iso.Size); err == nil {
 			result.boot, result.ok = family.Detect(img, s.familyURLs(iso))
+			if !result.ok {
+				result.boot, result.ok = s.recogniseImage(f, iso, img)
+			}
 		}
 		f.Close()
 	}

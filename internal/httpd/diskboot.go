@@ -39,6 +39,21 @@ func specOf(iso isos.ISO, part int) string {
 
 var errNoSuchISO = errors.New("no such ISO")
 
+// recogniseImage looks, for an ISO that was not recognised from its files, into the start-up image inside it (an EFI system partition in the ISO's partition table) for the
+// kernel: some ISOs keep it there only.
+func (s *Server) recogniseImage(f *os.File, iso isos.ISO, img disc.FS) (family.Boot, bool) {
+	parts, err := disc.OpenDisk(f, iso.Size)
+	if err != nil {
+		return family.Boot{}, false
+	}
+	for _, p := range parts {
+		if b, ok := family.DetectInImage(img, p.FS, s.familyURLs(iso), s.Base+"/fs/"+specOf(iso, p.Number)); ok {
+			return b, true
+		}
+	}
+	return family.Boot{}, false
+}
+
 // source is an ISO, or a partition of a disk image, opened for reading.
 type source struct {
 	ISO   isos.ISO
@@ -69,15 +84,13 @@ func (s *Server) openSource(spec string) (source, error) {
 				return source{}, errors.New("the disk image is not unpacked yet")
 			}
 			path, size = st.Path, st.Size
-		} else if part != 0 {
-			return source{}, errors.New("an ISO has no partitions")
 		}
 		f, err := os.Open(path)
 		if err != nil {
 			return source{}, err
 		}
 		src := source{ISO: iso, R: f, Size: size, Close: func() { f.Close() }}
-		if iso.Disk {
+		if part != 0 { // a partition of a disk image, or of an ISO's own partition table (the start-up image of an ISO)
 			parts, err := disc.OpenDisk(f, size)
 			if err != nil {
 				f.Close()

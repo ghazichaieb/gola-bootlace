@@ -15,6 +15,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
 	"github.com/ghazichaieb/gola-bootlace/internal/iscsi"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
+	"github.com/ghazichaieb/gola-bootlace/internal/libreelec"
 	"github.com/ghazichaieb/gola-bootlace/internal/nbd"
 	"github.com/ghazichaieb/gola-bootlace/internal/pve"
 	"github.com/ghazichaieb/gola-bootlace/internal/tails"
@@ -79,6 +80,9 @@ func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) 
 		return nil, err
 	}
 	defer src.Close()
+	if src.FS != nil && libreelec.Is(src.FS) {
+		return libreelec.Extra(set, assets.NBDHelper()), nil
+	}
 	if src.FS == nil || !(pve.Is(src.FS) || tails.Is(src.FS)) {
 		return initrd.Extra(set, assets.NBDHelper()), nil
 	}
