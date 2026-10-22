@@ -12,11 +12,13 @@ import (
 	"strings"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
+	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
 	"github.com/ghazichaieb/gola-bootlace/internal/iscsi"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/nbd"
+	"github.com/ghazichaieb/gola-bootlace/internal/pve"
 )
 
 // familyURLs says where the web server offers an ISO.
@@ -73,6 +75,17 @@ func (s *Server) ServeNBD(l net.Listener) error {
 	return (&nbd.Server{Open: s.NBDExport, Names: s.NBDNames, Logf: s.logf}).Serve(l)
 }
 
+// extraArchive is the archive for one ISO: the one for Proxmox VE (its installer finds its ISO in its own way, see package pve) or the usual one.
+func (s *Server) extraArchive(iso isos.ISO, set initrd.Settings) ([]byte, error) {
+	if f, err := os.Open(iso.Path); err == nil {
+		defer f.Close()
+		if img, err := disc.Open(f, iso.Size); err == nil && pve.Is(img) {
+			return pve.Extra(img, pve.Settings{Host: set.Host, Port: set.Port, Name: set.Name}, assets.NBDHelper())
+		}
+	}
+	return initrd.Extra(set, assets.NBDHelper()), nil
+}
+
 // extraInitrd is /x/<id>/extra.cpio: the archive that makes a live Linux read this ISO over the network.
 func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 	id, file, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/x/"), "/")
@@ -92,7 +105,13 @@ func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, iso := range list {
 		if iso.ID == id {
-			data := initrd.Extra(initrd.Settings{Host: pu.Hostname(), Port: s.NBDPort, Name: iso.ID}, assets.NBDHelper())
+			set := initrd.Settings{Host: pu.Hostname(), Port: s.NBDPort, Name: iso.ID}
+			data, err := s.extraArchive(iso, set)
+			if err != nil {
+				s.logf("cannot make the network-disk archive for %s: %v", iso.Title, err)
+				http.Error(w, "cannot make the archive", http.StatusInternalServerError)
+				return
+			}
 			s.logf("%s fetches the network-disk archive for %s", r.RemoteAddr, iso.Title)
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("Content-Length", fmt.Sprint(len(data)))

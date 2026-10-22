@@ -70,3 +70,8 @@ It suits what boots and then runs from memory or only needs its loader's disk: r
 - **More results (2026-10-22, Hyper-V UEFI lab, Secure Boot off)**: Ubuntu 22.04.5 desktop (3 GB, desktop), Ubuntu 25.04 desktop (3 GB, installer; an apport crash dialog shows, harmless),
   TrueNAS SCALE 25.04.2.5, 25.10.3.1 and 25.10.7 (installer menu), Kali full installer, Windows Server 2025, a custom-built Windows 11 ISO and FW11HEN (Setup language page over the SMB share), Proxmox VE 9.1
   (installer EULA on the Proxmox test VM with 8 GB; it still loads the whole ISO into memory, streaming it is planned).
+- **Proxmox VE streaming (2026-10-22)**: the installer now reads its ISO over the network disk instead of holding the whole 1.7 GB ISO in memory (it needed 8 GB before; the installer reaches
+  its EULA page on a 4 GB VM). `internal/pve` builds an extra initramfs archive per ISO: a copy of the installer's own `/init` with lines added that bring up the network (`udhcpc`) and attach the ISO as
+  `/dev/nbd0` (and the script's own search for the ISO also looks at `nbd0`), the network card drivers the start-up disk lacks (the common wired cards, taken from the kernel modules in
+  `pve-installer.squashfs` on the ISO, matched to the kernel's version) and a small `insmod` (a subcommand of `bootlace-nbd`, the start-up disk has none). The installer's files are untouched; if the script's
+  form is not the expected one the old way (whole ISO) is used. Not yet checked: an install run through to the end (the installer's own network setup comes late), BIOS vs UEFI beyond the BIOS VM.

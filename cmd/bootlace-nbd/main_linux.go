@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"syscall"
+	"unsafe"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/nbd"
 )
@@ -34,7 +35,28 @@ func ioctl(fd uintptr, req, arg uintptr) error {
 	return nil
 }
 
+// insmod loads kernel modules from files, in the order given (the installer of Proxmox VE has no insmod of its own). A module that is loaded already or that does not suit
+// this PC is skipped.
+func insmod(files []string) {
+	for _, name := range files {
+		b, err := os.ReadFile(name)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "bootlace-nbd insmod:", err)
+			continue
+		}
+		params, _ := syscall.BytePtrFromString("")
+		_, _, e := syscall.Syscall(syscall.SYS_INIT_MODULE, uintptr(unsafe.Pointer(&b[0])), uintptr(len(b)), uintptr(unsafe.Pointer(params)))
+		if e != 0 && e != syscall.EEXIST {
+			fmt.Fprintf(os.Stderr, "bootlace-nbd insmod: %s: %v\n", name, e)
+		}
+	}
+}
+
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "insmod" {
+		insmod(os.Args[2:])
+		return
+	}
 	host := flag.String("host", "", "the Bootlace server")
 	port := flag.Int("port", 10809, "its NBD port")
 	name := flag.String("name", "", "the export (the ISO's id)")

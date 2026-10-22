@@ -180,6 +180,14 @@ func proxmox(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists("/.pve-cd-id.txt") || !t.Exists("/boot/linux26") || !t.Exists("/boot/initrd.img") {
 		return Boot{}, false
 	}
+	if u.NBD != "" && u.Extra != "" && t.Exists("/pve-installer.squashfs") { // read over the network a piece at a time (see package pve)
+		return Boot{Family: "Proxmox VE", Commands: []string{
+			"kernel " + u.FS + "/boot/linux26 ro rw quiet splash=silent console=tty0",
+			"initrd " + u.FS + "/boot/initrd.img",
+			"initrd " + u.Extra,
+			"boot",
+		}}, true
+	}
 	return Boot{Family: "Proxmox VE", Commands: []string{
 		"kernel " + u.FS + "/boot/linux26 ro ramdisk_size=16777216 rw quiet splash=silent console=tty0",
 		"initrd " + u.FS + "/boot/initrd.img",

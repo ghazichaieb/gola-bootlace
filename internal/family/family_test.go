@@ -164,3 +164,16 @@ func TestAWindowsPeWithoutAnInstallImageStartsAsAnIscsiDisc(t *testing.T) {
 		t.Fatalf("%v %v", b, ok)
 	}
 }
+
+func TestProxmoxReadsItsIsoOverTheNetworkWhenItCan(t *testing.T) {
+	tree := fake{"/.pve-cd-id.txt": true, "/boot/linux26": true, "/boot/initrd.img": true, "/pve-installer.squashfs": true}
+	u := urls
+	u.NBD, u.Extra = "10.0.0.1:/abc", "http://s/x/abc/extra.cpio"
+	b, ok := Detect(tree, u)
+	if !ok || b.Family != "Proxmox VE" || !strings.Contains(lines(b), "initrd http://s/x/abc/extra.cpio") || strings.Contains(lines(b), "/proxmox.iso") {
+		t.Fatalf("%v %v\n%s", b, ok, lines(b))
+	}
+	if b, _ := Detect(tree, urls); !strings.Contains(lines(b), "/proxmox.iso") {
+		t.Fatalf("without the network disk the ISO goes in whole:\n%s", lines(b))
+	}
+}
