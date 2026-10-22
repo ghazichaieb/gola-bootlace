@@ -126,17 +126,17 @@ func archLinux(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists(dir + "/" + initrd) {
 		return Boot{}, false
 	}
-	return archiso("Arch Linux", u, "arch", dir+"/"+kernel, dir+"/"+initrd), true
+	return archiso("Arch Linux", u, "ip=:::::eth0:dhcp", "arch", dir+"/"+kernel, dir+"/"+initrd), true // (CachyOS wants the long form)
 }
 
 // archiso is how Arch Linux ISOs and the ones built with it (SystemRescue, CachyOS ...) are started. Their initramfs has an NBD client of its own (the archiso_pxe_nbd hook):
 // the ISO is attached as /dev/nbd0 and the squashfs is read from it a piece at a time, with copytoram=n so that it is not copied into memory. That client takes the server's
 // address only, so it is used when the NBD server listens on the standard port; otherwise the squashfs is downloaded into memory over HTTP.
-func archiso(family string, u URLs, basedir, kernel, initrd string) Boot {
+func archiso(family string, u URLs, ip, basedir, kernel, initrd string) Boot {
 	if u.NBDHost != "" && u.NBDPort == 10809 {
-		return boot(family, u, kernel, initrd, "ip=:::::eth0:dhcp archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n console=tty0")
+		return boot(family, u, kernel, initrd, ip+" archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n console=tty0")
 	}
-	return boot(family, u, kernel, initrd, "ip=:::::eth0:dhcp archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y console=tty0")
+	return boot(family, u, kernel, initrd, ip+" archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y console=tty0")
 }
 
 // SystemRescue: archiso with its own folder name.
@@ -145,7 +145,7 @@ func systemRescue(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists(dir+"/vmlinuz") || !t.Exists(dir+"/sysresccd.img") {
 		return Boot{}, false
 	}
-	return archiso("SystemRescue", u, "sysresccd", dir+"/vmlinuz", dir+"/sysresccd.img"), true
+	return archiso("SystemRescue", u, "ip=dhcp", "sysresccd", dir+"/vmlinuz", dir+"/sysresccd.img"), true // (its archiso hook builds the long form itself from ip=dhcp)
 }
 
 // Debian live and the distributions built the same way (TrueNAS keeps its kernel at the top of the ISO): the squashfs comes from the web server.
