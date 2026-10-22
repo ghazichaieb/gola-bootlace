@@ -237,19 +237,23 @@ async function pageISOs() {
   $("#rescan").onclick = guard(async () => { await api("/api/rescan", "POST", {}); toast("Looking inside the ISOs again at the next menu"); await draw(); });
   const draw = async () => {
     await loadCommon();
-    $("#isotable").innerHTML = state.isos.length ? `<table class="rt"><thead><tr><th>Name in the menu</th><th class="hide-s">Starts as</th><th class="hide-s">Size</th><th>In the menu</th><th>By itself</th></tr></thead><tbody>${state.isos.map(i => `<tr>
+    $("#isotable").innerHTML = state.isos.length ? `<table class="rt"><thead><tr><th>Name in the menu</th><th class="hide-s">Starts as</th><th class="hide-s">Size</th><th>In the menu</th><th>Starts by itself</th></tr></thead><tbody>${state.isos.map(i => `<tr>
       <td data-l="Name in the menu"><input class="inline" type="text" value="${esc(i.title)}" data-id="${i.id}" data-orig="${esc(i.original)}" aria-label="Name of ${esc(i.original)} in the menu" maxlength="120"><div class="muted small mono">${esc(i.name)}</div></td>
       <td class="hide-s" data-l="Starts as">${i.method === "recognised" ? `<span class="badge ok">${esc(i.family)}</span>` : `<span class="badge warn" title="Handed to the PC as a disk: needs a lot of memory and works for few systems">as a disk</span>`}</td>
       <td class="hide-s" data-l="Size">${bytes(i.size)}</td>
       <td data-l="In the menu"><label class="switch"><input type="checkbox" data-hide="${i.id}" ${i.hidden ? "" : "checked"} aria-label="Show ${esc(i.title)} in the menu"><span></span></label></td>
-      <td data-l="By itself"><label class="row small" style="margin:0;font-weight:500"><input type="radio" name="dflt" data-dflt="${i.id}" ${state.defaultAction === "iso:" + i.id ? "checked" : ""}> starts</label></td></tr>`).join("")}</tbody></table>
-      <p class="hint" style="margin:10px">${state.defaultAction.startsWith("iso:") ? "" : "Nothing starts by itself now (" + esc(defaultText()) + "). "}"By itself" starts after the menu's timeout; set the timeout under <a href="#menu" data-go="menu">Menu</a>.</p>` : `<div class="empty">No ISO files found in the ISO folder yet. Copy some in: they appear here and in the menu at once.</div>`;
+      <td data-l="By itself"><label class="row small" style="margin:0;font-weight:500"><input type="radio" name="dflt" data-dflt="${i.id}" ${state.defaultAction === "iso:" + i.id ? "checked" : ""}> this one</label></td></tr>`).join("")}</tbody></table>
+      <div style="margin:10px"><div class="small" style="font-weight:600">What starts by itself when nobody chooses in the menu</div>
+        <label class="row small" style="margin:4px 0;font-weight:500"><input type="radio" name="dflt" data-dflt-other="local" ${state.defaultAction === "local" ? "checked" : ""}> The PC's own disk (the PC carries on as if Bootlace was not there)</label>
+        <label class="row small" style="margin:4px 0;font-weight:500"><input type="radio" name="dflt" data-dflt-other="" ${!state.defaultAction ? "checked" : ""}> Nothing: the menu waits for a choice</label>
+        <p class="hint" style="margin:6px 0 0">${state.defaultAction === "local" || !state.defaultAction || state.defaultAction.startsWith("iso:") ? "" : "Set on the command line now: " + esc(state.defaultAction) + ". "}It starts after the menu's timeout; set the timeout under <a href="#menu" data-go="menu">Menu</a>.</p></div>` : `<div class="empty">No ISO files found in the ISO folder yet. Copy some in: they appear here and in the menu at once.</div>`;
     page.querySelectorAll("input[data-id]").forEach(inp => inp.onchange = guard(async () => {
       const v = inp.value.trim() === inp.dataset.orig ? "" : inp.value.trim();
       await api("/api/isos/" + inp.dataset.id, "PUT", { title: v }); toast("Saved"); await draw();
     }));
     page.querySelectorAll("input[data-hide]").forEach(inp => inp.onchange = guard(async () => { await api("/api/isos/" + inp.dataset.hide, "PUT", { hidden: !inp.checked }); toast(inp.checked ? "Shown in the menu" : "Hidden from the menu"); await draw(); }));
     page.querySelectorAll("input[data-dflt]").forEach(inp => inp.onchange = guard(async () => { const s = await api("/api/settings"); await api("/api/settings", "PUT", { ...s, default: "iso:" + inp.dataset.dflt }); toast("Saved"); await draw(); }));
+    page.querySelectorAll("input[data-dflt-other]").forEach(inp => inp.onchange = guard(async () => { const s = await api("/api/settings"); await api("/api/settings", "PUT", { ...s, default: inp.dataset.dfltOther }); toast("Saved"); await draw(); }));
     page.querySelectorAll("[data-go]").forEach(a => a.onclick = e => { e.preventDefault(); state.view = a.dataset.go; render(); });
   };
   await guard(draw)();

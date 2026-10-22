@@ -64,3 +64,6 @@ It suits what boots and then runs from memory or only needs its loader's disk: r
 - TrueNAS SCALE 25.10.7 (Debian live): installer menu appears. pfSense 2.7.2: stops at the FreeBSD loader (issue #9, as before).
 - **openSUSE Tumbleweed (DVD and NET)**: the kernel starts but `linuxrc`'s DHCP gets "no/incomplete answer" from the lab server, which gives out 169.254.x.x addresses (Windows' automatic
   address on the lab switch); suspected lab artefact (link-local offers are probably refused). To confirm on a normal address range.
+- **Proxmox test VM (real LAN, router DHCP)**: openSUSE Tumbleweed NET starts YaST and the DVD reaches the installer's Welcome page, with the repository and RPMs served from Bootlace
+  over HTTP, so the lab failure was the 169.254.x.x addresses. Proxmox's OVMF has no network boot (no PXE entry for any card), so for UEFI the VM boots Bootlace's iPXE from a 64 MB EFI disk
+  (EFI/BOOT/BOOTX64.EFI) and the rest is the normal path. pfSense on BIOS used to restart the PC for ever (its firmware hand-off has no boot file for BIOS): a BIOS PC now gets a message and goes back.

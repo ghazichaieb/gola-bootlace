@@ -20,7 +20,7 @@ minutes. Anyone on the network can reach the login page, so use a password you w
 | Page | What it does |
 |---|---|
 | Dashboard | ISOs, PCs seen, how long the server has run, the addresses PCs use, recent activity |
-| ISOs | rename an ISO in the menu, hide it, choose which one starts by itself, look inside the ISOs again |
+| ISOs | rename an ISO in the menu, hide it, choose what starts by itself (one of the ISOs, the PC's own disk or nothing), look inside the ISOs again |
 | PCs | every PC that asked for a menu (name from its firmware, MAC, address, UEFI or BIOS, what it did last) and a rule for each: show the menu, boot from its own disk, or start one ISO without a menu. Rules can also be added by MAC address for a PC that has not started yet |
 | Menu | heading, seconds before the default choice starts, what starts by itself (nothing, the PC's own disk, an ISO), with a preview |
 | Log | the last 2000 lines of the server log, live, with a filter |

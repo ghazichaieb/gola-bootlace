@@ -291,6 +291,8 @@ func freeBSD(t Tree, u URLs) (Boot, bool) {
 	// FreeBSD's loader cannot use the network card while iPXE holds it, so iPXE says which PC chose this ISO and restarts it: the next network boot
 	// of that PC gets the loader as boot file straight from the firmware (see package handoff).
 	return Boot{Family: "FreeBSD, experimental", Commands: []string{
+		// (the hand-off has no boot file for a BIOS PC, which would restart for ever)
+		"iseq ${platform} pcbios && echo FreeBSD-based ISOs (pfSense, OPNsense) start on UEFI PCs only, not in BIOS mode. && sleep 8 && exit",
 		"echo Restarting this PC to start the FreeBSD loader from the firmware. It reads the kernel and the ISO by TFTP: this takes a while",
 		"imgfetch --name handoff " + u.Base + "/next?iso=" + path.Base(u.FS) + "&mac=${net0/mac}&ip=${net0/ip}",
 		"reboot",
