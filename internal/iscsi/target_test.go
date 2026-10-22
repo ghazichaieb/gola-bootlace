@@ -136,3 +136,25 @@ func TestAnUnknownTargetIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestADiscoverySessionListsTheTargets(t *testing.T) {
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	defer l.Close()
+	go (&Target{Open: func(string) (Disc, bool) { return Disc{}, false }, IDs: func() []string { return []string{"abc", "def"} }, Address: "10.0.0.1:3260,1"}).Serve(l)
+	c, _ := net.Dial("tcp", l.Addr().String())
+	defer c.Close()
+	in := &initiator{t: t, c: c}
+	in.send(opLoginReq, 0x80|0<<2|1, 1, map[int][]byte{8: {0, 2, 0x3d, 0, 0, 1}, 24: u32(0)}, []byte("InitiatorName=iqn.test\x00SessionType=Discovery\x00AuthMethod=None\x00"))
+	if r := in.recv(); r.opcode() != opLoginResp || r.bhs[36] != 0 {
+		t.Fatalf("login 1: %x", r.bhs)
+	}
+	in.send(opLoginReq, 0x80|1<<2|3, 2, map[int][]byte{8: {0, 2, 0x3d, 0, 0, 1}, 24: u32(0)}, []byte("HeaderDigest=None\x00DataDigest=None\x00MaxRecvDataSegmentLength=4096\x00"))
+	if r := in.recv(); r.opcode() != opLoginResp || r.bhs[36] != 0 || r.flags()&0x80 == 0 {
+		t.Fatalf("login 2: %x", r.bhs)
+	}
+	in.send(opTextReq, 0x80, 3, map[int][]byte{24: u32(1)}, []byte("SendTargets=All\x00"))
+	r := in.recv()
+	if r.opcode() != opTextResp || !bytes.Contains(r.data, []byte("TargetName="+IQNPrefix+"abc\x00TargetAddress=10.0.0.1:3260,1\x00")) || !bytes.Contains(r.data, []byte(IQNPrefix+"def")) {
+		t.Fatalf("send targets: %q", r.data)
+	}
+}

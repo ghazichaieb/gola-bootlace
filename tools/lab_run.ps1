@@ -52,7 +52,7 @@ foreach ($e in $plan) {
 $env:Path += ';C:\tools\go\bin;C:\tools\wimlib'
 Push-Location $root; go build -o bin\bootlace.exe .\cmd\bootlace; Pop-Location
 Remove-Item (Join-Path $Work 'config.json'), (Join-Path $Work 'pcs.json') -ErrorAction SilentlyContinue
-$sargs = @('serve', '-iso-dir', "`"$IsoDir`"", '-ip', $ip, '-dhcp', 'full', '-pxe-only', '-mask', '255.255.0.0', '-router', $ip, '-range-start', "$prefix.150", '-range-end', "$prefix.220",
+$sargs = @('serve', '-iso-dir', "`"$IsoDir`"", '-ip', $ip, '-dhcp', 'full', '-pxe-only', '-mask', '255.255.0.0', '-router', $ip, '-dns', $ip, '-range-start', "$prefix.150", '-range-end', "$prefix.220",
     '-smb-port', '4445', '-config', "`"$(Join-Path $Work 'config.json')`"", '-admin-password', $pw)
 Start-Process -FilePath (Join-Path $root 'bin\bootlace.exe') -ArgumentList $sargs -RedirectStandardOutput (Join-Path $Work 'out.log') -RedirectStandardError (Join-Path $Work 'err.log') -WindowStyle Hidden
 Start-Sleep 4

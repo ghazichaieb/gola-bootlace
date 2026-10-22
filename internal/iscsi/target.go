@@ -222,6 +222,7 @@ func parseKV(data []byte) [][2]string {
 }
 
 func (s *conn) login() error {
+	discovery := false
 	for {
 		p, err := readPDU(s.r)
 		if err != nil {
@@ -242,7 +243,11 @@ func (s *conn) login() error {
 		status := byte(0)
 		for _, e := range parseKV(p.data) {
 			switch e[0] {
-			case "InitiatorName", "SessionType", "InitiatorAlias":
+			case "SessionType":
+				if e[1] == "Discovery" { // an initiator (dracut's iscsiadm) asks which targets there are before it logs in to one
+					discovery = true
+				}
+			case "InitiatorName", "InitiatorAlias":
 			case "TargetName":
 				id, ok := strings.CutPrefix(e[1], IQNPrefix)
 				if !ok {
@@ -326,11 +331,15 @@ func (s *conn) login() error {
 			return errors.New("login for an unknown target refused")
 		}
 		if transit && nsg == 3 {
-			if s.disc.R == nil {
-				return errors.New("logged in without a target (a discovery session is not supported here)")
+			if s.disc.R == nil && !discovery {
+				return errors.New("logged in without a target")
 			}
 			if s.t.Logf != nil {
-				s.t.Logf("iscsi: a PC reads an ISO as a CD-ROM")
+				if discovery {
+					s.t.Logf("iscsi: a PC asks which targets there are")
+				} else {
+					s.t.Logf("iscsi: a PC reads an ISO as a CD-ROM")
+				}
 			}
 			return nil
 		}

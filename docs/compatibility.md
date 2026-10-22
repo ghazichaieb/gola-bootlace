@@ -58,3 +58,9 @@ It suits what boots and then runs from memory or only needs its loader's disk: r
   so Windows installers stay on the file share.
 - **memtest / grub-memtest** start through iSCSI in a second (read block by block, no RAM disk). Not a substitute for a proper test: the iPXE program that started it and the
   firmware's reserved memory stay untested, so use a USB boot for a thorough or intermittent-fault test. It stays in the menu as a quick check.
+- **Fedora 44 Workstation Live** (new KIWI layout: kernel in `/boot/x86_64/loader`, `/LiveOS/squashfs.img`): boots to the GNOME desktop with 4 GB. Its dracut initramfs has an iSCSI
+  client, so the kernel gets `netroot=iscsi:<host>::3260::<iqn> root=live:/dev/disk/by-path/ip-<host>:3260-iscsi-<iqn>-lun-0` and reads the system from the iSCSI CD a piece at a time.
+  This needed the iSCSI target to answer a discovery session (`SendTargets`), which dracut's `iscsiadm` does first. Before that Fedora was started as a plain CD and never found its media.
+- TrueNAS SCALE 25.10.7 (Debian live): installer menu appears. pfSense 2.7.2: stops at the FreeBSD loader (issue #9, as before).
+- **openSUSE Tumbleweed (DVD and NET)**: the kernel starts but `linuxrc`'s DHCP gets "no/incomplete answer" from the lab server, which gives out 169.254.x.x addresses (Windows' automatic
+  address on the lab switch); suspected lab artefact (link-local offers are probably refused). To confirm on a normal address range.

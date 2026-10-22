@@ -138,3 +138,29 @@ func TestMoreFamiliesAreRecognisedByTheirFiles(t *testing.T) {
 		}
 	}
 }
+
+func TestFedoraLiveLogsInToTheIsoOverIscsi(t *testing.T) {
+	tree := fake{"/boot/x86_64/loader/linux": true, "/boot/x86_64/loader/initrd": true, "/LiveOS/squashfs.img": true}
+	u := urls
+	u.ISCSIHost, u.ISCSIPort, u.ISCSIIQN = "10.0.0.1", 3260, "iqn.x:abc"
+	b, ok := Detect(tree, u)
+	if !ok || b.Family != "Fedora (live)" || !strings.Contains(lines(b), "netroot=iscsi:10.0.0.1::3260::iqn.x:abc") || !strings.Contains(lines(b), "root=live:/dev/disk/by-path/ip-10.0.0.1:3260-iscsi-iqn.x:abc-lun-0") {
+		t.Fatalf("%v %v\n%s", b, ok, lines(b))
+	}
+	u.ISCSIHost = "" // no iSCSI server: the whole ISO is downloaded
+	if b, _ := Detect(tree, u); !strings.Contains(lines(b), "root=live:http://") {
+		t.Fatalf("%s", lines(b))
+	}
+	if b, ok := Detect(fake{"/boot/x86_64/loader/linux": true, "/boot/x86_64/loader/initrd": true, "/LiveOS/squashfs.img": true, "/.treeinfo": true}, urls); ok && b.Family == "Fedora (live)" {
+		t.Fatal("an openSUSE-style tree is not Fedora")
+	}
+}
+
+func TestAWindowsPeWithoutAnInstallImageStartsAsAnIscsiDisc(t *testing.T) {
+	u := urls
+	u.ISCSI = "iscsi:10.0.0.1::3260:0:iqn.x:abc"
+	b, ok := Detect(fake{"/sources/boot.wim": true, "/boot/boot.sdi": true, "/efi/boot/bootx64.efi": true, "/efi/microsoft/boot/bcd": true}, u)
+	if !ok || b.Family != "Windows PE" || !strings.Contains(lines(b), "sanboot --no-describe --drive 0x80 iscsi:10.0.0.1") {
+		t.Fatalf("%v %v", b, ok)
+	}
+}
