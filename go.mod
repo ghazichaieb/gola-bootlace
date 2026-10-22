@@ -17,3 +17,5 @@ require (
 )
 
 replace github.com/sonroyaalmerol/go-smb-server => ./third_party/go-smb-server
+
+replace github.com/rasky/go-lzo => ./third_party/go-lzo-stub
