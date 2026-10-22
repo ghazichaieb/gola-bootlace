@@ -227,10 +227,9 @@ func fedoraLike(t Tree, u URLs) (Boot, bool) {
 		return Boot{}, false
 	}
 	if t.Exists("/LiveOS") {
-		if u.ISCSIHost != "" { // read over the network a piece at a time: the whole ISO (Bazzite and Nobara are 8 GB) is never downloaded into memory
-			return boot("Fedora (live)", u, "/images/pxeboot/vmlinuz", "/images/pxeboot/initrd.img", dracutISCSI(u)+" rd.live.image console=tty0"), true
-		}
-		return boot("Fedora (live)", u, "/images/pxeboot/vmlinuz", "/images/pxeboot/initrd.img", "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"), true
+		// read over the network a piece at a time: the whole ISO (Bazzite and Nobara are 8 GB) is never downloaded into memory
+		// (Bazzite's own boot menu passes enforcing=0: with SELinux enforcing its live system stops at the first thing it labels. A live session loses nothing by it.)
+		return dracutLive(Boot{Family: "Fedora (live)", Kernel: "/images/pxeboot/vmlinuz", Initrd: "/images/pxeboot/initrd.img"}, u, " enforcing=0"), true
 	}
 	return boot("Red Hat family (installer)", u, "/images/pxeboot/vmlinuz", "/images/pxeboot/initrd.img", "ip=dhcp inst.repo="+u.FS+" console=tty0"), true
 }
@@ -259,10 +258,20 @@ func fedoraLiveISO(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists(dir+"/linux") || !t.Exists(dir+"/initrd") || !t.Exists("/LiveOS/squashfs.img") || t.Exists("/.treeinfo") {
 		return Boot{}, false
 	}
-	if u.ISCSIHost != "" {
-		return boot("Fedora (live)", u, dir+"/linux", dir+"/initrd", dracutISCSI(u)+" rd.live.image console=tty0"), true
+	return dracutLive(Boot{Family: "Fedora (live)", Kernel: dir + "/linux", Initrd: dir + "/initrd"}, u, ""), true
+}
+
+// dracutLive is how a live system made with dracut (Fedora, Nobara, Bazzite ...) is told to find its ISO over the network, without downloading it: as a network block disk
+// that the extra archive's handler attaches (it connects again if the live system takes another address), else as an iSCSI CD, else the whole ISO is downloaded.
+func dracutLive(b Boot, u URLs, extra string) Boot {
+	if u.NBD != "" && u.Extra != "" && u.NBDHost != "" {
+		args := "ip=dhcp rd.neednet=1 netroot=nbd:" + u.NBDHost + ":" + strconv.Itoa(u.NBDPort) + ":" + u.NBDName + " root=live:/dev/nbd0 rd.live.image console=tty0" + extra
+		return withExtra(boot(b.Family, u, b.Kernel, b.Initrd, args), u)
 	}
-	return boot("Fedora (live)", u, dir+"/linux", dir+"/initrd", "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"), true
+	if u.ISCSIHost != "" {
+		return boot(b.Family, u, b.Kernel, b.Initrd, dracutISCSI(u)+" rd.live.image console=tty0"+extra)
+	}
+	return boot(b.Family, u, b.Kernel, b.Initrd, "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"+extra)
 }
 
 // dracutISCSI is how a live system made with dracut (Fedora and its relatives) is told to find its ISO as a network CD-ROM: it logs in over iSCSI and looks for the disk by its path.

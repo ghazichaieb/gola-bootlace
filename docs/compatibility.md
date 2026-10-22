@@ -98,8 +98,13 @@ so none of this showed in Hyper-V. Measured: the VM's MAC answered at 192.168.1.
 - **Arch Linux (official ISO)**: the start-up disk's own `nbd-client -persist` has no request timeout, so a lost connection was noticed after many minutes. `bootlace-nbd` now speaks the
   kernel's netlink interface (request timeout 30 s, requests wait up to an hour, a lost connection is made again and handed to the kernel) and is also shipped as `usr/bin/nbd-client`,
   which replaces the start-up disk's client for archiso ISOs. Reaches the root prompt. Ubuntu/Mint/Debian and Proxmox use the same helper and still work.
-- **Nobara 44, Bazzite** (older Fedora live layout, `images/pxeboot`): were started with the whole ISO downloaded into memory (7.6 and 8.4 GB). They now log in to the ISO over iSCSI like Fedora 44 does.
-  Nobara reaches its installer (the "no partitions" message is the VM having no disk).
+- **Fedora 44, Nobara 44, Bazzite** (dracut live ISOs): Nobara and Bazzite were started with the whole ISO downloaded into memory (7.6 and 8.4 GB). All three now read the ISO as a network block disk: the
+  kernel gets `netroot=nbd:<host>:<port>:<id> root=live:/dev/nbd0` and the extra archive carries a dracut handler (`sbin/nbdroot`) that attaches it with `bootlace-nbd` (which reconnects if the live system
+  takes another address). An iSCSI login was tried first and works for Fedora 44 and Nobara, but Bazzite's start-up disk has no iSCSI client (`No handler for netroot type 'iscsi'`, then dracut powers the PC off).
+  Bazzite also needs `enforcing=0` (its own boot menu passes it; with SELinux enforcing its systemd stops at the first label). Result: Fedora 44 desktop, Nobara installer ("no partitions": the VM has no disk),
+  Bazzite desktop (its portal says it does not support legacy BIOS: the ISO is UEFI-only and the test VM was BIOS). One trap met on the way: an archive entry for `usr/sbin` replaced Fedora's `/usr/sbin` link with
+  an empty folder and NetworkManager could not start; the handler is now `sbin/nbdroot` without a directory entry.
+- **Extra kernel arguments per ISO** (web interface, ISO list; API field `args`): added for this kind of fault finding (serial console, `rd.debug`, a setting one ISO needs).
 - **AlmaLinux 10 and Bazzite** do not start on the Proxmox test host: its CPU (Core i7-2700K) has no AVX2, which AlmaLinux 10 (x86-64-v3) needs; tested on Hyper-V instead.
 - Alpine standard (BIOS, e1000e card): the initramfs found no network card (`ERROR: IP requested but no network interface was found`): its card drivers come from the modloop, which needs the network.
 - Packed disk images are no longer unpacked when the list is read but when someone starts them, one at a time (three at once, with a 512 MB container, got the server killed by the out-of-memory killer

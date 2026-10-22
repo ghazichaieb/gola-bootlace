@@ -47,6 +47,21 @@ func (s *Server) settings() config.Config {
 	return c
 }
 
+// addArgs puts extra kernel arguments (the person's, for this ISO) at the end of the kernel command of an ISO's start.
+func addArgs(commands []string, extra string) []string {
+	if extra == "" {
+		return commands
+	}
+	out := append([]string(nil), commands...)
+	for i, c := range out {
+		if strings.HasPrefix(c, "kernel ") {
+			out[i] = c + " " + extra
+			break
+		}
+	}
+	return out
+}
+
 func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 	list, err := isos.Scan(s.ISODir)
 	if err != nil {
@@ -64,7 +79,7 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 		} else if b, ok := s.recognise(iso); ok {
 			e.Boot, e.Known = b, true
 			e.Display = fmt.Sprintf("%s  [%s, %s]", e.Title, b.Family, size)
-			e.Entry = menu.Entry{Name: e.Display, Commands: b.Commands, Title: e.Title, Kind: b.Family, Size: size}
+			e.Entry = menu.Entry{Name: e.Display, Commands: addArgs(b.Commands, cfg.Args[iso.ID]), Title: e.Title, Kind: b.Family, Size: size}
 		} else {
 			e.Display = fmt.Sprintf("%s  [as a disk, %s]", e.Title, size)
 			e.Entry = menu.Entry{Name: e.Display, Title: e.Title, Kind: "as a disk", Size: size, Commands: []string{

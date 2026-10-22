@@ -32,6 +32,7 @@ type Config struct {
 	Default     string            `json:"default"`     // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
 	Hidden      map[string]bool   `json:"hidden"`      // ISO id -> not in the menu
 	Titles      map[string]string `json:"titles"`      // ISO id -> the name shown instead of the file name
+	Args        map[string]string `json:"args"`        // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
 	Rules       []Rule            `json:"rules"`
 	AdminHash   string            `json:"adminHash"`   // see package admin
 	SMBPassword string            `json:"smbPassword"` // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
@@ -98,6 +99,17 @@ func (c *Config) Validate() error {
 			delete(c.Hidden, id)
 		}
 	}
+	for id, a := range c.Args {
+		a = strings.TrimSpace(a)
+		if !idPattern.MatchString(id) || a == "" {
+			delete(c.Args, id)
+			continue
+		}
+		if strings.ContainsAny(a, "\r\n") || len(a) > 300 {
+			return errors.New("extra kernel arguments must be one line of at most 300 characters")
+		}
+		c.Args[id] = a
+	}
 	seen := map[string]bool{}
 	rules := []Rule{}
 	for _, r := range c.Rules {
@@ -132,6 +144,10 @@ func (c Config) clone() Config {
 	d.Titles = map[string]string{}
 	for k, v := range c.Titles {
 		d.Titles[k] = v
+	}
+	d.Args = map[string]string{}
+	for k, v := range c.Args {
+		d.Args[k] = v
 	}
 	d.Rules = append([]Rule(nil), c.Rules...)
 	return d

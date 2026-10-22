@@ -338,6 +338,7 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Hidden *bool   `json:"hidden"`
 		Title  *string `json:"title"`
+		Args   *string `json:"args"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -361,6 +362,12 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.Title != nil {
 			c.Titles[id] = *in.Title // an empty title is dropped by the check: the file name is shown again
+		}
+		if in.Args != nil {
+			if c.Args == nil {
+				c.Args = map[string]string{}
+			}
+			c.Args[id] = *in.Args // empty: dropped by the check
 		}
 		return nil
 	})

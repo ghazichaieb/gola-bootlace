@@ -128,6 +128,7 @@ type ISOInfo struct {
 	Hidden   bool      `json:"hidden"`
 	Method   string    `json:"method"`           // "recognised" or "disk"
 	Family   string    `json:"family,omitempty"` // for example "Windows setup" or "Ubuntu (casper)"
+	Args     string    `json:"args,omitempty"`   // extra kernel arguments for this ISO
 }
 
 // ISOInfos lists the ISOs of the folder with what is known of each.
@@ -142,6 +143,7 @@ func (s *Server) ISOInfos() ([]ISOInfo, error) {
 		if e.Known {
 			i.Method, i.Family = "recognised", e.Boot.Family
 		}
+		i.Args = s.settings().Args[e.ISO.ID]
 		out = append(out, i)
 	}
 	return out, nil

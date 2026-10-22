@@ -177,3 +177,19 @@ func TestProxmoxReadsItsIsoOverTheNetworkWhenItCan(t *testing.T) {
 		t.Fatalf("without the network disk the ISO goes in whole:\n%s", lines(b))
 	}
 }
+
+func TestAFedoraStyleLiveIsoUsesTheNetworkDiskAndItsHandlerWhenItCan(t *testing.T) {
+	tree := fake{"/images/pxeboot/vmlinuz": true, "/images/pxeboot/initrd.img": true, "/LiveOS/squashfs.img": true}
+	u := urls
+	u.NBD, u.Extra = "10.0.0.1:/abc", "http://s/x/abc/extra.cpio"
+	u.NBDHost, u.NBDPort, u.NBDName = "10.0.0.1", 10809, "abc"
+	u.ISCSIHost, u.ISCSIPort, u.ISCSIIQN = "10.0.0.1", 3260, "iqn.x:abc"
+	b, ok := Detect(tree, u)
+	if !ok || b.Family != "Fedora (live)" || !strings.Contains(lines(b), "netroot=nbd:10.0.0.1:10809:abc root=live:/dev/nbd0") || !strings.Contains(lines(b), "initrd http://s/x/abc/extra.cpio") {
+		t.Fatalf("%v %v\n%s", b, ok, lines(b))
+	}
+	u.NBD, u.Extra = "", "" // no network disk server: the iSCSI login
+	if b, _ := Detect(tree, u); !strings.Contains(lines(b), "netroot=iscsi:") {
+		t.Fatalf("%s", lines(b))
+	}
+}

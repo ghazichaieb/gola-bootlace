@@ -117,6 +117,27 @@ echo "Gola Bootlace: the network disk did not work" >&2
 exit 1
 `
 
+// nbdroot is what dracut (Fedora and its relatives) runs for "netroot=nbd:host:port:name": it attaches the ISO as a network block disk, and the live system's
+// "root=live:/dev/nbd0" finds it there. Their start-up disks have the kernel's nbd driver but not always iSCSI, which is why this is used instead of an iSCSI login.
+const nbdroot = `#!/bin/sh
+# Gola Bootlace: dracut's netroot handler for netroot=nbd:host:port:name
+rest="${2#nbd:}"
+host="${rest%%%%:*}"; rest="${rest#*:}"
+port="${rest%%%%:*}"; name="${rest#*:}"
+modprobe nbd >/dev/null 2>&1
+modprobe isofs >/dev/null 2>&1
+/usr/bin/bootlace-nbd -host "$host" -port "$port" -name "$name" -dev /dev/nbd0 &
+i=0
+while [ "$i" -lt 60 ]; do
+	size=$(cat /sys/block/nbd0/size 2>/dev/null)
+	[ -n "$size" ] && [ "$size" -gt 0 ] && exit 0
+	sleep 1
+	i=$((i + 1))
+done
+echo "Gola Bootlace: the network disk did not come up" >&2
+exit 1
+`
+
 // Extra is the archive for a live Linux that casper starts from the ISO: nfsmount and the helper that attaches the network block disk.
 func Extra(s Settings, helper []byte) []byte {
 	// The whole ISO is never copied into the PC's memory, not even when the network disk fails: that needs RAM for all of it and fails in a way that is hard to read.
@@ -129,6 +150,8 @@ func Extra(s Settings, helper []byte) []byte {
 		{Name: "usr/bin/bootlace-nbd", Mode: 0o755, Data: helper},
 		// the same program under the name of the client that Arch's start-up disk calls: it connects again when the connection is lost (see cmd/bootlace-nbd)
 		{Name: "usr/bin/nbd-client", Mode: 0o755, Data: helper},
+		// (no directory entry for sbin: in Fedora's start-up disk /usr/sbin is a link to bin, and a directory entry would replace it with an empty folder, hiding NetworkManager and the rest)
+		{Name: "sbin/nbdroot", Mode: 0o755, Data: []byte(fmt.Sprintf(nbdroot))},
 	})
 }
 
