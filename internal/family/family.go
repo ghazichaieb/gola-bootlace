@@ -139,7 +139,11 @@ func archLinux(t Tree, u URLs) (Boot, bool) {
 // address only, so it is used when the NBD server listens on the standard port; otherwise the squashfs is downloaded into memory over HTTP.
 func archiso(family string, u URLs, ip, basedir, kernel, initrd string) Boot {
 	if u.NBDHost != "" && u.NBDPort == 10809 {
-		return boot(family, u, kernel, initrd, ip+" archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n console=tty0")
+		b := boot(family, u, kernel, initrd, ip+" archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n console=tty0")
+		if u.Extra != "" { // the extra archive replaces the start-up disk's nbd-client by one that connects again when the connection is lost (the live system changes its address)
+			b = withExtra(b, u)
+		}
+		return b
 	}
 	return boot(family, u, kernel, initrd, ip+" archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y console=tty0")
 }
@@ -206,7 +210,13 @@ func ubuntu(t Tree, u URLs) (Boot, bool) {
 		return Boot{}, false
 	}
 	if u.NBD != "" && u.Extra != "" { // the ISO is read over the network a piece at a time: any amount of RAM will do (see package initrd)
-		return withExtra(boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+" cloud-init=disabled console=tty0"), u), true
+		// cloud-init stays on for the server ISOs: casper hands them the network settings of the start-up (which the network disk needs kept: see package initrd), and with
+		// cloud-init off they get a plain "DHCP on every card" instead, take another address and lose the connection to the ISO. The desktop ISOs do not need it.
+		ci := " cloud-init=disabled"
+		if firstMatch(t, "/casper", "ubuntu-server") != "" {
+			ci = ""
+		}
+		return withExtra(boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+ci+" console=tty0"), u), true
 	}
 	return boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp url="+u.ISO+" boot=casper cloud-init=disabled console=tty0"), true
 }
@@ -217,6 +227,9 @@ func fedoraLike(t Tree, u URLs) (Boot, bool) {
 		return Boot{}, false
 	}
 	if t.Exists("/LiveOS") {
+		if u.ISCSIHost != "" { // read over the network a piece at a time: the whole ISO (Bazzite and Nobara are 8 GB) is never downloaded into memory
+			return boot("Fedora (live)", u, "/images/pxeboot/vmlinuz", "/images/pxeboot/initrd.img", dracutISCSI(u)+" rd.live.image console=tty0"), true
+		}
 		return boot("Fedora (live)", u, "/images/pxeboot/vmlinuz", "/images/pxeboot/initrd.img", "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"), true
 	}
 	return boot("Red Hat family (installer)", u, "/images/pxeboot/vmlinuz", "/images/pxeboot/initrd.img", "ip=dhcp inst.repo="+u.FS+" console=tty0"), true
@@ -247,11 +260,16 @@ func fedoraLiveISO(t Tree, u URLs) (Boot, bool) {
 		return Boot{}, false
 	}
 	if u.ISCSIHost != "" {
-		target := u.ISCSIHost + ":" + strconv.Itoa(u.ISCSIPort) + "-iscsi-" + u.ISCSIIQN + "-lun-0"
-		return boot("Fedora (live)", u, dir+"/linux", dir+"/initrd", "ip=dhcp rd.neednet=1 netroot=iscsi:"+u.ISCSIHost+"::"+strconv.Itoa(u.ISCSIPort)+"::"+u.ISCSIIQN+
-			" root=live:/dev/disk/by-path/ip-"+target+" rd.live.image console=tty0"), true
+		return boot("Fedora (live)", u, dir+"/linux", dir+"/initrd", dracutISCSI(u)+" rd.live.image console=tty0"), true
 	}
 	return boot("Fedora (live)", u, dir+"/linux", dir+"/initrd", "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"), true
+}
+
+// dracutISCSI is how a live system made with dracut (Fedora and its relatives) is told to find its ISO as a network CD-ROM: it logs in over iSCSI and looks for the disk by its path.
+func dracutISCSI(u URLs) string {
+	port := strconv.Itoa(u.ISCSIPort)
+	return "ip=dhcp rd.neednet=1 netroot=iscsi:" + u.ISCSIHost + "::" + port + "::" + u.ISCSIIQN +
+		" root=live:/dev/disk/by-path/ip-" + u.ISCSIHost + ":" + port + "-iscsi-" + u.ISCSIIQN + "-lun-0"
 }
 
 // ShredOS (nwipe, for wiping drives): one kernel with everything inside it.

@@ -2,10 +2,11 @@
 # Boots several ISOs at the same time, each in its own throw-away VM on the Proxmox test server (real LAN, the Bootlace container hands out the boot), and takes pictures of their screens.
 # Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
 #
-#   tools/proxmox/pve_run.sh OUTDIR 'ubuntu-22:3:240' 'Fedora:4:300' ...      (BIOS VMs)
+#   tools/proxmox/pve_run.sh OUTDIR 'ubuntu-22:3:240' 'Fedora:4:300:uefi' ...      (BIOS VMs, or UEFI with :uefi)
 #
-# A test is <part of the ISO's name>:<memory in GB>:<seconds to wait>. The container's admin password and the Proxmox host are the test server's (see the memory notes);
-# the VMs are 9201 upwards and are destroyed at the end, with their rules. Needs: ssh to the host, curl, python with Pillow (to turn the screen dump into a PNG).
+# A test is <part of the ISO's name>:<memory in GB>:<seconds to wait>[:uefi]. A UEFI VM has no network boot of its own on Proxmox (its OVMF has no PXE), so it starts iPXE
+# from a small EFI disk (/root/espdisk.img on the host: a 64 MB GPT disk with EFI/BOOT/BOOTX64.EFI = Bootlace's ipxe.efi) and the rest is the usual way. The container's admin password and the Proxmox host are the test server's (see the memory notes);
+# the VMs are 9201 upwards (PVE_VMID_BASE=9301 for a second run at the same time: two runs must never share VM numbers) and are destroyed at the end, with their rules. Needs: ssh to the host, curl, python with Pillow (to turn the screen dump into a PNG).
 set -u
 HOST=${PVE_HOST:-root@192.168.1.71}
 BASE=${BOOTLACE_URL:-http://192.168.1.201:8080}
@@ -19,7 +20,7 @@ ISOS=$(api "$BASE/api/isos")
 vms=(); macs=(); names=(); waits=(); starts=()
 n=0
 for t in "$@"; do
-  IFS=: read -r pat mem wait <<< "$t"
+  IFS=: read -r pat mem wait mode <<< "$t"
   id=$(echo "$ISOS" | python -c "
 import sys, json
 pat = sys.argv[1].lower()
@@ -28,9 +29,15 @@ exact = [i for i in m if i['name'].lower() == pat or i['name'].lower() == pat + 
 m = exact or m
 print(m[0]['id'] if len(m) == 1 else 'AMBIGUOUS:%d' % len(m))" "$pat")
   case "$id" in AMBIGUOUS*) echo "'$pat' matches: $id"; continue;; esac
-  vmid=$((9201 + n)); n=$((n + 1))
-  mac=$(printf 'BC:24:11:%02X:%02X:%02X' $((RANDOM % 256)) $((RANDOM % 256)) $((RANDOM % 256)))
-  ssh "$HOST" "qm stop $vmid >/dev/null 2>&1; qm destroy $vmid --purge >/dev/null 2>&1; qm create $vmid --name bl-t$vmid --memory $((mem * 1024)) --cores 2 --cpu host --net0 e1000e=$mac,bridge=vmbr0 --bios seabios --boot order=net0 --vga std --ostype l26 --scsihw virtio-scsi-pci >/dev/null" || { echo "could not create VM for $pat"; continue; }
+  vmid=$((${PVE_VMID_BASE:-9201} + n)); n=$((n + 1))
+  vmname="bl-$(echo "$pat" | tr A-Z a-z | tr -c 'a-z0-9' '-' | sed 's/--*/-/g; s/^-//; s/-$//')-${mode:-bios}"
+  # the same test always gets the same MAC: a router hands out a lease to every new address and its pool runs dry after many runs
+  mac=$(echo -n "$vmname" | md5sum | sed 's/^\(..\)\(..\)\(..\).*/BC:24:11:\1:\2:\3/' | tr a-f A-F)
+  if [ "$mode" = uefi ]; then
+    ssh "$HOST" "bash -s $vmid $mem $mac $vmname" < "$(dirname "$0")/pve_uefi_vm.sh" || { echo "could not create the UEFI VM for $pat"; continue; }
+  else
+    ssh "$HOST" "qm stop $vmid >/dev/null 2>&1; qm destroy $vmid --purge >/dev/null 2>&1; qm create $vmid --name $vmname --memory $((mem * 1024)) --cores 2 --cpu host --net0 e1000e=$mac,bridge=vmbr0 --bios seabios --boot order=net0 --vga std --ostype l26 --scsihw virtio-scsi-pci >/dev/null" || { echo "could not create VM for $pat"; continue; }
+  fi
   api -d "{\"mac\":\"$(echo $mac | tr A-Z a-z)\",\"action\":\"iso:$id\",\"note\":\"pve_run\"}" "$BASE/api/rules" > /dev/null
   vms+=($vmid); macs+=($(echo $mac | tr A-Z a-z)); names+=("$pat"); waits+=($wait); starts+=(0)
   echo "$pat: VM $vmid $mac -> iso:$id"
@@ -41,7 +48,8 @@ for i in "${!vms[@]}"; do ssh "$HOST" "qm start ${vms[$i]}" > /dev/null; starts[
 pending=${#vms[@]}
 done_flags=()
 shot() { # vmid file
-  ssh "$HOST" "echo 'screendump /tmp/s$1.ppm' | qm monitor $1 >/dev/null 2>&1; cat /tmp/s$1.ppm" > "$2.ppm" 2>/dev/null
+  # (the old dump is removed first: a VM that has stopped must not show the picture of an earlier VM with the same number)
+  ssh "$HOST" "rm -f /tmp/s$1.ppm; qm status $1 | grep -q running || { echo 'VM is not running' >&2; exit 1; }; echo 'screendump /tmp/s$1.ppm' | qm monitor $1 >/dev/null 2>&1; cat /tmp/s$1.ppm" > "$2.ppm" 2>/dev/null || { rm -f "$2.ppm" "$2.png"; echo "$1: the VM is not running (stopped or crashed)"; return; }
   python - "$2" <<'PY'
 import sys
 from PIL import Image

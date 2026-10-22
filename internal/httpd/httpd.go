@@ -93,6 +93,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/ipxe/", s.loader)
 	mux.HandleFunc("/w/", s.windows)
 	mux.HandleFunc("/next", s.next)
+	mux.HandleFunc("/unpack/", s.unpack)
 	for path, h := range s.Mount {
 		mux.Handle(path, h)
 	}

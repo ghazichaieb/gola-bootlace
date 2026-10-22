@@ -47,7 +47,7 @@ func TestPackedImagesAreUnpackedOnceInTheBackground(t *testing.T) {
 		m := &Manager{Dir: filepath.Join(dir, "cache")}
 		var st State
 		for i := 0; i < 200; i++ {
-			if st = m.Status(iso); st.Ready || st.Err != nil {
+			if st = m.Start(iso); st.Ready || st.Err != nil {
 				break
 			}
 			time.Sleep(20 * time.Millisecond)
@@ -70,10 +70,28 @@ func TestABrokenPackedImageReportsTheError(t *testing.T) {
 	iso := isos.ISO{ID: "b", Name: "bad.img.gz", Path: path, Size: 16, Packed: "gz", ModTime: time.Unix(1, 0)}
 	var st State
 	for i := 0; i < 200 && st.Err == nil; i++ {
-		st = m.Status(iso)
+		st = m.Start(iso)
 		time.Sleep(20 * time.Millisecond)
 	}
 	if st.Err == nil || st.Ready {
+		t.Fatalf("%+v", st)
+	}
+}
+
+func TestAPackedImageIsNotUnpackedUntilItIsAskedFor(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "x.img.gz")
+	os.WriteFile(path, []byte("whatever"), 0o644)
+	m := &Manager{Dir: filepath.Join(dir, "cache")}
+	iso := isos.ISO{ID: "x", Name: "x.img.gz", Path: path, Size: 8, Packed: "gz", ModTime: time.Unix(1, 0)}
+	if st := m.Status(iso); st.Ready || st.Started {
+		t.Fatalf("listing must not start unpacking: %+v", st)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(filepath.Join(dir, "cache")); err == nil {
+		t.Fatal("the cache folder was made without being asked")
+	}
+	if st := m.Start(iso); !st.Started {
 		t.Fatalf("%+v", st)
 	}
 }

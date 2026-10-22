@@ -86,3 +86,21 @@ Limit, as for every "as a disk" start: once the operating system's own kernel ru
 that mount their root from a partition) works only if its initramfs can log in to iSCSI or has been given a network disk, which is per-image work like the ISO families. Not handled: VHD, VHDX, qcow2 and VMDK.
 - **BIOS (legacy) on the Proxmox test server, 2026-10-22** (`tools/proxmox/pve_run.sh`: throw-away SeaBIOS VMs with an e1000e card on the real LAN, the Bootlace container hands out the boot; much faster than Hyper-V's BIOS VMs):
   Ubuntu 22.04.5 desktop (3 GB, desktop), Debian 13.7 live GNOME (3 GB, desktop), Fedora 44 Workstation Live (4 GB, over iSCSI, desktop), CachyOS (3 GB, desktop), Linux Mint 22.3 (3 GB, desktop), Kali netinst (2 GB, installer).
+
+## 2026-10-22 night: a real LAN showed what the lab hid (Proxmox test server, router DHCP)
+
+A live system that starts its own network manager after the boot asks the DHCP server again, as a new client, and a real router may give it another address than the one the
+start-up stage had. The open connection to the network disk (NBD) then goes nowhere and every read fails with EIO. The lab's own DHCP server always gave the same address per MAC,
+so none of this showed in Hyper-V. Measured: the VM's MAC answered at 192.168.1.229 while the connection was still from .228.
+- **Ubuntu Server 26.04** (netplan + systemd-networkd): fixed in two parts. The start-up stand-in `nfsmount` rewrites the netplan file that casper hands to cloud-init into a fixed address
+  (the file already had routes and name servers: adding them twice made it invalid, and netplan then ignored it), and `cloud-init=disabled` is no longer passed for server ISOs
+  (with cloud-init off the live system got a plain "DHCP on every card" and took another address). Reaches the installer's language screen.
+- **Arch Linux (official ISO)**: the start-up disk's own `nbd-client -persist` has no request timeout, so a lost connection was noticed after many minutes. `bootlace-nbd` now speaks the
+  kernel's netlink interface (request timeout 30 s, requests wait up to an hour, a lost connection is made again and handed to the kernel) and is also shipped as `usr/bin/nbd-client`,
+  which replaces the start-up disk's client for archiso ISOs. Reaches the root prompt. Ubuntu/Mint/Debian and Proxmox use the same helper and still work.
+- **Nobara 44, Bazzite** (older Fedora live layout, `images/pxeboot`): were started with the whole ISO downloaded into memory (7.6 and 8.4 GB). They now log in to the ISO over iSCSI like Fedora 44 does.
+  Nobara reaches its installer (the "no partitions" message is the VM having no disk).
+- **AlmaLinux 10 and Bazzite** do not start on the Proxmox test host: its CPU (Core i7-2700K) has no AVX2, which AlmaLinux 10 (x86-64-v3) needs; tested on Hyper-V instead.
+- Alpine standard (BIOS, e1000e card): the initramfs found no network card (`ERROR: IP requested but no network interface was found`): its card drivers come from the modloop, which needs the network.
+- Packed disk images are no longer unpacked when the list is read but when someone starts them, one at a time (three at once, with a 512 MB container, got the server killed by the out-of-memory killer
+  and wiped the rules); the container now has 4 GB and 4 cores.

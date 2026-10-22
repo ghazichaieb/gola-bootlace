@@ -59,6 +59,44 @@ const nfsmount = `#!/bin/sh
 # so it is not copied into memory.
 for a in "$@"; do mnt="$a"; done
 mkdir -p "$mnt"
+# The live system configures the network again once it has started (netplan, systemd-networkd). Asking the DHCP server again as a new client can give it another address,
+# and the open connection to the network disk then breaks (every read fails). So the address this PC has now is kept: the netplan file made from "ip=dhcp" gets it as a
+# fixed address, with the gateway and name servers.
+for conf in /run/net-*.conf; do
+	[ -f "$conf" ] || continue
+	DEVICE=""; IPV4ADDR=""; IPV4NETMASK=""; IPV4GATEWAY=""; IPV4DNS0=""; IPV4DNS1=""
+	. "$conf"
+	y="/run/netplan/$DEVICE.yaml"
+	[ -n "$DEVICE" ] && [ -n "$IPV4ADDR" ] && [ -n "$IPV4NETMASK" ] && [ -f "$y" ] || continue
+	prefix=0
+	oldifs=$IFS; IFS=.
+	for o in $IPV4NETMASK; do
+		case "$o" in 255) prefix=$((prefix + 8));; 254) prefix=$((prefix + 7));; 252) prefix=$((prefix + 6));; 248) prefix=$((prefix + 5));; 240) prefix=$((prefix + 4));; 224) prefix=$((prefix + 3));; 192) prefix=$((prefix + 2));; 128) prefix=$((prefix + 1));; esac
+	done
+	IFS=$oldifs
+	ns=""
+	for d in "$IPV4DNS0" "$IPV4DNS1"; do
+		case "$d" in ""|0.0.0.0) ;; *) ns="$ns${ns:+, }$d";; esac
+	done
+	# (the file may have routes and name servers already: a key twice makes it invalid and netplan then ignores the whole file)
+	has_routes=""; has_ns=""
+	grep -q "routes:" "$y" && has_routes=1
+	grep -q "nameservers:" "$y" && has_ns=1
+	while IFS= read -r line; do
+		case "$line" in
+		*dhcp-identifier:*) ;;
+		*dhcp4:*)
+			echo "      dhcp4: false"
+			echo "      addresses: [$IPV4ADDR/$prefix]"
+			if [ -z "$has_routes" ]; then
+				case "$IPV4GATEWAY" in ""|0.0.0.0) ;; *) echo "      routes:"; echo "        - to: default"; echo "          via: $IPV4GATEWAY";; esac
+			fi
+			if [ -z "$has_ns" ] && [ -n "$ns" ]; then echo "      nameservers:"; echo "        addresses: [$ns]"; fi
+			;;
+		*) echo "$line";;
+		esac
+	done < "$y" > "$y.bootlace" && mv "$y.bootlace" "$y"
+done
 modprobe nbd >/dev/null 2>&1
 modprobe isofs >/dev/null 2>&1
 /usr/bin/bootlace-nbd -host %[1]s -port %[2]d -name %[3]s -dev /dev/nbd0 &
@@ -89,6 +127,8 @@ func Extra(s Settings, helper []byte) []byte {
 		{Name: "usr/bin", Mode: 0o755, Dir: true},
 		{Name: "usr/bin/nfsmount", Mode: 0o755, Data: []byte(fmt.Sprintf(nfsmount, shellWord(s.Host), s.Port, shellWord(s.Name), fallback))},
 		{Name: "usr/bin/bootlace-nbd", Mode: 0o755, Data: helper},
+		// the same program under the name of the client that Arch's start-up disk calls: it connects again when the connection is lost (see cmd/bootlace-nbd)
+		{Name: "usr/bin/nbd-client", Mode: 0o755, Data: helper},
 	})
 }
 

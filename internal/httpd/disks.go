@@ -4,8 +4,10 @@ package httpd
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/diskimg"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
@@ -13,8 +15,11 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
 )
 
-// diskState is how far a disk image is (an image that is not compressed is ready at once).
-func (s *Server) diskState(iso isos.ISO) diskimg.State {
+// diskState is how far a disk image is (an image that is not compressed is ready at once); it never starts unpacking.
+func (s *Server) diskState(iso isos.ISO) diskimg.State { return s.diskManager().Status(iso) }
+
+// diskManager is the unpacker of compressed images.
+func (s *Server) diskManager() *diskimg.Manager {
 	s.mu.Lock()
 	if s.disks == nil {
 		dir := s.CacheDir
@@ -25,7 +30,26 @@ func (s *Server) diskState(iso isos.ISO) diskimg.State {
 	}
 	m := s.disks
 	s.mu.Unlock()
-	return m.Status(iso)
+	return m
+}
+
+// unpack is /unpack/<id>: a PC that chose a packed disk image asks for it to be unpacked (iPXE fetches this address, then says so on the screen).
+func (s *Server) unpack(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimPrefix(r.URL.Path, "/unpack/")
+	list, _ := isos.Scan(s.ISODir)
+	for _, iso := range list {
+		if iso.ID == id && iso.Disk && iso.Packed != "" {
+			st := s.diskManager().Start(iso)
+			if !st.Started && !st.Ready {
+				http.Error(w, "cannot unpack", http.StatusInternalServerError)
+				return
+			}
+			s.logf("%s asks for %s to be unpacked", r.RemoteAddr, iso.Title)
+			fmt.Fprintln(w, "unpacking")
+			return
+		}
+	}
+	http.NotFound(w, r)
 }
 
 // diskEntry is the menu line of a disk image.
@@ -37,6 +61,12 @@ func (s *Server) diskEntry(iso isos.ISO, title, size string) (display string, e 
 		b.Family = "Disk image: cannot be unpacked"
 		e = menu.Entry{Name: display, Title: title, Kind: "disk image", Size: size, Commands: []string{
 			"echo This disk image could not be unpacked on the server. See the log of the server. && sleep 8 && exit",
+		}}
+	case !st.Ready && !st.Started:
+		display = fmt.Sprintf("%s  [disk image, packed, unpacks when started, %s]", title, size)
+		b.Family = "Disk image: packed, unpacks when started"
+		e = menu.Entry{Name: display, Title: title, Kind: "disk image", Size: size, Commands: []string{
+			"imgfetch " + s.Base + "/unpack/" + iso.ID + " && echo This disk image is being unpacked on the server (it takes a few minutes). Come back to this menu later. && sleep 10 && exit",
 		}}
 	case !st.Ready:
 		display = fmt.Sprintf("%s  [disk image, unpacking %d %%, %s]", title, st.Progress, size)
