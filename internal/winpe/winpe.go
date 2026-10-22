@@ -27,21 +27,24 @@ type Settings struct {
 func IPXE(s Settings) string {
 	var b strings.Builder
 	line := func(f string, a ...any) { fmt.Fprintf(&b, f+"\n", a...) }
+	// wimboot learns a file's name from the image name on a UEFI PC (--name) and from the image's command line on a BIOS PC (the word after the address):
+	// both are given, so that one script serves both.
+	file := func(name, url string, a ...any) { line("initrd --name %s %s %s", name, fmt.Sprintf(url, a...), name) }
 	line("#!ipxe")
 	line("kernel %s/ipxe/wimboot", s.Base)
 	line("iseq ${platform} efi && goto uefi || goto bios")
 	line(":uefi")
-	line("initrd --name bootmgfw.efi %s/efi/boot/bootx64.efi", s.FS)
-	line("initrd --name BCD %s/efi/microsoft/boot/bcd", s.FS)
+	file("bootmgfw.efi", "%s/efi/boot/bootx64.efi", s.FS)
+	file("BCD", "%s/efi/microsoft/boot/bcd", s.FS)
 	line("goto common")
 	line(":bios")
-	line("initrd --name bootmgr %s/bootmgr", s.FS)
-	line("initrd --name BCD %s/boot/bcd", s.FS)
+	file("bootmgr", "%s/bootmgr", s.FS)
+	file("BCD", "%s/boot/bcd", s.FS)
 	line(":common")
-	line("initrd --name boot.sdi %s/boot/boot.sdi", s.FS)
-	line("initrd --name boot.wim %s/sources/boot.wim", s.FS)
-	line("initrd --name winpeshl.ini %s/winpeshl.ini", s.Win)
-	line("initrd --name bootlace.cmd %s/bootlace.cmd", s.Win)
+	file("boot.sdi", "%s/boot/boot.sdi", s.FS)
+	file("boot.wim", "%s/sources/boot.wim", s.FS)
+	file("winpeshl.ini", "%s/winpeshl.ini", s.Win)
+	file("bootlace.cmd", "%s/bootlace.cmd", s.Win)
 	line("boot")
 	return b.String()
 }

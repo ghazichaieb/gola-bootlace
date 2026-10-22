@@ -7,6 +7,15 @@ import (
 
 var set = Settings{Base: "http://10.0.0.1:8080", FS: "http://10.0.0.1:8080/fs/ab", Win: "http://10.0.0.1:8080/w/ab", Host: "10.0.0.1", Share: "iso", Folder: "ab", User: "bootlace", Password: "s3cret", Port: 4445}
 
+func TestEveryFileIsNamedForUefiAndForBios(t *testing.T) {
+	// wimboot reads a file's name from the image name (UEFI) or from the image's command line (BIOS): the last word of the line
+	for _, want := range []string{"/bootx64.efi bootmgfw.efi\n", "/boot/bcd BCD\n", "/bootmgr bootmgr\n", "/boot/boot.sdi boot.sdi\n", "/boot.wim boot.wim\n", "/winpeshl.ini winpeshl.ini\n", "/bootlace.cmd bootlace.cmd\n"} {
+		if s := IPXE(set); !strings.Contains(s, want) {
+			t.Errorf("missing %q in:\n%s", want, s)
+		}
+	}
+}
+
 func TestTheScriptLoadsWimbootWithTheBootFilesAndOurTwoFiles(t *testing.T) {
 	s := IPXE(set)
 	for _, want := range []string{"kernel http://10.0.0.1:8080/ipxe/wimboot", "initrd --name boot.wim http://10.0.0.1:8080/fs/ab/sources/boot.wim", "initrd --name BCD http://10.0.0.1:8080/fs/ab/efi/microsoft/boot/bcd",

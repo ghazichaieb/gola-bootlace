@@ -76,11 +76,16 @@ switch ($Action) {
     'shot' {
         $service = Get-CimInstance -Namespace root\virtualization\v2 -ClassName Msvm_VirtualSystemManagementService
         $settings = Get-CimAssociatedInstance -InputObject (Computer) -ResultClassName Msvm_VirtualSystemSettingData | Where-Object VirtualSystemType -eq 'Microsoft:Hyper-V:System:Realized'
-        $r = Invoke-CimMethod -InputObject $service -MethodName GetVirtualSystemThumbnailImage -Arguments @{ TargetSystem = $settings; WidthPixels = [uint16]1024; HeightPixels = [uint16]768 }
+        # a generation 2 VM's screen can be asked for at 1024 x 768; a generation 1 VM's (legacy video) only at 640 x 480
+        foreach ($size in @(@(1024, 768), @(640, 480))) {
+            $w, $h = $size
+            $r = Invoke-CimMethod -InputObject $service -MethodName GetVirtualSystemThumbnailImage -Arguments @{ TargetSystem = $settings; WidthPixels = [uint16]$w; HeightPixels = [uint16]$h }
+            if ($r.ImageData -and $r.ImageData.Length -gt 0) { break }
+        }
         Add-Type -AssemblyName System.Drawing
-        $bmp = New-Object System.Drawing.Bitmap(1024, 768, [System.Drawing.Imaging.PixelFormat]::Format16bppRgb565)
-        $data = $bmp.LockBits((New-Object System.Drawing.Rectangle(0, 0, 1024, 768)), [System.Drawing.Imaging.ImageLockMode]::WriteOnly, $bmp.PixelFormat)
-        [System.Runtime.InteropServices.Marshal]::Copy($r.ImageData, 0, $data.Scan0, [Math]::Min($r.ImageData.Length, $data.Stride * 768))
+        $bmp = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format16bppRgb565)
+        $data = $bmp.LockBits((New-Object System.Drawing.Rectangle(0, 0, $w, $h)), [System.Drawing.Imaging.ImageLockMode]::WriteOnly, $bmp.PixelFormat)
+        [System.Runtime.InteropServices.Marshal]::Copy($r.ImageData, 0, $data.Scan0, [Math]::Min($r.ImageData.Length, $data.Stride * $h))
         $bmp.UnlockBits($data)
         $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
         "saved $Out"

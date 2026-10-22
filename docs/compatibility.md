@@ -2,7 +2,7 @@
 
 An ISO is listed as **works** only after it booted to its installer or live desktop through Bootlace in our test rig (a Hyper-V generation 2 VM on a private
 switch, UEFI with Secure Boot off, started by `tools/lab.ps1`). Nothing here is a promise that another ISO of the same distribution boots: each line is one
-file we tried. BIOS (legacy) boot has not been tested yet.
+file we tried. BIOS (legacy) boot is covered in its own section at the end.
 
 | ISO | Version | BIOS | UEFI | Result | Date | Notes |
 |---|---|---|---|---|---|---|
@@ -23,3 +23,15 @@ file we tried. BIOS (legacy) boot has not been tested yet.
 | Windows 11 FW11HFR / FW11PEN, custom-built Windows 11 -sb2023 builds on Secure Boot hardware | | | | **untested** | | Same method; not run yet (the lab has Secure Boot off). |
 
 Result values: **works**, **partial** (boots but a step needs help; see notes), **fails**, **untested**.
+
+## BIOS (legacy) boot, 2026-10-22
+
+Tested in a Proxmox VM (SeaBIOS, 6 GB) started from the network; the menu, with the logo picture, comes up through iPXE's VESA console.
+
+- **Windows Setup environment (wimboot) now starts on BIOS** (Windows Server 2025 and FW11HEN: WinPE reaches the Bootlace command window). It failed with `Bad CPIO magic`
+  because on a BIOS PC wimboot reads each file's name from the image's command line, and the script only gave `--name` (which UEFI uses). Every `initrd` line now has both:
+  `initrd --name boot.wim <address> boot.wim`.
+- A QEMU VM must not use the default `kvm64` CPU: bootmgr restarts the VM the moment wimboot hands over. Use CPU type `host` (or `x86-64-v2-AES`).
+- The PC needs a network card WinPE has a driver for (the VM's `virtio`, `e1000` and `e1000e` cards have none: "installation files could not be reached", ipconfig lists no adapter). So
+  the install itself was not run through on BIOS; the network and share part is the same as on UEFI, where it works.
+- iPXE's old BIOS file (from boot.ipxe.org, 2019) has no `console`, `cpair` or PNG support. Bootlace now ships its own build (see NOTICE and tools/ipxe).

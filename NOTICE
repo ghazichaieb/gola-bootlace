@@ -8,11 +8,12 @@ Shipped or planned (update this list the day something is copied or bundled):
 - Ventoy (https://github.com/ventoy/Ventoy), Copyright (c) longpanda, GPL-3.0-or-later.
   Planned reuse: the per-distribution initramfs helper scripts (IMG/cpio/ventoy/hook/*) and ideas from vtoyjump. Files copied from it must keep
   their original headers and be listed here by path.
-- iPXE (https://ipxe.org), GPL-2.0-or-later with some files under compatible licences. SHIPPED, unchanged, in internal/assets/ipxe (downloaded
-  2026-10-21 from https://boot.ipxe.org; the source is at https://github.com/ipxe/ipxe): ipxe.efi (x86_64-efi/ipxe.efi, SHA-256
-  e1e6abf3fce99e6310ba2fe29bf64695df6879de6b503618c3237a86e1a76f42), snponly.efi (x86_64-efi/snponly.efi, SHA-256
-  42f83339c1458dc69f8a2475df16fa432a444f54bf5901911fcce5963a210627), undionly.kpxe (SHA-256
-  81a80cf5d3429b4add78015529e46662139e89242478cd3d4215be58f936e4df). They are unsigned: UEFI Secure Boot must be off for them (see issue #10).
+- iPXE (https://ipxe.org), GPL-2.0-or-later with some files under compatible licences. SHIPPED in internal/assets/ipxe, built from the unchanged source
+  at https://github.com/ipxe/ipxe commit a5eed98d964bc48790041aed41a8876fa0b7eba5 (iPXE 2.0.0+) with only the build options in tools/ipxe/config
+  (console command, PNG pictures, colour commands, VESA console for BIOS); tools/ipxe/build.sh makes the files. ipxe.efi (SHA-256
+  78354cdf81434498aabfad6fb5c1177691ee1daaf1489cd9dbdd1ccd199409b4), snponly.efi (SHA-256
+  a94d1db7f1b2cfa10b87faef67d95572618ba04bce286a3da003609a3c0dca90), undionly.kpxe (SHA-256
+  7391a65312f9719374e4d872c60c6eaebabfbea5d69edaa16e7d23701a27e9d5). They are unsigned: UEFI Secure Boot must be off for them (see issue #10).
 - wimboot 2.9.0 (https://ipxe.org/wimboot), GPL-2.0-or-later, source at https://github.com/ipxe/wimboot. SHIPPED unchanged in internal/assets/ipxe/wimboot (downloaded 2026-10-21
   from the project's release, SHA-256 5f067ccdc4d084d5bf77b6c853bd0f8402dfc2b4cd1b103d358993ae97fae8e3). Starts Windows setup images.
 - go-smb-server (https://github.com/sonroyaalmerol/go-smb-server), MIT, Copyright (c) its authors. SHIPPED in third_party/go-smb-server with our changes: the SMB 2
