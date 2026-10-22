@@ -10,7 +10,7 @@ import (
 	"io/fs"
 )
 
-//go:embed ipxe/*
+//go:embed ipxe/* ubuntu/*
 var files embed.FS
 
 // IPXE is the folder TFTP serves: ipxe.efi (UEFI, 64 bit), snponly.efi (UEFI, uses the firmware's network driver) and undionly.kpxe (BIOS).
@@ -20,4 +20,14 @@ func IPXE() fs.FS {
 		panic(err) // the folder is part of the program: this cannot happen
 	}
 	return sub
+}
+
+// UbuntuGrub is Ubuntu's signed network-boot GRUB (grubnetx64.efi.signed from the noble-updates package grub-efi-amd64-signed 1.202.5+2.12-1ubuntu7.3, unchanged). The GRUB on an Ubuntu ISO is a media-only build that
+// cannot read files over the network when Secure Boot is on, so the shim from the ISO starts this one instead: Canonical signed it, and the shim trusts Canonical.
+func UbuntuGrub() []byte {
+	b, err := files.ReadFile("ubuntu/grubnetx64.efi.signed")
+	if err != nil {
+		panic(err) // the file is part of the program: this cannot happen
+	}
+	return b
 }

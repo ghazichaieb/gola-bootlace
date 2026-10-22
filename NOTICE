@@ -14,6 +14,10 @@ Shipped or planned (update this list the day something is copied or bundled):
   78354cdf81434498aabfad6fb5c1177691ee1daaf1489cd9dbdd1ccd199409b4), snponly.efi (SHA-256
   a94d1db7f1b2cfa10b87faef67d95572618ba04bce286a3da003609a3c0dca90), undionly.kpxe (SHA-256
   7391a65312f9719374e4d872c60c6eaebabfbea5d69edaa16e7d23701a27e9d5). They are unsigned: UEFI Secure Boot must be off for them (see issue #10).
+- GRUB 2.12 as built and signed by Canonical for Ubuntu, GPL-3.0-or-later: internal/assets/ubuntu/grubnetx64.efi.signed is the file of the package grub-efi-amd64-signed
+  1.202.5+2.12-1ubuntu7.3 (noble-updates), unchanged (source: https://packages.ubuntu.com/source/noble/grub2 and https://git.launchpad.net/ubuntu/+source/grub2). UEFI Secure Boot
+  accepts it because Canonical signed it; the shim that starts it comes from the Ubuntu ISO that is being booted. Used only for Ubuntu started with Secure Boot on.
+- wimlib (https://wimlib.net), LGPL-3.0-or-later: NOT shipped; the server runs the wimlib-imagex that is installed on the computer (Debian/Ubuntu: package wimtools) to put two files into a copy of a Windows boot.wim.
 - wimboot 2.9.0 (https://ipxe.org/wimboot), GPL-2.0-or-later, source at https://github.com/ipxe/wimboot. SHIPPED unchanged in internal/assets/ipxe/wimboot (downloaded 2026-10-21
   from the project's release, SHA-256 5f067ccdc4d084d5bf77b6c853bd0f8402dfc2b4cd1b103d358993ae97fae8e3). Starts Windows setup images.
 - go-smb-server (https://github.com/sonroyaalmerol/go-smb-server), MIT, Copyright (c) its authors. SHIPPED in third_party/go-smb-server with our changes: the SMB 2

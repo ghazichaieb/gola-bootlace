@@ -28,6 +28,10 @@ type URLs struct {
 type Boot struct {
 	Family   string   // "Alpine", "Debian live" ...
 	Commands []string // iPXE commands: kernel, initrd, boot
+
+	// For a kernel that GRUB (signed by the distribution, so that UEFI Secure Boot can stay on) starts instead of iPXE: the files inside the ISO and the kernel's
+	// arguments. Empty for the kinds that cannot be started that way.
+	Kernel, Initrd, Args string
 }
 
 // Detect returns the way to boot the ISO, or false when it is not one of the kinds known here.
@@ -58,7 +62,7 @@ func firstMatch(t Tree, dir, prefix string) string {
 }
 
 func boot(family string, u URLs, kernel, initrd, args string) Boot {
-	return Boot{Family: family, Commands: []string{
+	return Boot{Family: family, Kernel: kernel, Initrd: initrd, Args: args, Commands: []string{
 		"kernel " + u.FS + kernel + " " + args,
 		"initrd " + u.FS + initrd,
 		"boot",

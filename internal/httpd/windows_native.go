@@ -175,8 +175,14 @@ func (s *Server) NativeBootFile(mac string, efi bool) (string, bool) {
 		if e.ISO.ID != id {
 			continue
 		}
-		if e.Boot.Family != "Windows setup" {
-			s.logf("%s: the rule names %s, which cannot be started this way yet (only Windows set-up can): showing the menu", m, e.Title)
+		kind := ""
+		switch e.Boot.Family {
+		case "Windows setup":
+			kind = handoff.Windows
+		case "Ubuntu (casper)":
+			kind = handoff.Ubuntu
+		default:
+			s.logf("%s: the rule names %s, which cannot be started this way yet (only Windows set-up and Ubuntu can): showing the menu", m, e.Title)
 			return "", false
 		}
 		_ = s.Config.Update(func(c *config.Config) error {
@@ -188,9 +194,9 @@ func (s *Server) NativeBootFile(mac string, efi bool) (string, bool) {
 			}
 			return nil
 		})
-		s.Handoff.Pending(m, id, handoff.Windows)
+		s.Handoff.Pending(m, id, kind)
 		s.setAction(m, "native: "+e.Title)
-		s.logf("%s: its rule starts %s with Windows' own boot manager (works with Secure Boot); the rule is used up", m, e.Title)
+		s.logf("%s: its rule starts %s with the firmware's own signed boot loaders (works with Secure Boot); the rule is used up", m, e.Title)
 		return s.Handoff.BootFile(m, true)
 	}
 	s.logf("%s: its rule names an ISO that is not there any more", m)

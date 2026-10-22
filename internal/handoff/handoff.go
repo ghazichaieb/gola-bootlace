@@ -33,6 +33,7 @@ type entry struct {
 const (
 	FreeBSD = "freebsd" // FreeBSD's loader (boot/loader.efi, boot/pxeboot)
 	Windows = "windows" // Windows' own boot manager, signed by Microsoft: works with UEFI Secure Boot on
+	Ubuntu  = "ubuntu"  // Ubuntu's shim and GRUB, signed by Microsoft and Canonical, then Ubuntu's own signed kernel: also works with Secure Boot on
 )
 
 func (r *Registry) now() time.Time {
@@ -65,6 +66,12 @@ func (r *Registry) BootFile(mac string, efi bool) (string, bool) {
 	defer r.mu.Unlock()
 	e, ok := r.pending[norm(mac)]
 	if !ok || r.now().After(e.until) {
+		return "", false
+	}
+	if e.kind == Ubuntu {
+		if efi {
+			return "ubuntu/" + e.iso + "/bootx64.efi", true
+		}
 		return "", false
 	}
 	if e.kind == Windows {

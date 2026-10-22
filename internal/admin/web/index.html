@@ -158,7 +158,7 @@ function actionOptions(sel, withMenu = true) {
   o += `<option value="local"${sel === "local" ? " selected" : ""}>Boot from its own disk</option>`;
   o += state.isos.map(i => `<option value="iso:${i.id}"${sel === "iso:" + i.id ? " selected" : ""}>Start ${esc(i.title)}</option>`).join("");
   // Windows set-up can also be started by the PC's own firmware, which works with UEFI Secure Boot on (the rule is used up at the PC's next network boot)
-  o += state.isos.filter(i => i.family === "Windows setup").map(i => `<option value="native:${i.id}"${sel === "native:" + i.id ? " selected" : ""}>Install ${esc(i.title)}, once (works with Secure Boot)</option>`).join("");
+  o += state.isos.filter(i => i.family === "Windows setup" || i.family === "Ubuntu (casper)").map(i => `<option value="native:${i.id}"${sel === "native:" + i.id ? " selected" : ""}>${i.family === "Windows setup" ? "Install" : "Start"} ${esc(i.title)}, once (works with Secure Boot)</option>`).join("");
   return o;
 }
 

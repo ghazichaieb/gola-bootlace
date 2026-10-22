@@ -29,7 +29,29 @@ Things found out on the way:
 Tested in the Hyper-V lab with Secure Boot on (Microsoft Windows template): boot manager, BCD, `boot.wim`, WinPE, the share, Windows 11 Setup. Not tested: a real PC, and an
 installation run through to the end this way (it is the same Setup, started the same way, as in the iPXE way, where it was).
 
+## Ubuntu, with Secure Boot on (works up to the live system; needs a lot of RAM)
+
+Microsoft signs Ubuntu's shim, the shim carries Canonical's key, GRUB and the kernel are signed by Canonical, so the whole chain passes with Secure Boot on. The rule
+(`native:<id>` on an ISO that is recognised as "Ubuntu (casper)") names `ubuntu/<id>/bootx64.efi` as the boot file. Then:
+
+1. The firmware fetches the **shim** from the ISO (TFTP). It asks for `grubx64.efi` in the same folder.
+2. The GRUB on an Ubuntu ISO is a media-only build: it has no `tftp` or `http` and Secure Boot forbids loading them (`Secure Boot forbids loading module from (tftp,...)`).
+   So the answer to `grubx64.efi` is **Ubuntu's own signed network GRUB** (`grubnetx64.efi.signed`, shipped unchanged in internal/assets/ubuntu; see NOTICE).
+   (An older one, from `jammy-updates`, was refused by the shim: `Verification failed: (0x1A) Security Violation`; the one from `noble-updates` is accepted.)
+3. That GRUB asks for `grub/grub.cfg`; the server makes one that starts the ISO's own `casper/vmlinuz` and `casper/initrd` over HTTP with the iPXE way's arguments.
+4. The kernel (signed by Canonical) starts, and casper downloads the ISO into memory. Tested in the Hyper-V lab with Secure Boot on (Microsoft UEFI Certificate Authority
+   template, which Linux shims need): kernel and initramfs ran, the download got to 90%.
+
+What stops it: **RAM**. casper keeps the downloaded ISO in a memory file system that may take half of the RAM, so a 4.4 GB ISO needs a PC with about 12 GB (a 10 GB VM ended
+with `wget: short write: No space left on device`). For "boot Ubuntu on any PC to back up or wipe drives" this is the next problem. Ideas, cheapest first: use a smaller
+ISO (Ubuntu Server's live ISO, ~2.7 GB, so ~6 GB RAM); mount the ISO over the network instead of copying it (casper's `netboot=nfs` needs an NFS server with a portmapper
+and a UDP mount service for klibc's `nfsmount`; `netboot=cifs` needs the share to accept `root` with an empty password and to speak SMB 3, neither of which our share does);
+or add an extra initramfs archive (a cpio made by the server) whose hook mounts the ISO the way the PC can.
+
+Also found: the ISO's initramfs has `nfsmount` (klibc, no `mountport=` option, needs a portmapper) and `mount.cifs`, but no `nfsopts=` on the kernel command line, so the
+options cannot be changed from outside.
+
 ## Everything else, with Secure Boot on
 
 Not yet. Options (issue #10): a Microsoft-signed shim with our key enrolled on each PC once (iPXE and all the kernels then work, with one extra screen per PC), or the same
-"firmware starts a vendor-signed chain" idea for Ubuntu (its shim + GRUB + kernel are signed by Canonical). iVentoy offers both as its Standard and ByPass modes.
+"firmware starts a vendor-signed chain" idea for other distributions that sign their shim, GRUB and kernel (Debian, Fedora, openSUSE, ...). iVentoy offers both as its Standard and ByPass modes.

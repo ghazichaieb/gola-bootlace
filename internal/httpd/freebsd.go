@@ -39,8 +39,11 @@ func (s *Server) next(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	mac, ip, id := q.Get("mac"), q.Get("ip"), q.Get("iso")
 	kind := handoff.FreeBSD
-	if q.Get("kind") == handoff.Windows {
+	switch q.Get("kind") {
+	case handoff.Windows:
 		kind = handoff.Windows
+	case handoff.Ubuntu:
+		kind = handoff.Ubuntu
 	}
 	if s.Handoff == nil || mac == "" || ip == "" || id == "" || net.ParseIP(ip) == nil {
 		http.Error(w, "mac, ip and iso are needed", http.StatusBadRequest)
@@ -70,6 +73,12 @@ func (s *Server) TFTPLookup(client net.IP, name string) (fs.File, bool) {
 	if s.Handoff == nil {
 		return nil, false
 	}
+	if rest, ok := strings.CutPrefix(name, "ubuntu/"); ok { // the boot file named by DHCP: ubuntu/<id>/bootx64.efi (shim); GRUB's requests come with the same prefix or none
+		if id, file, ok := strings.Cut(rest, "/"); ok {
+			s.Handoff.Bind(client.String(), id, handoff.Ubuntu)
+			return s.ubuntuTFTP(client, id, file)
+		}
+	}
 	if rest, ok := strings.CutPrefix(name, "win/"); ok { // the boot file named by DHCP: win/<id>/bootmgfw.efi
 		if id, file, ok := strings.Cut(rest, "/"); ok {
 			s.Handoff.Bind(client.String(), id, handoff.Windows)
@@ -80,8 +89,11 @@ func (s *Server) TFTPLookup(client net.IP, name string) (fs.File, bool) {
 	if !ok {
 		return nil, false
 	}
-	if kind := s.Handoff.Kind(client.String()); kind == handoff.Windows {
+	switch s.Handoff.Kind(client.String()) {
+	case handoff.Windows:
 		return s.windowsTFTP(client, id, name)
+	case handoff.Ubuntu:
+		return s.ubuntuTFTP(client, id, name)
 	}
 	if isLoaderName(name) {
 		s.Handoff.Fetched(client.String())
