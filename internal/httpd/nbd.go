@@ -96,6 +96,8 @@ func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) 
 		case src.FS.Exists("/.alpine-release") && alpineFlavor(src.FS) != "":
 			flavor := alpineFlavor(src.FS)
 			build = func() ([]byte, error) { return alpineinit.Extra(src.FS, flavor, helper) }
+		case src.FS.Exists("/porteus/base/001-core.xzm") && src.FS.Exists("/boot/syslinux/initrd.xz"): // Porteus: only the folder its start-up script will look in for the ISO
+			return initrd.Archive([]initrd.File{{Name: "mnt", Mode: 0o755, Dir: true}, {Name: "mnt/bootlace", Mode: 0o755, Dir: true}}), nil
 		case tails.Is(src.FS):
 			build = func() ([]byte, error) { return tails.Extra(src.FS, set, helper) }
 		case !src.ISO.Disk && src.FS.Exists("/arch/x86_64/airootfs.sfs"): // an archiso whose kernel is in the ISO's EFI image

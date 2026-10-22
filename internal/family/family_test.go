@@ -213,6 +213,7 @@ func TestMoreLiveIsosAreRecognisedByTheirFiles(t *testing.T) {
 		"gentoo":                            {fake{"/boot/gentoo": true, "/boot/gentoo.igz": true, "/image.squashfs": true}, "Gentoo (live)", "netroot=nbd:10.0.0.1:10809:abc root=live:/dev/nbd0"},
 		"tails (disk image)":                {fake{"/live/vmlinuz": true, "/live/initrd.img": true, "/live/filesystem.squashfs": true, "/live/Tails.module": true}, "Tails", "module=Tails netboot=nfs nfsroot=10.0.0.1:/abc"},
 		"lakka (libreelec disk image)":      {fake{"/KERNEL": true, "/SYSTEM": true}, "Lakka / LibreELEC", "boot=NBD=10.0.0.1:10809 ip=dhcp rdinit=/bootlace-init"},
+		"porteus":                           {fake{"/boot/syslinux/vmlinuz": true, "/boot/syslinux/initrd.xz": true, "/porteus/base/001-core.xzm": true}, "Porteus (whole ISO in memory)", "from=/porteus.iso"},
 		"tiny core":                         {fake{"/boot/vmlinuz": true, "/boot/core.gz": true}, "Tiny Core", "initrd http://s/fs/abc/boot/core.gz"},
 		"vyos (no network disk driver)":     {fake{"/live/filesystem.squashfs": true, "/live/vmlinuz-6.18.57-vyos": true, "/live/initrd.img-6.18.57-vyos": true}, "Debian live", "fetch=http://s/fs/abc/live/filesystem.squashfs"},
 	} {

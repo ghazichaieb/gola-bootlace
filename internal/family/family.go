@@ -59,7 +59,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, gentooLive, tinyCore, tails, libreELEC, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, gentooLive, tinyCore, porteus, tails, libreELEC, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -207,6 +207,23 @@ func isVyOS(t Tree) bool {
 		}
 	}
 	return false
+}
+
+// Porteus (and Slax, built the same way): a Slackware live system whose start-up script finds its files on a disk, over NFS (a share of its own layout) or in an ISO file that
+// "from=" names. The ISO is handed over as a file in the initramfs, in a folder under /mnt where the script looks for disks (the extra archive makes the folder): the PC needs memory for the ISO, twice over (the script
+// copies the initramfs once), but nothing else. "Always fresh" options: the ISO cannot hold changes.
+func porteus(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/boot/syslinux/vmlinuz") || !t.Exists("/boot/syslinux/initrd.xz") || !t.Exists("/porteus/base/001-core.xzm") || u.Extra == "" {
+		return Boot{}, false
+	}
+	return Boot{Family: "Porteus (whole ISO in memory)", Kernel: "/boot/syslinux/vmlinuz", Initrd: "/boot/syslinux/initrd.xz", Commands: []string{
+		"echo Loading Porteus ... the whole ISO is read into memory first, this takes a while",
+		"kernel " + u.FS + "/boot/syslinux/vmlinuz from=/porteus.iso nomagic base_only norootcopy",
+		"initrd " + u.FS + "/boot/syslinux/initrd.xz",
+		"initrd " + u.Extra, // (makes the folder: iPXE does not, and a file in a folder that is not there is dropped without a word)
+		"initrd --name /mnt/bootlace/porteus.iso " + u.ISO + " /mnt/bootlace/porteus.iso mode=0644",
+		"boot",
+	}}, true
 }
 
 // LibreELEC and the systems built from it (Lakka): the kernel has its initramfs inside and mounts the boot partition itself; "boot=NBD=host:port" makes it read that partition
