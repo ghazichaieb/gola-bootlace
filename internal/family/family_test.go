@@ -193,3 +193,24 @@ func TestAFedoraStyleLiveIsoUsesTheNetworkDiskAndItsHandlerWhenItCan(t *testing.
 		t.Fatalf("%s", lines(b))
 	}
 }
+
+func TestMoreLiveIsosAreRecognisedByTheirFiles(t *testing.T) {
+	u := urls
+	u.NBD, u.Extra = "10.0.0.1:/abc", "http://s/x/abc/extra.cpio"
+	u.NBDHost, u.NBDPort, u.NBDName = "10.0.0.1", 10809, "abc"
+	for name, tc := range map[string]struct {
+		tree   fake
+		family string
+		want   string
+	}{
+		"pop os (casper in another folder)": {fake{"/casper_pop-os_24.04/vmlinuz.efi": true, "/casper_pop-os_24.04/initrd.gz": true, "/casper_pop-os_24.04/filesystem.squashfs": true}, "Ubuntu (casper)", "live-media-path=/casper_pop-os_24.04"},
+		"gentoo":                            {fake{"/boot/gentoo": true, "/boot/gentoo.igz": true, "/image.squashfs": true}, "Gentoo (live)", "netroot=nbd:10.0.0.1:10809:abc root=live:/dev/nbd0"},
+		"tiny core":                         {fake{"/boot/vmlinuz": true, "/boot/core.gz": true}, "Tiny Core", "initrd http://s/fs/abc/boot/core.gz"},
+		"vyos (no network disk driver)":     {fake{"/live/filesystem.squashfs": true, "/live/vmlinuz-6.18.57-vyos": true, "/live/initrd.img-6.18.57-vyos": true}, "Debian live", "fetch=http://s/fs/abc/live/filesystem.squashfs"},
+	} {
+		b, ok := Detect(tc.tree, u)
+		if !ok || b.Family != tc.family || !strings.Contains(lines(b), tc.want) {
+			t.Errorf("%s: %q %v\n%s", name, b.Family, ok, lines(b))
+		}
+	}
+}

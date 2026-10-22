@@ -56,7 +56,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, gentooLive, tinyCore, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -158,6 +158,17 @@ func systemRescue(t Tree, u URLs) (Boot, bool) {
 }
 
 // Debian live and the distributions built the same way (TrueNAS keeps its kernel at the top of the ISO): the squashfs comes from the web server.
+// isVyOS says whether a live folder is VyOS's (its kernel and initramfs files carry "vyos" in their names).
+func isVyOS(t Tree) bool {
+	names, _ := t.List("/live")
+	for _, n := range names {
+		if strings.Contains(n, "vyos") {
+			return true
+		}
+	}
+	return false
+}
+
 func debianLive(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists("/live/filesystem.squashfs") {
 		return Boot{}, false
@@ -172,9 +183,13 @@ func debianLive(t Tree, u URLs) (Boot, bool) {
 	if kernel == "" || initrd == "" {
 		return Boot{}, false
 	}
-	if u.NBD != "" && u.Extra != "" && strings.HasPrefix(kernel, "/live/") { // the usual layout: live-boot mounts the ISO through nfsmount, which Bootlace replaces (package initrd)
+	// VyOS's start-up disk has no network block disk driver: its system image (a few hundred MB, not the whole ISO) is downloaded by live-boot instead
+	if u.NBD != "" && u.Extra != "" && strings.HasPrefix(kernel, "/live/") && !isVyOS(t) { // the usual layout: live-boot mounts the ISO through nfsmount, which Bootlace replaces (package initrd)
 		b := boot("Debian live", u, kernel, initrd, "boot=live components netboot=nfs nfsroot="+u.NBD+" console=tty0")
 		return withExtra(b, u), true
+	}
+	if isVyOS(t) { // VyOS's own boot menu passes these: without noautologin the console logs in as a user that does not exist, over and over
+		return boot("Debian live", u, kernel, initrd, "boot=live components hostname=vyos username=live nopersistence noautologin union=overlay net.ifnames=0 biosdevname=0 ip=dhcp fetch="+u.FS+"/live/filesystem.squashfs console=tty0"), true
 	}
 	return boot("Debian live", u, kernel, initrd, "boot=live components ip=dhcp fetch="+u.FS+"/live/filesystem.squashfs console=tty0"), true
 }
@@ -202,23 +217,46 @@ func proxmox(t Tree, u URLs) (Boot, bool) {
 
 // Ubuntu and its flavours (casper): the initramfs downloads the ISO into memory.
 func ubuntu(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/casper/vmlinuz") {
+	dir, kernel := casperDir(t)
+	if dir == "" {
 		return Boot{}, false
 	}
-	initrd := firstMatch(t, "/casper", "initrd")
+	initrd := firstMatch(t, dir, "initrd")
 	if initrd == "" {
 		return Boot{}, false
+	}
+	path := ""
+	if dir != "/casper" { // Pop!_OS and others keep the live system in a folder of their own name, which casper is told about
+		path = " live-media-path=" + dir
 	}
 	if u.NBD != "" && u.Extra != "" { // the ISO is read over the network a piece at a time: any amount of RAM will do (see package initrd)
 		// cloud-init stays on for the server ISOs: casper hands them the network settings of the start-up (which the network disk needs kept: see package initrd), and with
 		// cloud-init off they get a plain "DHCP on every card" instead, take another address and lose the connection to the ISO. The desktop ISOs do not need it.
 		ci := " cloud-init=disabled"
-		if firstMatch(t, "/casper", "ubuntu-server") != "" {
+		if firstMatch(t, dir, "ubuntu-server") != "" {
 			ci = ""
 		}
-		return withExtra(boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+ci+" console=tty0"), u), true
+		return withExtra(boot("Ubuntu (casper)", u, kernel, initrd, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+path+ci+" console=tty0"), u), true
 	}
-	return boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp url="+u.ISO+" boot=casper cloud-init=disabled console=tty0"), true
+	return boot("Ubuntu (casper)", u, kernel, initrd, "ip=dhcp url="+u.ISO+" boot=casper"+path+" cloud-init=disabled console=tty0"), true
+}
+
+// casperDir finds the folder of a casper live system and its kernel: /casper, or a folder whose name starts with casper (Pop!_OS: casper_pop-os_24.04_..., kernel vmlinuz.efi).
+func casperDir(t Tree) (dir, kernel string) {
+	if t.Exists("/casper/vmlinuz") {
+		return "/casper", "/casper/vmlinuz"
+	}
+	names, _ := t.List("/")
+	sort.Strings(names)
+	for _, n := range names {
+		if strings.HasPrefix(n, "casper") && strings.HasSuffix(n, "/") {
+			d := "/" + strings.TrimSuffix(n, "/")
+			if k := firstMatch(t, d, "vmlinuz"); k != "" {
+				return d, k
+			}
+		}
+	}
+	return "", ""
 }
 
 // Fedora, CentOS, Rocky, Alma and other Red Hat family ISOs: an installer reads its packages from the web server, a live ISO is fetched whole.
@@ -279,6 +317,22 @@ func dracutISCSI(u URLs) string {
 	port := strconv.Itoa(u.ISCSIPort)
 	return "ip=dhcp rd.neednet=1 netroot=iscsi:" + u.ISCSIHost + "::" + port + "::" + u.ISCSIIQN +
 		" root=live:/dev/disk/by-path/ip-" + u.ISCSIHost + ":" + port + "-iscsi-" + u.ISCSIIQN + "-lun-0"
+}
+
+// Gentoo's live ISOs (minimal install CD, LiveGUI): a dracut live system with its kernel and initramfs in /boot and the system in /image.squashfs.
+func gentooLive(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/boot/gentoo") || !t.Exists("/boot/gentoo.igz") || !t.Exists("/image.squashfs") {
+		return Boot{}, false
+	}
+	return dracutLive(Boot{Family: "Gentoo (live)", Kernel: "/boot/gentoo", Initrd: "/boot/gentoo.igz"}, u, " rd.live.dir=/ rd.live.squashimg=image.squashfs cdroot"), true
+}
+
+// Tiny Core (Core, without the graphical parts): a 20 MB kernel and a small initramfs that holds the whole system, so nothing is read from the ISO afterwards.
+func tinyCore(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/boot/vmlinuz") || !t.Exists("/boot/core.gz") {
+		return Boot{}, false
+	}
+	return boot("Tiny Core", u, "/boot/vmlinuz", "/boot/core.gz", "loglevel=3"), true
 }
 
 // ShredOS (nwipe, for wiping drives): one kernel with everything inside it.
