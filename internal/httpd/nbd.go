@@ -21,6 +21,7 @@ import (
 // familyURLs says where the web server offers an ISO.
 func (s *Server) familyURLs(iso isos.ISO) family.URLs {
 	u := family.URLs{ISO: s.Base + isoPath(iso.Name), FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Base: s.Base}
+	u.ISCSI = s.iscsiURL(iso)
 	if s.NBDPort != 0 {
 		if pu, err := url.Parse(s.Base); err == nil {
 			u.NBD = pu.Hostname() + ":/" + iso.ID // what casper's nfsroot= shows; the helper gets the real address from the archive

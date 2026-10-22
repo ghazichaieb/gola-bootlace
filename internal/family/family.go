@@ -26,6 +26,7 @@ type URLs struct {
 	NBD, Extra string
 	// The network disk's address and the ISO's name on it, for the ones that attach it themselves (archiso has its own NBD client).
 	NBDHost, NBDName string
+	ISCSI            string // the ISO as a network CD-ROM (the address iPXE's sanboot takes), when the iSCSI server is on
 	NBDPort          int
 	Base             string // the server
 }
@@ -216,6 +217,11 @@ func windows(t Tree, u URLs) (Boot, bool) {
 	}
 	if !t.Exists("/sources/install.wim") && !t.Exists("/sources/install.esd") && !t.Exists("/sources/install.swm") {
 		// a Windows PE with no installation image (Hiren's BootCD PE, a recovery or rescue disc): it starts its own programs, so Bootlace adds nothing to it
+		// With iSCSI the PC reads the ISO as a CD-ROM a piece at a time. Through wimboot the boot image (1.8 GB for Hiren's) would be held in memory twice
+		// (wimboot's copy and Windows' RAM disk), which needs 6 GB or more.
+		if u.ISCSI != "" {
+			return Boot{Family: "Windows PE", Commands: []string{"sanboot --no-describe --drive 0x80 " + u.ISCSI}}, true
+		}
 		return Boot{Family: "Windows PE", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
 	}
 	return Boot{Family: "Windows setup", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
