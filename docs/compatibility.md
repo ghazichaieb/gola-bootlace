@@ -84,3 +84,5 @@ A packed image is unpacked once, in the background, into `<data folder>/cache/im
 Tested in the lab with a small UEFI disk image, plain and gzipped: the firmware booted its loader from the SAN disk (`Booting from SAN device 0x80`).
 Limit, as for every "as a disk" start: once the operating system's own kernel runs, the firmware's SAN disk is gone, so an image whose system looks for its disk again after the loader (most Linux images
 that mount their root from a partition) works only if its initramfs can log in to iSCSI or has been given a network disk, which is per-image work like the ISO families. Not handled: VHD, VHDX, qcow2 and VMDK.
+- **BIOS (legacy) on the Proxmox test server, 2026-10-22** (`tools/proxmox/pve_run.sh`: throw-away SeaBIOS VMs with an e1000e card on the real LAN, the Bootlace container hands out the boot; much faster than Hyper-V's BIOS VMs):
+  Ubuntu 22.04.5 desktop (3 GB, desktop), Debian 13.7 live GNOME (3 GB, desktop), Fedora 44 Workstation Live (4 GB, over iSCSI, desktop), CachyOS (3 GB, desktop), Linux Mint 22.3 (3 GB, desktop), Kali netinst (2 GB, installer).

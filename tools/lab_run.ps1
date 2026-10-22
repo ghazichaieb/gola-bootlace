@@ -32,7 +32,7 @@ Start-Sleep 1
 $plan = @()
 foreach ($t in $Tests) {
     $p = $t.Split(':')
-    $e = [ordered]@{ Iso = $p[0]; Mem = [int]$p[1]; Wait = [int]$p[2]; SB = ($p -contains 'sb'); Native = ($p -contains 'native') }
+    $e = [ordered]@{ Iso = $p[0]; Mem = [int]$p[1]; Wait = [int]$p[2]; SB = ($p -contains 'sb'); Native = ($p -contains 'native'); Bios = ($p -contains 'bios') }
     $src = @(Get-ChildItem $Source -Recurse | Where-Object { $_.Name -match '\.(iso|img|raw)(\.(gz|xz|zst|bz2))?$' } | Where-Object { $_.Name -like "*$($e.Iso)*" })
     if ($src.Count -gt 1 -and @($src | Where-Object { $_.Name -eq "$($e.Iso).iso" }).Count -eq 1) { $src = @($src | Where-Object { $_.Name -eq "$($e.Iso).iso" }) }   # an exact name wins
     if ($src.Count -ne 1) { throw "'$($e.Iso)' matches $($src.Count) ISOs: $(($src | ForEach-Object Name) -join ', ')" }
@@ -68,6 +68,7 @@ foreach ($e in $plan) {
     $e | Add-Member Id $m.id; $e | Add-Member Family "$($m.family) / $($m.method)"
     $vmArgs = @{ Action = 'create'; Name = $e.Name; MemoryGB = $e.Mem }
     if ($e.SB) { $vmArgs.SecureBoot = $true }
+    if ($e.Bios) { $vmArgs.Bios = $true }
     & (Join-Path $PSScriptRoot 'pxe_vm.ps1') @vmArgs | Out-Null
     $vm = "bl-$($e.Name)"
     Stop-VM -Name $vm -TurnOff -Force
