@@ -79,6 +79,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	pxeOnly := fs.Bool("pxe-only", false, "full mode: hand out addresses to PCs that start a network boot only (a lab where this computer is also on the network)")
 	menuDefault := fs.Int("menu-default", 0, "the menu entry (counting from 1) that starts by itself after -menu-timeout seconds (0: wait for a choice)")
 	smbPasswordFlag := fs.String("smb-password", "", "the password Windows set-up logs in to the share with (default: made up once and kept in the settings file)")
+	nbdPort := fs.Int("nbd-port", 10809, "the port of the network disk server that a live Linux (Ubuntu) reads its ISO from instead of copying it into memory (0: off)")
 	wimlibFlag := fs.String("wimlib", "", "wimlib-imagex, which starts Windows with UEFI Secure Boot on (default: the one on the PATH)")
 	smbForward := fs.String("smb-forward", "", "for finding faults: pass the share connections on to this SMB server (host:port) and log them")
 	smbPort := fs.Int("smb-port", 445, "the port of the share that Windows set-up reads its files from")
@@ -142,7 +143,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}
 	dataDir := filepath.Dir(*configPath)
 	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
-		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache")}
+		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort}
 	if winpe.Wimlib(*wimlibFlag) == "" {
 		logf("wimlib-imagex was not found: Windows cannot be started with UEFI Secure Boot on (install wimtools)")
 	}
@@ -177,6 +178,15 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}()
 	logf(`Windows set-up share: \\%s\%s on port %d`, ip, smbshare.ShareName, *smbPort)
 
+	if *nbdPort != 0 {
+		nbdListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, *nbdPort))
+		if err != nil {
+			fmt.Fprintf(stderr, "bootlace: cannot open the network disk port %d: %v\n", *nbdPort, err)
+			return 1
+		}
+		logf("network disk server on %s:%d (a live Linux reads its ISO from it instead of copying it into memory)", ip, *nbdPort)
+		go func() { errs <- web.ServeNBD(nbdListener) }()
+	}
 	tftpConn, err := net.ListenPacket("udp4", ":69")
 	if err != nil {
 		fmt.Fprintf(stderr, "bootlace: cannot open TFTP port 69: %v\n", err)

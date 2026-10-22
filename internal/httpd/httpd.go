@@ -41,7 +41,9 @@ type Server struct {
 	// Wimlib is wimlib-imagex (empty: looked for on the PATH) and CacheDir where the copies of boot.wim with Bootlace's files in them are kept: both are for starting
 	// Windows with the firmware's own boot manager (UEFI Secure Boot on).
 	Wimlib, CacheDir string
-	patchMu          sync.Mutex
+	// NBDPort is the port of the network block disk server (0: none, a live Linux then downloads its ISO into memory).
+	NBDPort int
+	patchMu sync.Mutex
 	// Mount adds handlers (the web interface) to the paths of the server.
 	Mount map[string]http.Handler
 
@@ -75,6 +77,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/boot.ipxe", s.bootScript)
 	mux.HandleFunc("/menu", s.menu)
+	mux.HandleFunc("/x/", s.extraInitrd)
 	mux.HandleFunc("/bg.png", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		w.Header().Set("Cache-Control", "no-store")
@@ -104,7 +107,7 @@ func (s *Server) recognise(iso isos.ISO) (family.Boot, bool) {
 	var result recognised
 	if f, err := os.Open(iso.Path); err == nil {
 		if img, err := disc.Open(f, iso.Size); err == nil {
-			result.boot, result.ok = family.Detect(img, family.URLs{ISO: s.Base + isoPath(iso.Name), FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Base: s.Base})
+			result.boot, result.ok = family.Detect(img, s.familyURLs(iso))
 		}
 		f.Close()
 	}

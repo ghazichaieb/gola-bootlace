@@ -19,12 +19,16 @@ import (
 )
 
 // grubConfig is what GRUB reads: one entry, started at once.
-func grubConfig(fsURL, isoURL string, kernel, initrd, args string) []byte {
+func grubConfig(fsURL, isoURL string, kernel, initrd, extra, args string) []byte {
 	host := strings.TrimPrefix(strings.TrimPrefix(fsURL, "http://"), "https://")
 	host, _, _ = strings.Cut(host, "/")
 	var b bytes.Buffer
 	b.WriteString("# made by Gola Bootlace\nset timeout=0\nset default=0\n")
-	fmt.Fprintf(&b, "menuentry \"Ubuntu (Gola Bootlace)\" {\n\tlinux (http,%s)%s%s %s ---\n\tinitrd (http,%s)%s%s\n}\n", host, strings.TrimPrefix(fsURL, "http://"+host), kernel, args, host, strings.TrimPrefix(fsURL, "http://"+host), initrd)
+	more := ""
+	if extra != "" { // a second archive, loaded after the ISO's own
+		more = " (http," + host + ")" + strings.TrimPrefix(extra, "http://"+host)
+	}
+	fmt.Fprintf(&b, "menuentry \"Ubuntu (Gola Bootlace)\" {\n\tlinux (http,%s)%s%s %s ---\n\tinitrd (http,%s)%s%s%s\n}\n", host, strings.TrimPrefix(fsURL, "http://"+host), kernel, args, host, strings.TrimPrefix(fsURL, "http://"+host), initrd, more)
 	_ = isoURL
 	return b.Bytes()
 }
@@ -55,7 +59,7 @@ func (s *Server) ubuntuTFTP(client net.IP, id, name string) (fs.File, bool) {
 		}
 		base := strings.ToLower(path.Base(strings.ReplaceAll(name, `\`, "/")))
 		if base == "grub.cfg" || strings.HasPrefix(base, "grub.cfg-") {
-			cfg := grubConfig(s.Base+"/fs/"+id, s.Base+isoPath(e.ISO.Name), e.Boot.Kernel, e.Boot.Initrd, e.Boot.Args)
+			cfg := grubConfig(s.Base+"/fs/"+id, s.Base+isoPath(e.ISO.Name), e.Boot.Kernel, e.Boot.Initrd, e.Boot.ExtraInitrd, e.Boot.Args)
 			s.logf("tftp: %s gets the GRUB configuration for %s (asked for %s)", client, e.Title, name)
 			return &memFile{Reader: bytes.NewReader(cfg), name: "grub.cfg", size: int64(len(cfg))}, true
 		}

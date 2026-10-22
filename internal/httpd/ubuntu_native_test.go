@@ -6,8 +6,8 @@ import (
 )
 
 func TestTheGrubConfigurationStartsTheIsosKernelOverHttp(t *testing.T) {
-	cfg := string(grubConfig("http://10.0.0.1:8080/fs/abc", "http://10.0.0.1:8080/iso/u.iso", "/casper/vmlinuz", "/casper/initrd", "ip=dhcp url=http://10.0.0.1:8080/iso/u.iso boot=casper"))
-	for _, want := range []string{"set timeout=0", "linux (http,10.0.0.1:8080)/fs/abc/casper/vmlinuz ip=dhcp url=http://10.0.0.1:8080/iso/u.iso boot=casper ---", "initrd (http,10.0.0.1:8080)/fs/abc/casper/initrd"} {
+	cfg := string(grubConfig("http://10.0.0.1:8080/fs/abc", "http://10.0.0.1:8080/iso/u.iso", "/casper/vmlinuz", "/casper/initrd", "http://10.0.0.1:8080/x/abc/extra.cpio", "ip=dhcp url=http://10.0.0.1:8080/iso/u.iso boot=casper"))
+	for _, want := range []string{"set timeout=0", "linux (http,10.0.0.1:8080)/fs/abc/casper/vmlinuz ip=dhcp url=http://10.0.0.1:8080/iso/u.iso boot=casper ---", "initrd (http,10.0.0.1:8080)/fs/abc/casper/initrd (http,10.0.0.1:8080)/x/abc/extra.cpio"} {
 		if !strings.Contains(cfg, want) {
 			t.Errorf("missing %q in:\n%s", want, cfg)
 		}

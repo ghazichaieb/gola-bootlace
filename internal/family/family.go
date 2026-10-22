@@ -18,10 +18,13 @@ type Tree interface {
 
 // URLs says where the web server offers this ISO: the whole file, and its contents file by file (both without a trailing slash).
 type URLs struct {
-	ISO  string
-	FS   string
-	Win  string // generated files for Windows set-up (see package winpe)
-	Base string // the server
+	ISO string
+	FS  string
+	Win string // generated files for Windows set-up (see package winpe)
+	// NBD says that the ISO can be offered to a live Linux as a network disk, with Extra the address of the extra initramfs archive that makes use of it; empty: the whole
+	// ISO is downloaded into the PC's memory (a PC then needs RAM for all of it, twice over).
+	NBD, Extra string
+	Base       string // the server
 }
 
 // Boot is how to start one ISO.
@@ -32,6 +35,7 @@ type Boot struct {
 	// For a kernel that GRUB (signed by the distribution, so that UEFI Secure Boot can stay on) starts instead of iPXE: the files inside the ISO and the kernel's
 	// arguments. Empty for the kinds that cannot be started that way.
 	Kernel, Initrd, Args string
+	ExtraInitrd          string // an address: a second initramfs archive to load after the ISO's own
 }
 
 // Detect returns the way to boot the ISO, or false when it is not one of the kinds known here.
@@ -154,6 +158,12 @@ func ubuntu(t Tree, u URLs) (Boot, bool) {
 	initrd := firstMatch(t, "/casper", "initrd")
 	if initrd == "" {
 		return Boot{}, false
+	}
+	if u.NBD != "" && u.Extra != "" { // the ISO is read over the network a piece at a time: any amount of RAM will do (see package initrd)
+		b := boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+" cloud-init=disabled console=tty0")
+		b.ExtraInitrd = u.Extra
+		b.Commands = []string{b.Commands[0], b.Commands[1], "initrd " + u.Extra, "boot"}
+		return b, true
 	}
 	return boot("Ubuntu (casper)", u, "/casper/vmlinuz", initrd, "ip=dhcp url="+u.ISO+" boot=casper cloud-init=disabled console=tty0"), true
 }

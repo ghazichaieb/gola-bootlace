@@ -10,7 +10,7 @@ import (
 	"io/fs"
 )
 
-//go:embed ipxe/* ubuntu/*
+//go:embed ipxe/* ubuntu/* helper/*
 var files embed.FS
 
 // IPXE is the folder TFTP serves: ipxe.efi (UEFI, 64 bit), snponly.efi (UEFI, uses the firmware's network driver) and undionly.kpxe (BIOS).
@@ -26,6 +26,16 @@ func IPXE() fs.FS {
 // cannot read files over the network when Secure Boot is on, so the shim from the ISO starts this one instead: Canonical signed it, and the shim trusts Canonical.
 func UbuntuGrub() []byte {
 	b, err := files.ReadFile("ubuntu/grubnetx64.efi.signed")
+	if err != nil {
+		panic(err) // the file is part of the program: this cannot happen
+	}
+	return b
+}
+
+// NBDHelper is bootlace-nbd (cmd/bootlace-nbd) built for Linux on x86-64 with no dependencies: it runs in a PC's initramfs and attaches the ISO as a network block
+// disk. Built by tools/build_helper.sh; it is part of this program's source, so there is nothing to ship beside it.
+func NBDHelper() []byte {
+	b, err := files.ReadFile("helper/bootlace-nbd-linux-amd64")
 	if err != nil {
 		panic(err) // the file is part of the program: this cannot happen
 	}
