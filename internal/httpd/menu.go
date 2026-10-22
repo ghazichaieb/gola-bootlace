@@ -245,6 +245,9 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 	if page < opts.Pages {
 		opts.Next = s.menuURL(page + 1)
 	}
+	if paged { // reached with the buttons: the highlight stays on the one that goes on (the last page: the one that goes back)
+		opts.Focus = "next"
+	}
 	if !paged {
 		s.logf("menu for %s (%s): %d ISO file(s)", client.IP, client.MAC, len(entries))
 	}

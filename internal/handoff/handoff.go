@@ -25,9 +25,15 @@ type Registry struct {
 }
 
 type entry struct {
-	iso, ip string
-	until   time.Time
+	iso, ip, kind string
+	until         time.Time
 }
+
+// The kinds of hand-off: what the PC's own firmware is sent to fetch.
+const (
+	FreeBSD = "freebsd" // FreeBSD's loader (boot/loader.efi, boot/pxeboot)
+	Windows = "windows" // Windows' own boot manager, signed by Microsoft: works with UEFI Secure Boot on
+)
 
 func (r *Registry) now() time.Time {
 	if r.Now != nil {
@@ -38,16 +44,19 @@ func (r *Registry) now() time.Time {
 
 func norm(mac string) string { return strings.ToLower(strings.ReplaceAll(mac, "-", ":")) }
 
-// Set records that the PC with this MAC address and IP address wants the ISO.
-func (r *Registry) Set(mac, ip, iso string) {
+// Set records that the PC with this MAC address and IP address wants the ISO started by FreeBSD's loader.
+func (r *Registry) Set(mac, ip, iso string) { r.SetKind(mac, ip, iso, FreeBSD) }
+
+// SetKind records that the PC with this MAC address and IP address wants the ISO started by the firmware as the kind says.
+func (r *Registry) SetKind(mac, ip, iso, kind string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.pending == nil {
 		r.pending, r.chosen = map[string]entry{}, map[string]entry{}
 	}
 	now := r.now()
-	r.pending[norm(mac)] = entry{iso: iso, ip: ip, until: now.Add(pendingFor)}
-	r.chosen[ip] = entry{iso: iso, ip: ip, until: now.Add(chosenFor)}
+	r.pending[norm(mac)] = entry{iso: iso, ip: ip, kind: kind, until: now.Add(pendingFor)}
+	r.chosen[ip] = entry{iso: iso, ip: ip, kind: kind, until: now.Add(chosenFor)}
 }
 
 // BootFile is the boot file to name in the DHCP answer for this PC, when its next network boot is meant for FreeBSD's loader.
@@ -58,10 +67,26 @@ func (r *Registry) BootFile(mac string, efi bool) (string, bool) {
 	if !ok || r.now().After(e.until) {
 		return "", false
 	}
+	if e.kind == Windows {
+		if efi {
+			return "bootmgfw.efi", true
+		}
+		return "pxeboot.n12", true
+	}
 	if efi {
 		return "boot/loader.efi", true
 	}
 	return "boot/pxeboot", true
+}
+
+// Kind says what the PC at this address was sent to fetch.
+func (r *Registry) Kind(ip string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if e, ok := r.chosen[ip]; ok {
+		return e.kind
+	}
+	return ""
 }
 
 // ISO is the ISO the PC at this address chose.

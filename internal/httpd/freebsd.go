@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
+	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 )
 
@@ -36,6 +37,10 @@ func loaderConf(own []byte) []byte {
 func (s *Server) next(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	mac, ip, id := q.Get("mac"), q.Get("ip"), q.Get("iso")
+	kind := handoff.FreeBSD
+	if q.Get("kind") == handoff.Windows {
+		kind = handoff.Windows
+	}
 	if s.Handoff == nil || mac == "" || ip == "" || id == "" || net.ParseIP(ip) == nil {
 		http.Error(w, "mac, ip and iso are needed", http.StatusBadRequest)
 		return
@@ -47,8 +52,8 @@ func (s *Server) next(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, iso := range list {
 		if iso.ID == id {
-			s.Handoff.Set(mac, ip, id)
-			s.logf("%s (%s) will start %s with FreeBSD's loader at its next network boot", mac, ip, iso.Title)
+			s.Handoff.SetKind(mac, ip, id, kind)
+			s.logf("%s (%s) will start %s with its firmware (%s) at its next network boot", mac, ip, iso.Title, kind)
 			fmt.Fprintln(w, "ok")
 			return
 		}
@@ -67,6 +72,9 @@ func (s *Server) TFTPLookup(client net.IP, name string) (fs.File, bool) {
 	id, ok := s.Handoff.ISO(client.String())
 	if !ok {
 		return nil, false
+	}
+	if kind := s.Handoff.Kind(client.String()); kind == handoff.Windows {
+		return s.windowsTFTP(client, id, name)
 	}
 	if isLoaderName(name) {
 		s.Handoff.Fetched(client.String())

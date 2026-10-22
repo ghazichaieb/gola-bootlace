@@ -172,3 +172,22 @@ func TestALongMenuIsShownAPageAtATime(t *testing.T) {
 		t.Fatalf("a page past the end shows the last: %s", beyond)
 	}
 }
+
+func TestAPageReachedWithTheButtonsHighlightsTheButton(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 25; i++ {
+		_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("iso%02d.iso", i)), []byte("0123456789"), 0o644)
+	}
+	s := &Server{ISODir: dir, Base: "http://10.0.0.1:8080"}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	if _, p1 := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:21&plat=pcbios", nil); !strings.Contains(p1, "set menu-default shell\n") {
+		t.Fatalf("the first page keeps the shell highlighted:\n%.300s", p1)
+	}
+	if _, p2 := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:21&plat=pcbios&page=2", nil); !strings.Contains(p2, "set menu-default next\n") {
+		t.Fatalf("page 2 highlights Next page:\n%.300s", p2)
+	}
+	if _, p4 := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:21&plat=pcbios&page=4", nil); !strings.Contains(p4, "set menu-default prev\n") {
+		t.Fatalf("the last page highlights Previous page:\n%.300s", p4)
+	}
+}

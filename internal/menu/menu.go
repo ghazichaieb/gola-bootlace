@@ -54,6 +54,9 @@ type Options struct {
 	// there is none). The entries given are the ones of this page.
 	Page, Pages int
 	Prev, Next  string
+	// Focus is the line that starts highlighted when nothing else is chosen by default: "next" or "prev" (the page buttons), for the pages a person
+	// reached with the buttons, so that going on through the pages takes one key press each.
+	Focus string
 
 	// Ascii draws the text screen as a frame and table in plain ASCII, with the lace mark above it. For a BIOS PC, whose screen is code page 437: the blanks
 	// that line things up are the byte 0xFF there (see Banner).
@@ -111,6 +114,10 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 		b.WriteString("set menu-default local\n")
 	} else if o.Default >= 1 && o.Default <= len(entries) {
 		fmt.Fprintf(&b, "set menu-default %s\n", label(entries[o.Default-1].Name, o.Default-1))
+	} else if o.Focus == "next" && o.Next != "" {
+		b.WriteString("set menu-default next\n")
+	} else if o.Focus != "" && o.Prev != "" {
+		b.WriteString("set menu-default prev\n")
 	} else {
 		b.WriteString("set menu-default shell\n")
 	}
