@@ -126,10 +126,25 @@ Recognised from their own files and tested:
 
 Not working, and why (each is per-distribution work, none is a Bootlace fault):
 - **memtest.iso in BIOS mode**: iPXE refuses the CD ("Boot from SAN device 0x80 failed: Operation not supported"): the image uses an El Torito emulation mode that iPXE does not support. It works in UEFI (Hyper-V).
-- **Disk images of Linux systems (Tails, Lakka, Recalbox, SteamOS recovery)**: the boot loader starts from the network disk, then the kernel cannot see the disk it came from ("Unable to find a medium containing a live
-  file system", Lakka: "Could not mount UUID=..."; Recalbox: blank screen). The same limit as any "as a disk" start. To fix it the kernel and initramfs have to be read out of the image (partition table + FAT/ext4 reader),
-  and the whole image attached as a network block disk with its partitions for the system to find by label: new work, different for each image.
-- **ChimeraOS** (archiso, UEFI-only ISO): its kernel and initramfs are inside a FAT image embedded in the ISO (`loader/entries` point at `/arch/boot/x86_64/...`, which is not in the ISO's own file system): needs the same FAT reader.
+- **Recalbox and the SteamOS recovery image**: see "Disk images with a Linux on them" below.
 - **Garuda**: its initramfs uses systemd (`/init` is systemd, no `hooks/`), not archiso's hooks; **Alpine standard**: its initramfs has no driver for the network card of this VM (the drivers are in the modloop, which
   needs the network); **NixOS**: kernel and initramfs sit in `/boot/nix/store/<hash>-...`, and its stage 1 looks for the ISO by label; **Porteus**, **Haiku**, **Qubes** (needs Xen): not looked at yet.
 - Packed ISOs (`.iso.bz2`: OPNsense), zip archives (FreeDOS, ReactOS, Super Grub2 USB), qcow2 (Rocky GenericCloud) and `.tar.gz` (Alpine netboot) are not offered yet.
+
+## Disk images with a Linux on them, and kernels inside an ISO's EFI image (2026-10-22, late)
+
+Bootlace now reads partition tables (MBR with logical partitions, GPT) and FAT12/16/32 file systems (long names), so the kernel and initramfs can be fetched from *inside* a disk image, and the partition
+is offered as a network block disk (named `<id>@<partition>`, 512-byte blocks: a FAT file system cannot be mounted on the 2048-byte blocks of an ISO). Tested on the Proxmox test server (BIOS):
+
+| Image | What was wrong | How it is fixed | Result |
+|---|---|---|---|
+| **Tails 7.15** (disk image) | It was started "as a disk": the kernel could not find the stick it came from. Then, started from the files, its initramfs has **no network card drivers at all** (it is made for a USB stick): "Waiting for ethernet card(s) up". | Kernel and initramfs come from the FAT partition; live-boot is told `netboot=nfs`, which Bootlace's `nfsmount` stand-in answers by attaching the partition (and mounting it as vfat). The common network drivers are read out of Tails's own system image (`filesystem.squashfs`), unpacked, and loaded by a script added to the initramfs's `init-top` (its `ORDER` file is rewritten to run it first). | Reaches "Welcome to Tails!" |
+| **Lakka 6.1** (disk image) | Started "as a disk": "Could not mount UUID=2102-5121". | LibreELEC's init takes `boot=NBD=host:port`, and the kernel has the network disk, the network cards and DHCP built in. Its start-up shell runs BusyBox's own `nbd-client` applet (an old client that knows no export names) even when another file of that name exists, so an `rdinit=` script rewrites that one call to name Bootlace's helper, which looks up the export name in a list in the archive. Storage is in memory (no `disk=`). | System starts ("Lakka (official): 6.1", its splash). RetroArch fails to start in the VM: the same happens when the image is booted from a local disk in the same VM, so it is the VM's missing GPU, not the network start. Needs a real PC to be seen. |
+| **ChimeraOS 2025.02** (ISO) | The kernel is not in the ISO's files but in the EFI image inside it, and its initramfs has the archiso hooks for a disc but none for the network, and no network drivers. | The ISO's own partition table is read to find the EFI image and the kernel in it; the extra archive adds an initramfs hook (before archiso's) that loads the network drivers (read from `airootfs.sfs`), gets an address with `udhcpc` and attaches the ISO as `/dev/nbd0`, named by `archisodevice=`. Its list of hooks (`/config`) is rewritten to include it; mkinitcpio runs only executable hooks. | Reaches ChimeraOS's installer (it complains that `nbd0` is too small to install onto: the VM has no disk). |
+| **Recalbox** (disk image) | Its kernel has neither the network disk (`nbd`) nor an iSCSI client, and its init needs a writable boot partition. | Nothing can be done from the network side: the kernel cannot read a disk from the network. Write it to a USB stick or disk. | Not supported. |
+| **SteamOS recovery** (Steam Deck image) | A UEFI-only image for the Deck: its own boot loader (`steamcl.efi`) starts a kernel whose root is on the local disk (btrfs). | Same limit as Recalbox. | Not supported. |
+
+Also changed: the Proxmox installer's and Tails's initramfs reading and driver collection is one package (`initread`), which reads xz, gzip and zstd modules; the archives that take seconds to make are kept in memory
+(the last three).
+
+Regression run after these changes (BIOS, Proxmox test server): Debian live (GNOME), Linux Mint, Arch Linux, Fedora Workstation, Proxmox VE and Ubuntu Server 26.04 all start as before.
