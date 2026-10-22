@@ -116,3 +116,25 @@ func TestArchisoAttachesTheIsoAsANetworkDiskOnTheStandardPort(t *testing.T) {
 		t.Fatalf("%v", b)
 	}
 }
+
+func TestMoreFamiliesAreRecognisedByTheirFiles(t *testing.T) {
+	for name, tc := range map[string]struct {
+		tree   fake
+		family string
+		want   string
+	}{
+		"shredos":      {fake{"/boot/bzImage": true, "/boot/shredos.id": true}, "ShredOS", "kernel http://s/fs/abc/boot/bzImage console=tty3"},
+		"suse dvd":     {fake{"/boot/x86_64/loader/linux": true, "/boot/x86_64/loader/initrd": true, "/.treeinfo": true, "/repodata/x": true}, "openSUSE", "install=http://s/fs/abc/"},
+		"suse net":     {fake{"/boot/x86_64/loader/linux": true, "/boot/x86_64/loader/initrd": true, "/.treeinfo": true}, "openSUSE", "netsetup=dhcp"},
+		"debian inst":  {fake{"/install.amd/vmlinuz": true, "/install.amd/initrd.gz": true, "/install.amd/gtk/initrd.gz": true}, "Debian installer", "/install.amd/gtk/initrd.gz"},
+		"windows pe":   {fake{"/sources/boot.wim": true, "/boot/boot.sdi": true, "/efi/boot/bootx64.efi": true, "/efi/microsoft/boot/bcd": true}, "Windows PE", "chain http://s/w"},
+		"windows disc": {fake{"/sources/boot.wim": true, "/sources/install.wim": true, "/boot/boot.sdi": true, "/efi/boot/bootx64.efi": true, "/efi/microsoft/boot/bcd": true}, "Windows setup", "chain http://s/w"},
+	} {
+		u := urls
+		u.Win = "http://s/w/abc"
+		b, ok := Detect(tc.tree, u)
+		if !ok || b.Family != tc.family || !strings.Contains(lines(b), tc.want) {
+			t.Errorf("%s: %q %v\n%s", name, b.Family, ok, lines(b))
+		}
+	}
+}

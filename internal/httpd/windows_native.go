@@ -39,6 +39,12 @@ func windowsName(name string) string {
 	return n
 }
 
+// windowsPEOnly says whether the ISO is a Windows PE with no installation image (Bootlace then adds nothing to it).
+func (s *Server) windowsPEOnly(iso isos.ISO) bool {
+	b, ok := s.recognise(iso)
+	return ok && b.Family == "Windows PE"
+}
+
 // winSettings are the settings of the files that make Windows' set-up environment find this ISO.
 func (s *Server) winSettings(iso isos.ISO) (winpe.Settings, error) {
 	u, err := url.Parse(s.Base)
@@ -114,7 +120,7 @@ func (s *Server) windowsTFTP(client net.IP, id, name string) (fs.File, bool) {
 		if iso.ID != id {
 			continue
 		}
-		if want == "sources/boot.wim" {
+		if want == "sources/boot.wim" && !s.windowsPEOnly(iso) {
 			p, err := s.patchedBootWIM(iso)
 			if err != nil {
 				s.logf("tftp: %s asks for the boot.wim of %s: %v", client, iso.Title, err)
@@ -177,7 +183,7 @@ func (s *Server) NativeBootFile(mac string, efi bool) (string, bool) {
 		}
 		kind := ""
 		switch e.Boot.Family {
-		case "Windows setup":
+		case "Windows setup", "Windows PE":
 			kind = handoff.Windows
 		case "Ubuntu (casper)":
 			kind = handoff.Ubuntu

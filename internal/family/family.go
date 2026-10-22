@@ -51,7 +51,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, debianLive, ubuntu, freeBSD, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -214,7 +214,47 @@ func windows(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists("/sources/boot.wim") || !t.Exists("/boot/boot.sdi") || !t.Exists("/efi/boot/bootx64.efi") || !t.Exists("/efi/microsoft/boot/bcd") {
 		return Boot{}, false
 	}
+	if !t.Exists("/sources/install.wim") && !t.Exists("/sources/install.esd") && !t.Exists("/sources/install.swm") {
+		// a Windows PE with no installation image (Hiren's BootCD PE, a recovery or rescue disc): it starts its own programs, so Bootlace adds nothing to it
+		return Boot{Family: "Windows PE", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
+	}
 	return Boot{Family: "Windows setup", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
+}
+
+// ShredOS (nwipe, for wiping drives): one kernel with everything inside it.
+func shredOS(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/boot/bzImage") || !t.Exists("/boot/shredos.id") {
+		return Boot{}, false
+	}
+	return Boot{Family: "ShredOS", Kernel: "/boot/bzImage", Args: "console=tty3 loglevel=3", Commands: []string{"kernel " + u.FS + "/boot/bzImage console=tty3 loglevel=3", "boot"}}, true
+}
+
+// openSUSE (Leap, Tumbleweed): the installer reads the packages from the web server, file by file, when the ISO has them (the DVD); the network ISO asks the person.
+func openSUSE(t Tree, u URLs) (Boot, bool) {
+	const dir = "/boot/x86_64/loader"
+	if !t.Exists(dir+"/linux") || !t.Exists(dir+"/initrd") || !t.Exists("/.treeinfo") {
+		return Boot{}, false
+	}
+	args := "netsetup=dhcp"
+	if t.Exists("/repodata") {
+		args += " install=" + u.FS + "/"
+	}
+	return boot("openSUSE", u, dir+"/linux", dir+"/initrd", args), true
+}
+
+// Debian's installer and the ones built on it (Kali's): kernel and initrd come out of the ISO, the packages from a mirror or from the ISO's own files over the web server.
+func debianInstaller(t Tree, u URLs) (Boot, bool) {
+	if !t.Exists("/install.amd/vmlinuz") {
+		return Boot{}, false
+	}
+	initrd := "/install.amd/gtk/initrd.gz"
+	if !t.Exists(initrd) {
+		initrd = "/install.amd/initrd.gz"
+	}
+	if !t.Exists(initrd) {
+		return Boot{}, false
+	}
+	return boot("Debian installer", u, "/install.amd/vmlinuz", initrd, "vga=788 --- quiet"), true
 }
 
 // FreeBSD and what is built on it (pfSense, OPNsense, TrueNAS CORE): FreeBSD's own loader is started from the ISO and then reads everything else,

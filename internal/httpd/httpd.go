@@ -218,6 +218,7 @@ func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad server address", http.StatusInternalServerError)
 			return
 		}
+		set.PEOnly = s.windowsPEOnly(iso)
 		var body string
 		switch file {
 		case "boot.ipxe":

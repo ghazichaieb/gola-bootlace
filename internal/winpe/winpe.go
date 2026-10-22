@@ -20,6 +20,7 @@ type Settings struct {
 	Password string
 	Port     int  // SMB port (445 unless Windows cannot reach the server there)
 	Hold     bool // test aid: connect to the share but leave Setup for the person at the keyboard to start
+	PEOnly   bool // a Windows PE with no installation image: nothing is added to it
 }
 
 // IPXE is the script that loads the set-up environment: wimboot with the boot files of the ISO and the two files of this package. The same script
@@ -43,8 +44,10 @@ func IPXE(s Settings) string {
 	line(":common")
 	file("boot.sdi", "%s/boot/boot.sdi", s.FS)
 	file("boot.wim", "%s/sources/boot.wim", s.FS)
-	file("winpeshl.ini", "%s/winpeshl.ini", s.Win)
-	file("bootlace.cmd", "%s/bootlace.cmd", s.Win)
+	if !s.PEOnly { // a PE that is not an installer keeps its own start-up
+		file("winpeshl.ini", "%s/winpeshl.ini", s.Win)
+		file("bootlace.cmd", "%s/bootlace.cmd", s.Win)
+	}
 	line("boot")
 	return b.String()
 }
