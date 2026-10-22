@@ -191,3 +191,27 @@ func TestAPageReachedWithTheButtonsHighlightsTheButton(t *testing.T) {
 		t.Fatalf("the last page highlights Previous page:\n%.300s", p4)
 	}
 }
+
+func TestADiskImageStartsAsAHardDiskOverIscsi(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "game.img"), make([]byte, 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{ISODir: dir, Base: "http://10.0.0.1:8080", ISCSIPort: 3260, CacheDir: t.TempDir()}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	_, body := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:09", nil)
+	if !strings.Contains(body, "game") || !strings.Contains(body, "disk image") || !strings.Contains(body, "sanboot --no-describe --drive 0x80 iscsi:10.0.0.1::3260:0:iqn.") {
+		t.Fatalf("%s", body)
+	}
+	s.ISCSIPort = 0 // the iSCSI server is off: say so, do not download the whole image
+	_, body = get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:09", nil)
+	if strings.Contains(body, "sanboot") || !strings.Contains(body, "needs the iSCSI server") {
+		t.Fatalf("%s", body)
+	}
+	d, ok := (&Server{ISODir: dir, Base: "http://10.0.0.1:8080", ISCSIPort: 3260, CacheDir: t.TempDir()}).ISCSIDisc(func() string { l, _ := isos.Scan(dir); return l[0].ID }())
+	if !ok || !d.Disk || d.Size != 4096 {
+		t.Fatalf("%+v %v", d, ok)
+	}
+	d.Done()
+}

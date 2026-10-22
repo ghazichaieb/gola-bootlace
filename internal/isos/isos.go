@@ -1,4 +1,4 @@
-// Package isos finds the ISO files the server offers: every .iso under the ISO folder, in a stable order.
+// Package isos finds the files the server offers: every .iso under the ISO folder, and the disk images (.img, .raw, and those packed as .gz, .xz, .zst or .bz2), in a stable order.
 // Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
 package isos
 
@@ -21,6 +21,29 @@ type ISO struct {
 	Path    string
 	Size    int64
 	ModTime time.Time
+	Disk    bool   // a disk image (shown to a PC as a hard disk), not an ISO
+	Packed  string // for a disk image that is compressed: "gz", "xz", "zst" or "bz2"
+}
+
+// packers are the compression suffixes of disk images that are unpacked once into the cache folder.
+var packers = map[string]string{".gz": "gz", ".xz": "xz", ".zst": "zst", ".bz2": "bz2"}
+
+// classify says what a file name is: an ISO, a disk image (with the compression it has), or not offered.
+func classify(name string) (title string, disk bool, packed string, ok bool) {
+	base := filepath.Base(name)
+	lower := strings.ToLower(base)
+	if strings.HasSuffix(lower, ".iso") {
+		return base[:len(base)-4], false, "", true
+	}
+	if p, found := packers[filepath.Ext(lower)]; found {
+		base, lower, packed = base[:len(base)-len(filepath.Ext(base))], strings.TrimSuffix(lower, filepath.Ext(lower)), p
+	}
+	for _, ext := range []string{".img", ".raw"} {
+		if strings.HasSuffix(lower, ext) {
+			return base[:len(base)-len(ext)], true, packed, true
+		}
+	}
+	return "", false, "", false
 }
 
 // Scan lists the ISO files under dir (at most four folders deep), sorted by name. A folder that does not exist is an empty list, not an error:
@@ -45,7 +68,8 @@ func Scan(dir string) ([]ISO, error) {
 			}
 			return nil
 		}
-		if !strings.EqualFold(filepath.Ext(path), ".iso") {
+		title, disk, packed, ok := classify(path)
+		if !ok {
 			return nil
 		}
 		info, err := d.Info()
@@ -54,7 +78,7 @@ func Scan(dir string) ([]ISO, error) {
 		}
 		name := filepath.ToSlash(rel)
 		sum := sha256.Sum256([]byte(name))
-		found = append(found, ISO{Name: name, ID: hex.EncodeToString(sum[:5]), ModTime: info.ModTime(), Title: strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)), Path: path, Size: info.Size()})
+		found = append(found, ISO{Name: name, ID: hex.EncodeToString(sum[:5]), ModTime: info.ModTime(), Title: title, Path: path, Size: info.Size(), Disk: disk, Packed: packed})
 		return nil
 	})
 	if err != nil {

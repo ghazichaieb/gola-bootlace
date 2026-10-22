@@ -16,8 +16,11 @@ import (
 	"strings"
 )
 
-// BlockSize is the size of a block of an ISO (and of a CD-ROM).
-const BlockSize = 2048
+// BlockSize is the size of a block of an ISO (and of a CD-ROM); DiskBlockSize that of a hard disk image.
+const (
+	BlockSize     = 2048
+	DiskBlockSize = 512
+)
 
 // IQNPrefix starts the name of every target; the ISO's id follows.
 const IQNPrefix = "iqn.2026-10.org.gola:bootlace:"
@@ -27,6 +30,23 @@ type Disc struct {
 	R    io.ReaderAt
 	Size int64
 	Done func()
+	Disk bool // shown as a hard disk (512-byte blocks) instead of a CD-ROM
+}
+
+// blockSize is the block size the initiator sees.
+func (d Disc) blockSize() int64 {
+	if d.Disk {
+		return DiskBlockSize
+	}
+	return BlockSize
+}
+
+// deviceType is the SCSI peripheral device type: 0 direct-access (disk), 5 CD-ROM.
+func (d Disc) deviceType() byte {
+	if d.Disk {
+		return 0x00
+	}
+	return 0x05
 }
 
 // Target answers the initiators that connect to a listener.
@@ -439,7 +459,9 @@ func (s *conn) command(p *pdu) error {
 	itt := p.itt()
 	expected := binary.BigEndian.Uint32(p.bhs[20:])
 	cdb := p.bhs[32:48]
-	blocks := uint64(s.disc.Size / BlockSize)
+	bs := s.disc.blockSize()
+	dt := s.disc.deviceType()
+	blocks := uint64(s.disc.Size / bs)
 	switch cdb[0] {
 	case 0x00, 0x1b, 0x1e, 0x35: // test unit ready, start/stop, prevent/allow medium removal, synchronize cache
 		s.respond(itt, statusGood, nil, 0, 0)
@@ -451,21 +473,24 @@ func (s *conn) command(p *pdu) error {
 		alloc := int(binary.BigEndian.Uint16(cdb[3:]))
 		if cdb[1]&1 == 0 {
 			d := make([]byte, 36)
-			d[0], d[1], d[2], d[3], d[4] = 0x05, 0x80, 0x05, 0x02, 31 // CD-ROM, removable, SPC-3
+			d[0], d[1], d[2], d[3], d[4] = dt, 0x80, 0x05, 0x02, 31 // CD-ROM, removable, SPC-3
+			if s.disc.Disk {
+				d[1] = 0x00 // a disk is not removable
+			}
 			copy(d[8:], inquiryVendor)
 			s.dataIn(itt, cut(d, alloc), expected)
 			break
 		}
 		switch cdb[2] {
 		case 0x00:
-			s.dataIn(itt, cut([]byte{0x05, 0x00, 0x00, 0x03, 0x00, 0x80, 0x83}, alloc), expected)
+			s.dataIn(itt, cut([]byte{dt, 0x00, 0x00, 0x03, 0x00, 0x80, 0x83}, alloc), expected)
 		case 0x80:
 			serial := []byte("BOOTLACE0001")
-			d := append([]byte{0x05, 0x80, 0x00, byte(len(serial))}, serial...)
+			d := append([]byte{dt, 0x80, 0x00, byte(len(serial))}, serial...)
 			s.dataIn(itt, cut(d, alloc), expected)
 		case 0x83:
 			id := []byte("Gola Bootlace")
-			d := append([]byte{0x05, 0x83, 0x00, byte(4 + len(id)), 0x02, 0x08, 0x00, byte(len(id))}, id...) // an ASCII name (type 8: SCSI name string)
+			d := append([]byte{dt, 0x83, 0x00, byte(4 + len(id)), 0x02, 0x08, 0x00, byte(len(id))}, id...) // an ASCII name (type 8: SCSI name string)
 			s.dataIn(itt, cut(d, alloc), expected)
 		default:
 			s.respond(itt, statusCheckCondition, &senseInvalidField, expected, 0)
@@ -481,7 +506,7 @@ func (s *conn) command(p *pdu) error {
 			last = 0xffffffff
 		}
 		binary.BigEndian.PutUint32(d, uint32(last))
-		binary.BigEndian.PutUint32(d[4:], BlockSize)
+		binary.BigEndian.PutUint32(d[4:], uint32(bs))
 		s.dataIn(itt, d, expected)
 	case 0x9e: // service action in: read capacity (16)
 		if cdb[1]&0x1f != 0x10 {
@@ -490,7 +515,7 @@ func (s *conn) command(p *pdu) error {
 		}
 		d := make([]byte, 32)
 		binary.BigEndian.PutUint64(d, blocks-1)
-		binary.BigEndian.PutUint32(d[8:], BlockSize)
+		binary.BigEndian.PutUint32(d[8:], uint32(bs))
 		s.dataIn(itt, cut(d, int(binary.BigEndian.Uint32(cdb[10:]))), expected)
 	case 0x1a: // mode sense (6): no pages, write protected
 		s.dataIn(itt, cut([]byte{3, 0, 0x80, 0}, int(cdb[4])), expected)
@@ -511,8 +536,8 @@ func (s *conn) command(p *pdu) error {
 			s.respond(itt, statusCheckCondition, &senseOutOfRange, expected, 0)
 			break
 		}
-		buf := make([]byte, int(n)*BlockSize)
-		if _, err := s.disc.R.ReadAt(buf, int64(lba)*BlockSize); err != nil && !errors.Is(err, io.EOF) {
+		buf := make([]byte, int64(n)*bs)
+		if _, err := s.disc.R.ReadAt(buf, int64(lba)*bs); err != nil && !errors.Is(err, io.EOF) {
 			s.respond(itt, statusCheckCondition, &senseMediumError, expected, 0)
 			break
 		}

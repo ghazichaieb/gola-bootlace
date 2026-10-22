@@ -33,7 +33,7 @@ $plan = @()
 foreach ($t in $Tests) {
     $p = $t.Split(':')
     $e = [ordered]@{ Iso = $p[0]; Mem = [int]$p[1]; Wait = [int]$p[2]; SB = ($p -contains 'sb'); Native = ($p -contains 'native') }
-    $src = @(Get-ChildItem $Source -Recurse -Filter *.iso | Where-Object { $_.Name -like "*$($e.Iso)*" })
+    $src = @(Get-ChildItem $Source -Recurse | Where-Object { $_.Name -match '\.(iso|img|raw)(\.(gz|xz|zst|bz2))?$' } | Where-Object { $_.Name -like "*$($e.Iso)*" })
     if ($src.Count -gt 1 -and @($src | Where-Object { $_.Name -eq "$($e.Iso).iso" }).Count -eq 1) { $src = @($src | Where-Object { $_.Name -eq "$($e.Iso).iso" }) }   # an exact name wins
     if ($src.Count -ne 1) { throw "'$($e.Iso)' matches $($src.Count) ISOs: $(($src | ForEach-Object Name) -join ', ')" }
     $e.File = $src[0]
@@ -42,7 +42,7 @@ foreach ($t in $Tests) {
 }
 # the ISOs, local; the ones of earlier runs that are not needed go
 $keep = $plan | ForEach-Object { $_.File.Name }
-Get-ChildItem $IsoDir -Filter *.iso | Where-Object { $keep -notcontains $_.Name } | Remove-Item -Force
+Get-ChildItem $IsoDir | Where-Object { $_.Name -match '\.(iso|img|raw)(\.(gz|xz|zst|bz2))?$' -and $keep -notcontains $_.Name } | Remove-Item -Force
 foreach ($e in $plan) {
     $dst = Join-Path $IsoDir $e.File.Name
     if (-not (Test-Path $dst) -or (Get-Item $dst).Length -ne $e.File.Length) { "copying $($e.File.Name) ..."; Copy-Item $e.File.FullName $IsoDir -Force }

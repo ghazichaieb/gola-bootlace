@@ -59,14 +59,16 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 			e.Title = t
 		}
 		size := fmt.Sprintf("%.1f GB", float64(iso.Size)/(1<<30))
-		if b, ok := s.recognise(iso); ok {
+		if iso.Disk {
+			e.Display, e.Entry, e.Known, e.Boot = s.diskEntry(iso, e.Title, size)
+		} else if b, ok := s.recognise(iso); ok {
 			e.Boot, e.Known = b, true
 			e.Display = fmt.Sprintf("%s  [%s, %s]", e.Title, b.Family, size)
 			e.Entry = menu.Entry{Name: e.Display, Commands: b.Commands, Title: e.Title, Kind: b.Family, Size: size}
 		} else {
 			e.Display = fmt.Sprintf("%s  [as a disk, %s]", e.Title, size)
 			e.Entry = menu.Entry{Name: e.Display, Title: e.Title, Kind: "as a disk", Size: size, Commands: []string{
-				"echo Loading " + oneWord(e.Title) + " ... the whole ISO is read into memory first, this takes a while",
+				s.loadingNote(iso, e.Title),
 				"sanboot --no-describe --drive 0x80 " + s.sanbootSource(iso),
 			}}
 		}

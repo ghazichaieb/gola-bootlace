@@ -16,6 +16,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
+	"github.com/ghazichaieb/gola-bootlace/internal/diskimg"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/gfx"
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
@@ -45,7 +46,9 @@ type Server struct {
 	NBDPort int
 	// ISCSIPort is the port of the iSCSI target that shows an ISO as a CD-ROM (0: none, the ISO is then downloaded whole by iPXE).
 	ISCSIPort int
-	patchMu   sync.Mutex
+
+	disks   *diskimg.Manager // unpacks compressed disk images (see package diskimg)
+	patchMu sync.Mutex
 	// Mount adds handlers (the web interface) to the paths of the server.
 	Mount map[string]http.Handler
 
@@ -99,6 +102,9 @@ func (s *Server) Handler() http.Handler {
 
 // recognise looks inside the ISO (once) and says whether it is a Linux this server knows how to start over the network.
 func (s *Server) recognise(iso isos.ISO) (family.Boot, bool) {
+	if iso.Disk {
+		return family.Boot{}, false
+	}
 	key := fmt.Sprintf("%s|%d|%d", iso.Path, iso.Size, iso.ModTime.UnixNano())
 	s.mu.Lock()
 	if r, ok := s.known[key]; ok {

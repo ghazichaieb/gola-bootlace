@@ -37,12 +37,24 @@ func (s *Server) ISCSIDisc(id string) (iscsi.Disc, bool) {
 		if iso.ID != id {
 			continue
 		}
-		f, err := os.Open(iso.Path)
+		path, size, disk := iso.Path, iso.Size, iso.Disk
+		if disk {
+			st := s.diskState(iso)
+			if !st.Ready {
+				return iscsi.Disc{}, false
+			}
+			path, size = st.Path, st.Size
+		}
+		f, err := os.Open(path)
 		if err != nil {
 			return iscsi.Disc{}, false
 		}
-		s.logf("iscsi: a PC reads %s as a CD-ROM", iso.Title)
-		return iscsi.Disc{R: f, Size: iso.Size, Done: func() { f.Close() }}, true
+		if disk {
+			s.logf("iscsi: a PC reads %s as a hard disk", iso.Title)
+		} else {
+			s.logf("iscsi: a PC reads %s as a CD-ROM", iso.Title)
+		}
+		return iscsi.Disc{R: f, Size: size, Done: func() { f.Close() }, Disk: disk}, true
 	}
 	return iscsi.Disc{}, false
 }

@@ -158,3 +158,35 @@ func TestADiscoverySessionListsTheTargets(t *testing.T) {
 		t.Fatalf("send targets: %q", r.data)
 	}
 }
+
+func TestADiskImageIsShownAsAHardDisk(t *testing.T) {
+	data := make([]byte, 40*DiskBlockSize)
+	for i := range data {
+		data[i] = byte(i % 251)
+	}
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	defer l.Close()
+	go (&Target{Open: func(id string) (Disc, bool) {
+		return Disc{R: bytes.NewReader(data), Size: int64(len(data)), Disk: true}, id == "img"
+	}}).Serve(l)
+	c, _ := net.Dial("tcp", l.Addr().String())
+	defer c.Close()
+	in := &initiator{t: t, c: c}
+	login(in, IQNPrefix+"img")
+	d, st := in.scsi([]byte{0x12, 0, 0, 0, 36}, 36)
+	if st != statusGood || d[0] != 0x00 || d[1]&0x80 != 0 {
+		t.Fatalf("inquiry of a disk: %x %x", st, d)
+	}
+	d, _ = in.scsi([]byte{0x25}, 8)
+	if binary.BigEndian.Uint32(d) != 39 || binary.BigEndian.Uint32(d[4:]) != DiskBlockSize {
+		t.Fatalf("read capacity: %x", d)
+	}
+	rd := make([]byte, 10)
+	rd[0] = 0x28
+	binary.BigEndian.PutUint32(rd[2:], 3)
+	binary.BigEndian.PutUint16(rd[7:], 4)
+	d, st = in.scsi(rd, 4*DiskBlockSize)
+	if st != statusGood || !bytes.Equal(d, data[3*DiskBlockSize:7*DiskBlockSize]) {
+		t.Fatalf("read: %x, %d bytes", st, len(d))
+	}
+}

@@ -75,3 +75,12 @@ It suits what boots and then runs from memory or only needs its loader's disk: r
   `/dev/nbd0` (and the script's own search for the ISO also looks at `nbd0`), the network card drivers the start-up disk lacks (the common wired cards, taken from the kernel modules in
   `pve-installer.squashfs` on the ISO, matched to the kernel's version) and a small `insmod` (a subcommand of `bootlace-nbd`, the start-up disk has none). The installer's files are untouched; if the script's
   form is not the expected one the old way (whole ISO) is used. Not yet checked: an install run through to the end (the installer's own network setup comes late), BIOS vs UEFI beyond the BIOS VM.
+
+## Disk images (2026-10-22)
+
+`.img` and `.raw` files in the ISO folder, and those packed as `.gz`, `.xz`, `.zst` or `.bz2`, are listed like ISOs ("Disk image") and started as a **hard disk** over iSCSI: the iSCSI target shows
+them with 512-byte blocks and device type "direct access" (an ISO is a CD-ROM, 2048-byte blocks) and iPXE's `sanboot` boots from that disk, so the image's own boot loader (MBR or EFI system partition) starts.
+A packed image is unpacked once, in the background, into `<data folder>/cache/images` (the menu line says "unpacking 43 %" until it is ready; it needs as much free space as the unpacked image, e.g. 8 GB for a Batocera image).
+Tested in the lab with a small UEFI disk image, plain and gzipped: the firmware booted its loader from the SAN disk (`Booting from SAN device 0x80`).
+Limit, as for every "as a disk" start: once the operating system's own kernel runs, the firmware's SAN disk is gone, so an image whose system looks for its disk again after the loader (most Linux images
+that mount their root from a partition) works only if its initramfs can log in to iSCSI or has been given a network disk, which is per-image work like the ISO families. Not handled: VHD, VHDX, qcow2 and VMDK.

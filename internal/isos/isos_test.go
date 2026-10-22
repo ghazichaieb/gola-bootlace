@@ -44,3 +44,35 @@ func TestAMissingFolderIsAnEmptyListAndNamesCannotLeaveTheFolder(t *testing.T) {
 		t.Fatal("a.iso was not found")
 	}
 }
+
+func TestDiskImagesAreListedWithTheirCompression(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "batocera-x86_64.img.gz"), 10)
+	write(t, filepath.Join(dir, "chimera.IMG.xz"), 10)
+	write(t, filepath.Join(dir, "plain.raw"), 10)
+	write(t, filepath.Join(dir, "other.tar.gz"), 10)
+	write(t, filepath.Join(dir, "disc.iso"), 10)
+	list, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]ISO{}
+	for _, i := range list {
+		got[i.Name] = i
+	}
+	if len(list) != 4 || got["other.tar.gz"].Name != "" {
+		t.Fatalf("%+v", list)
+	}
+	if b := got["batocera-x86_64.img.gz"]; !b.Disk || b.Packed != "gz" || b.Title != "batocera-x86_64" {
+		t.Fatalf("%+v", b)
+	}
+	if c := got["chimera.IMG.xz"]; !c.Disk || c.Packed != "xz" || c.Title != "chimera" {
+		t.Fatalf("%+v", c)
+	}
+	if p := got["plain.raw"]; !p.Disk || p.Packed != "" || p.Title != "plain" {
+		t.Fatalf("%+v", p)
+	}
+	if d := got["disc.iso"]; d.Disk {
+		t.Fatalf("%+v", d)
+	}
+}
