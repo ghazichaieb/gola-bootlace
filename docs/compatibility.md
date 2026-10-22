@@ -67,3 +67,6 @@ It suits what boots and then runs from memory or only needs its loader's disk: r
 - **Proxmox test VM (real LAN, router DHCP)**: openSUSE Tumbleweed NET starts YaST and the DVD reaches the installer's Welcome page, with the repository and RPMs served from Bootlace
   over HTTP, so the lab failure was the 169.254.x.x addresses. Proxmox's OVMF has no network boot (no PXE entry for any card), so for UEFI the VM boots Bootlace's iPXE from a 64 MB EFI disk
   (EFI/BOOT/BOOTX64.EFI) and the rest is the normal path. pfSense on BIOS used to restart the PC for ever (its firmware hand-off has no boot file for BIOS): a BIOS PC now gets a message and goes back.
+- **More results (2026-10-22, Hyper-V UEFI lab, Secure Boot off)**: Ubuntu 22.04.5 desktop (3 GB, desktop), Ubuntu 25.04 desktop (3 GB, installer; an apport crash dialog shows, harmless),
+  TrueNAS SCALE 25.04.2.5, 25.10.3.1 and 25.10.7 (installer menu), Kali full installer, Windows Server 2025, a custom-built Windows 11 ISO and FW11HEN (Setup language page over the SMB share), Proxmox VE 9.1
+  (installer EULA on the Proxmox test VM with 8 GB; it still loads the whole ISO into memory, streaming it is planned).
