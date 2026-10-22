@@ -5,7 +5,9 @@ package disc
 import (
 	"io"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/fat"
 	"github.com/ghazichaieb/gola-bootlace/internal/iso9660"
+	"github.com/ghazichaieb/gola-bootlace/internal/partition"
 	"github.com/ghazichaieb/gola-bootlace/internal/udf"
 )
 
@@ -79,4 +81,51 @@ func Open(r io.ReaderAt, size int64) (FS, error) {
 		return nil, err
 	}
 	return isoFS{i}, nil
+}
+
+type fatFS struct{ *fat.Volume }
+
+func (f fatFS) Open(name string) (File, error) { return f.Volume.Open(name) }
+func (f fatFS) Kind() string                   { return "FAT" }
+func (f fatFS) Stat(name string) (Entry, error) {
+	e, err := f.Volume.Stat(name)
+	return Entry(e), err
+}
+func (f fatFS) ReadDir(name string) ([]Entry, error) {
+	list, err := f.Volume.ReadDir(name)
+	out := make([]Entry, len(list))
+	for i, e := range list {
+		out[i] = Entry(e)
+	}
+	return out, err
+}
+
+// OpenFAT reads a FAT file system (a partition of a disk image, or the start-up image inside an ISO).
+func OpenFAT(r io.ReaderAt) (FS, error) {
+	v, err := fat.Open(r)
+	if err != nil {
+		return nil, err
+	}
+	return fatFS{v}, nil
+}
+
+// Part is a partition of a disk image whose file system can be read.
+type Part struct {
+	partition.Partition
+	FS FS
+}
+
+// OpenDisk reads the partition table of a disk image and opens the file systems that can be read (FAT; the others are left out).
+func OpenDisk(r io.ReaderAt, size int64) ([]Part, error) {
+	list, err := partition.Read(r, size)
+	if err != nil {
+		return nil, err
+	}
+	var out []Part
+	for _, p := range list {
+		if fsys, err := OpenFAT(p.Section(r)); err == nil {
+			out = append(out, Part{Partition: p, FS: fsys})
+		}
+	}
+	return out, nil
 }
