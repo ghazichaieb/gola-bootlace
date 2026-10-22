@@ -68,15 +68,41 @@ func (r *Registry) BootFile(mac string, efi bool) (string, bool) {
 		return "", false
 	}
 	if e.kind == Windows {
-		if efi {
-			return "bootmgfw.efi", true
+		if efi { // the ISO is in the name: the boot manager's first request tells which ISO this PC (whose address is not known yet) is after
+			return "win/" + e.iso + "/bootmgfw.efi", true
 		}
-		return "pxeboot.n12", true
+		return "", false // no BIOS way yet
 	}
 	if efi {
 		return "boot/loader.efi", true
 	}
 	return "boot/pxeboot", true
+}
+
+// Pending records that the next network boot of the PC with this MAC address is to be answered with the boot file of the kind, for the ISO. Its address is
+// not known: the boot file's name carries the ISO, and Bind notes the address when the PC asks for it.
+func (r *Registry) Pending(mac, iso, kind string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.pending == nil {
+		r.pending, r.chosen = map[string]entry{}, map[string]entry{}
+	}
+	r.pending[norm(mac)] = entry{iso: iso, kind: kind, until: r.now().Add(pendingFor)}
+}
+
+// Bind says that the PC at this address fetched the boot file for the ISO: it is answered from the ISO from now on, and no PC is sent there again.
+func (r *Registry) Bind(ip, iso, kind string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.pending == nil {
+		r.pending, r.chosen = map[string]entry{}, map[string]entry{}
+	}
+	r.chosen[ip] = entry{iso: iso, ip: ip, kind: kind, until: r.now().Add(chosenFor)}
+	for mac, e := range r.pending {
+		if e.iso == iso && e.kind == kind && e.ip == "" {
+			delete(r.pending, mac)
+		}
+	}
 }
 
 // Kind says what the PC at this address was sent to fetch.

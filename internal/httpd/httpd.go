@@ -21,7 +21,6 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
-	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
 	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
 )
 
@@ -39,6 +38,10 @@ type Server struct {
 	Config *config.Store
 	// PCFile is where the list of PCs is kept between runs; empty keeps it in memory only.
 	PCFile string
+	// Wimlib is wimlib-imagex (empty: looked for on the PATH) and CacheDir where the copies of boot.wim with Bootlace's files in them are kept: both are for starting
+	// Windows with the firmware's own boot manager (UEFI Secure Boot on).
+	Wimlib, CacheDir string
+	patchMu          sync.Mutex
 	// Mount adds handlers (the web interface) to the paths of the server.
 	Mount map[string]http.Handler
 
@@ -205,12 +208,11 @@ func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
 		if iso.ID != id {
 			continue
 		}
-		u, err := url.Parse(s.Base)
+		set, err := s.winSettings(iso)
 		if err != nil {
 			http.Error(w, "bad server address", http.StatusInternalServerError)
 			return
 		}
-		set := winpe.Settings{Base: s.Base, FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Host: u.Hostname(), Share: smbshare.ShareName, Folder: iso.ID, User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort, Hold: os.Getenv("BOOTLACE_WINPE_HOLD") != ""}
 		var body string
 		switch file {
 		case "boot.ipxe":

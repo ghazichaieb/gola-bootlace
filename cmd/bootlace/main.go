@@ -26,6 +26,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
 	"github.com/ghazichaieb/gola-bootlace/internal/tftp"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
+	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
 )
 
 func main() {
@@ -77,7 +78,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	dnsIP := fs.String("dns", "", "full mode: the DNS server given to PCs (default: none)")
 	pxeOnly := fs.Bool("pxe-only", false, "full mode: hand out addresses to PCs that start a network boot only (a lab where this computer is also on the network)")
 	menuDefault := fs.Int("menu-default", 0, "the menu entry (counting from 1) that starts by itself after -menu-timeout seconds (0: wait for a choice)")
-	smbPasswordFlag := fs.String("smb-password", "", "the password Windows set-up logs in to the share with (default: a new one at every start; a fixed one is for testing)")
+	smbPasswordFlag := fs.String("smb-password", "", "the password Windows set-up logs in to the share with (default: made up once and kept in the settings file)")
+	wimlibFlag := fs.String("wimlib", "", "wimlib-imagex, which starts Windows with UEFI Secure Boot on (default: the one on the PATH)")
 	smbForward := fs.String("smb-forward", "", "for finding faults: pass the share connections on to this SMB server (host:port) and log them")
 	smbPort := fs.Int("smb-port", 445, "the port of the share that Windows set-up reads its files from")
 	menuLocal := fs.Bool("menu-local", false, "after -menu-timeout seconds the PC goes on to its own disk instead of waiting (useful after an installation has restarted it)")
@@ -108,10 +110,6 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	base := fmt.Sprintf("http://%s:%d", ip, *httpPort)
-	smbPassword := *smbPasswordFlag
-	if smbPassword == "" {
-		smbPassword = randomPassword()
-	}
 	registry := &handoff.Registry{}
 	seed := config.Config{MenuTimeout: *menuTimeout, PCDays: config.DefaultPCDays, Hidden: map[string]bool{}, Titles: map[string]string{}}
 	switch {
@@ -130,7 +128,23 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	if created {
 		logf("settings file %s made from the command-line menu options", store.Path())
 	}
-	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(filepath.Dir(*configPath), "pcs.json")}
+	// the share's password is inside the copies of boot.wim that are made for Secure Boot, so it is kept: a new one at every start would make them all again
+	smbPassword := *smbPasswordFlag
+	if smbPassword == "" {
+		smbPassword = store.Get().SMBPassword
+	}
+	if smbPassword == "" {
+		smbPassword = randomPassword()
+		if err := store.Update(func(c *config.Config) error { c.SMBPassword = smbPassword; return nil }); err != nil {
+			logf("cannot keep the share's password in the settings file: %v", err)
+		}
+	}
+	dataDir := filepath.Dir(*configPath)
+	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
+		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache")}
+	if winpe.Wimlib(*wimlibFlag) == "" {
+		logf("wimlib-imagex was not found: Windows cannot be started with UEFI Secure Boot on (install wimtools)")
+	}
 	if err := web.LoadClients(); err != nil {
 		logf("cannot read the saved list of PCs (%v): starting with an empty list", err)
 	}
@@ -172,7 +186,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}()
 
 	if *mode != "off" {
-		boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Handoff: registry.BootFile, Files: map[dhcp.Arch]string{
+		handoffFile := func(mac string, efi bool) (string, bool) { // a hand-off in progress first, then a rule that wants the firmware's own boot manager
+			if f, ok := registry.BootFile(mac, efi); ok {
+				return f, true
+			}
+			return web.NativeBootFile(mac, efi)
+		}
+		boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Handoff: handoffFile, Seen: web.NoteDHCP, Files: map[dhcp.Arch]string{
 			dhcp.ArchBIOS: "undionly.kpxe", dhcp.ArchX64EFI: "ipxe.efi",
 		}}
 		var responder dhcp.Responder = boot

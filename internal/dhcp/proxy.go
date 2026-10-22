@@ -75,6 +75,8 @@ type Boot struct {
 	Script   string          // what a client that already runs iPXE should load, normally http://<server>:<port>/boot.ipxe
 	// Handoff may name another boot file for one PC (by MAC) that is starting for the second time because iPXE sent it away to run FreeBSD's loader.
 	Handoff func(mac string, efi bool) (string, bool)
+	// Seen is told of every PXE client that asks, so that the web interface can list a PC that never gets as far as a menu (Secure Boot refusing iPXE).
+	Seen func(mac string, efi, ipxe bool)
 }
 
 // Reply builds the proxy answer to a PXE request: an offer to a discover, an acknowledgement to a request. It returns false when the client
@@ -84,6 +86,9 @@ func (b Boot) Reply(req *Packet) (*Packet, bool) {
 		return nil, false
 	}
 	file := b.Script
+	if b.Seen != nil {
+		b.Seen(req.MAC().String(), ClientArch(req).Canonical() != ArchBIOS, IsIPXE(req))
+	}
 	if !IsIPXE(req) {
 		a := ClientArch(req).Canonical()
 		if f, ok := b.handoff(req, a); ok {

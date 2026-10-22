@@ -91,6 +91,10 @@ func Cmd(s Settings) string {
 	}
 	// Setup is the one of the set-up environment itself (X:\sources), pointed at the installation image on the share and started from the ISO's
 	// folder (without that it cannot find the licence terms): the setup.exe on the share is the one for upgrading a running Windows and does nothing here.
+	// A PC that the firmware's own boot manager started over the network leaves a record of that in the registry, and Windows 11 Setup then starts in "WDS mode"
+	// (Windows Deployment Services client), which Microsoft has blocked for Windows 11 ("WdsClient: There was a problem initializing WDS Mode"). Without the record
+	// Setup starts as it does from a DVD.
+	line(`reg delete HKLM\SYSTEM\CurrentControlSet\Control\PXE /f > nul 2>&1`)
 	line(`cd /d Z:\%s`, s.Folder)
 	line(`set IMAGE=Z:\%s\sources\install.wim`, s.Folder)
 	line(`if not exist %%IMAGE%% set IMAGE=Z:\%s\sources\install.esd`, s.Folder)

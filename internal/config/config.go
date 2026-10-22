@@ -33,7 +33,8 @@ type Config struct {
 	Hidden      map[string]bool   `json:"hidden"`      // ISO id -> not in the menu
 	Titles      map[string]string `json:"titles"`      // ISO id -> the name shown instead of the file name
 	Rules       []Rule            `json:"rules"`
-	AdminHash   string            `json:"adminHash"` // see package admin
+	AdminHash   string            `json:"adminHash"`   // see package admin
+	SMBPassword string            `json:"smbPassword"` // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
 }
 
 // DefaultPCDays is how long a PC stays in the list after it was last seen, unless changed.
@@ -58,6 +59,9 @@ func NormalizeMAC(s string) (string, bool) {
 func ValidAction(a string) bool {
 	if a == "menu" || a == "local" {
 		return true
+	}
+	if id, ok := strings.CutPrefix(a, "native:"); ok { // started by the PC's own firmware, so that UEFI Secure Boot can stay on
+		return idPattern.MatchString(id)
 	}
 	id, ok := strings.CutPrefix(a, "iso:")
 	return ok && idPattern.MatchString(id)

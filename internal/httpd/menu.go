@@ -185,7 +185,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, e := range infos {
-			if "iso:"+e.ISO.ID == rule.Action {
+			if "iso:"+e.ISO.ID == rule.Action || "native:"+e.ISO.ID == rule.Action { // (a native rule that reaches iPXE: Secure Boot is off, the usual way does)
 				s.logf("%s (%s): its rule starts %s", client.MAC, client.IP, e.Title)
 				s.setAction(client.MAC, "rule: "+e.Title)
 				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", e.Entry))

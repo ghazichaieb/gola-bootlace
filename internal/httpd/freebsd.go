@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
@@ -68,6 +69,12 @@ func isLoaderName(name string) bool { return name == "boot/loader.efi" || name =
 func (s *Server) TFTPLookup(client net.IP, name string) (fs.File, bool) {
 	if s.Handoff == nil {
 		return nil, false
+	}
+	if rest, ok := strings.CutPrefix(name, "win/"); ok { // the boot file named by DHCP: win/<id>/bootmgfw.efi
+		if id, file, ok := strings.Cut(rest, "/"); ok {
+			s.Handoff.Bind(client.String(), id, handoff.Windows)
+			return s.windowsTFTP(client, id, file)
+		}
 	}
 	id, ok := s.Handoff.ISO(client.String())
 	if !ok {

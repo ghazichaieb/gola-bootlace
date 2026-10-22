@@ -16,6 +16,7 @@ param(
     [string] $VSwitch = 'bootlace-lab',
     [int] $MemoryGB = 4,
     [switch] $Bios,            # a generation 1 (legacy BIOS) VM instead of a UEFI one
+    [switch] $SecureBoot,      # UEFI Secure Boot on (the Microsoft Windows template)
     [string] $Out = '',
     [int] $Key = 0,
     [string] $Text = '',
@@ -40,7 +41,8 @@ switch ($Action) {
             Add-VMNetworkAdapter -VM $vm -IsLegacy $true -SwitchName $VSwitch
             Set-VMBios -VM $vm -StartupOrder @('LegacyNetworkAdapter', 'IDE', 'CD', 'Floppy')
         } else {
-            Set-VMFirmware -VM $vm -EnableSecureBoot Off -BootOrder @((Get-VMNetworkAdapter -VM $vm))
+            $sb = if ($SecureBoot) { 'On' } else { 'Off' }   # the default is off: iPXE is not signed (issue #10)
+            Set-VMFirmware -VM $vm -EnableSecureBoot $sb -BootOrder @((Get-VMNetworkAdapter -VM $vm))
         }
         Start-VM -VM $vm
         "started $vmName"

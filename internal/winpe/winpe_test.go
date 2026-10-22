@@ -51,3 +51,11 @@ func TestAHeldCommandFileStopsBeforeSetup(t *testing.T) {
 		t.Fatal(c)
 	}
 }
+
+func TestTheCommandFileRemovesThePxeRecordSoThatSetupDoesNotStartInWdsMode(t *testing.T) {
+	c := Cmd(set)
+	i, j := strings.Index(c, `reg delete HKLM\SYSTEM\CurrentControlSet\Control\PXE /f`), strings.Index(c, `sources\setup.exe`)
+	if i < 0 || j < 0 || i > j {
+		t.Fatalf("the PXE record must be removed before Setup starts:\n%s", c)
+	}
+}

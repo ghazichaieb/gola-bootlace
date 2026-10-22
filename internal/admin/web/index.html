@@ -150,12 +150,15 @@ function actionLabel(a) {
   if (!a || a === "menu") return "Show the menu";
   if (a === "local") return "Own disk";
   if (a.startsWith("iso:")) { const i = state.isos.find(x => x.id === a.slice(4)); return i ? i.title : "(missing ISO)"; }
+  if (a.startsWith("native:")) { const i = state.isos.find(x => x.id === a.slice(7)); return i ? i.title + " (Secure Boot)" : "(missing ISO)"; }
   return a;
 }
 function actionOptions(sel, withMenu = true) {
   let o = withMenu ? `<option value="menu"${sel === "menu" || !sel ? " selected" : ""}>Show the menu</option>` : "";
   o += `<option value="local"${sel === "local" ? " selected" : ""}>Boot from its own disk</option>`;
   o += state.isos.map(i => `<option value="iso:${i.id}"${sel === "iso:" + i.id ? " selected" : ""}>Start ${esc(i.title)}</option>`).join("");
+  // Windows set-up can also be started by the PC's own firmware, which works with UEFI Secure Boot on (the rule is used up at the PC's next network boot)
+  o += state.isos.filter(i => i.family === "Windows setup").map(i => `<option value="native:${i.id}"${sel === "native:" + i.id ? " selected" : ""}>Install ${esc(i.title)}, once (works with Secure Boot)</option>`).join("");
   return o;
 }
 
