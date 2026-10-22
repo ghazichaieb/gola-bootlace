@@ -20,11 +20,14 @@ func TestTheArchiveIsInTheFormatTheKernelReads(t *testing.T) {
 	}
 }
 
-func TestTheScriptNamesTheIsoAndHasAWayOut(t *testing.T) {
-	a := string(Extra(Settings{Host: "10.0.0.1", Port: 10809, Name: "abc1234567", URL: "http://10.0.0.1:8080/iso/u.iso"}, []byte("ELF")))
-	for _, want := range []string{"-host '10.0.0.1' -port 10809 -name 'abc1234567'", "wget 'http://10.0.0.1:8080/iso/u.iso'", "usr/bin/bootlace-nbd", "mount -t iso9660 -o ro /dev/nbd0"} {
+func TestTheScriptNamesTheIsoAndNeverCopiesItWhole(t *testing.T) {
+	a := string(Extra(Settings{Host: "10.0.0.1", Port: 10809, Name: "abc1234567"}, []byte("ELF")))
+	for _, want := range []string{"-host '10.0.0.1' -port 10809 -name 'abc1234567'", "usr/bin/bootlace-nbd", "mount -t iso9660 -o ro /dev/nbd0"} {
 		if !strings.Contains(a, want) {
 			t.Errorf("missing %q", want)
 		}
+	}
+	if strings.Contains(a, "wget") {
+		t.Error("the ISO must never be downloaded whole into memory")
 	}
 }

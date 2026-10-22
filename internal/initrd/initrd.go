@@ -50,7 +50,6 @@ type Settings struct {
 	Host string // the server
 	Port int    // its NBD port
 	Name string // the ISO's id: the NBD export
-	URL  string // the ISO's address on the web server: the way out when the network disk does not work (the whole ISO is then copied into memory)
 }
 
 // nfsmount is what casper runs where it would mount an NFS share: "nfsmount -o options server:path mountpoint". It attaches the ISO as a network block disk
@@ -82,10 +81,9 @@ exit 1
 
 // Extra is the archive for a live Linux that casper starts from the ISO: nfsmount and the helper that attaches the network block disk.
 func Extra(s Settings, helper []byte) []byte {
-	fallback := ""
-	if s.URL != "" {
-		fallback = fmt.Sprintf("echo 'Gola Bootlace: copying the whole ISO into memory instead' >&2\nif wget %s -O /tmp/live.iso; then mount -o ro /tmp/live.iso \"$mnt\" && exit 0; fi", shellWord(s.URL))
-	}
+	// The whole ISO is never copied into the PC's memory, not even when the network disk fails: that needs RAM for all of it and fails in a way that is hard to read.
+	// A PC that cannot use the network disk says so.
+	fallback := fmt.Sprintf("echo 'Gola Bootlace: this PC could not read the ISO over the network (port %d on the server). Is a firewall in the way?' >&2", s.Port)
 	return Archive([]File{
 		{Name: "usr", Mode: 0o755, Dir: true},
 		{Name: "usr/bin", Mode: 0o755, Dir: true},

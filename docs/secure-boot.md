@@ -50,8 +50,8 @@ casper's usual network boot downloads the whole ISO into a memory file system th
 - The server has a small read-only **NBD server** (`internal/nbd`, port 10809, `-nbd-port`; 0 turns it off). The export name is the ISO's id.
 - A second initramfs archive, made on the fly at `/x/<id>/extra.cpio` and loaded after the ISO's own (the kernel lets later files replace earlier ones), carries two files:
   `bootlace-nbd` (`cmd/bootlace-nbd`, a static Go program that hands the connection to the kernel's `nbd` driver; the `nbd` and `isofs` modules are in Ubuntu's initramfs)
-  and a `nfsmount` script. casper calls `nfsmount` when told `netboot=nfs nfsroot=...`; this one attaches `/dev/nbd0`, mounts the ISO from it where casper wanted the share, and
-  (if that fails) falls back to downloading the ISO into memory.
+  and a `nfsmount` script. casper calls `nfsmount` when told `netboot=nfs nfsroot=...`; this one attaches `/dev/nbd0` and mounts the ISO from it where casper wanted the share.
+  If that fails it says so and stops: the whole ISO is never copied into the PC's memory.
 - Why through `nfsmount`: casper has no hook that does not depend on a generated file list (`ORDER`), but it runs `nfsmount` by name, and the file can simply be replaced.
   (Also tried: klibc's real `nfsmount` hangs without a portmapper and has no `mountport=` option; `netboot=cifs` would need the share to accept `root` with no password and to speak
   SMB 3, and casper does not read `nfsopts=` from the kernel command line.)

@@ -84,7 +84,7 @@ func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, iso := range list {
 		if iso.ID == id {
-			data := initrd.Extra(initrd.Settings{Host: pu.Hostname(), Port: s.NBDPort, Name: iso.ID, URL: s.Base + isoPath(iso.Name)}, assets.NBDHelper())
+			data := initrd.Extra(initrd.Settings{Host: pu.Hostname(), Port: s.NBDPort, Name: iso.ID}, assets.NBDHelper())
 			s.logf("%s fetches the network-disk archive for %s", r.RemoteAddr, iso.Title)
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("Content-Length", fmt.Sprint(len(data)))
