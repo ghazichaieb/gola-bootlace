@@ -24,6 +24,7 @@ func (s *Server) familyURLs(iso isos.ISO) family.URLs {
 	if s.NBDPort != 0 {
 		if pu, err := url.Parse(s.Base); err == nil {
 			u.NBD = pu.Hostname() + ":/" + iso.ID // what casper's nfsroot= shows; the helper gets the real address from the archive
+			u.NBDHost, u.NBDPort, u.NBDName = pu.Hostname(), s.NBDPort, iso.ID
 			u.Extra = s.Base + "/x/" + iso.ID + "/extra.cpio"
 		}
 	}

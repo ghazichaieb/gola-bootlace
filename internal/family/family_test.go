@@ -103,3 +103,16 @@ func TestFreeBSDRestartsThePcSoThatItsFirmwareStartsTheLoader(t *testing.T) {
 		t.Fatal("a kernel without the UEFI loader is not enough")
 	}
 }
+
+func TestArchisoAttachesTheIsoAsANetworkDiskOnTheStandardPort(t *testing.T) {
+	u := urls
+	u.NBDHost, u.NBDPort, u.NBDName = "10.0.0.1", 10809, "abc1234567"
+	b, ok := Detect(fake{"/sysresccd/boot/x86_64/vmlinuz": true, "/sysresccd/boot/x86_64/sysresccd.img": true}, u)
+	if !ok || b.Family != "SystemRescue" || !strings.Contains(lines(b), "archisobasedir=sysresccd archiso_nbd_srv=10.0.0.1 archiso_nbd_name=abc1234567 copytoram=n") {
+		t.Fatalf("%v %v", b, ok)
+	}
+	u.NBDPort = 10810 // its client takes no port: the squashfs comes over HTTP then
+	if b, _ := Detect(fake{"/sysresccd/boot/x86_64/vmlinuz": true, "/sysresccd/boot/x86_64/sysresccd.img": true}, u); !strings.Contains(lines(b), "archiso_http_srv=") {
+		t.Fatalf("%v", b)
+	}
+}

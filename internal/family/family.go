@@ -24,7 +24,10 @@ type URLs struct {
 	// NBD says that the ISO can be offered to a live Linux as a network disk, with Extra the address of the extra initramfs archive that makes use of it; empty: the whole
 	// ISO is downloaded into the PC's memory (a PC then needs RAM for all of it, twice over).
 	NBD, Extra string
-	Base       string // the server
+	// The network disk's address and the ISO's name on it, for the ones that attach it themselves (archiso has its own NBD client).
+	NBDHost, NBDName string
+	NBDPort          int
+	Base             string // the server
 }
 
 // Boot is how to start one ISO.
@@ -48,7 +51,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, debianLive, ubuntu, freeBSD, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, debianLive, ubuntu, freeBSD, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -123,7 +126,26 @@ func archLinux(t Tree, u URLs) (Boot, bool) {
 	if !t.Exists(dir + "/" + initrd) {
 		return Boot{}, false
 	}
-	return boot("Arch Linux", u, dir+"/"+kernel, dir+"/"+initrd, "ip=:::::eth0:dhcp archisobasedir=arch archiso_http_srv="+u.FS+"/ copytoram=y console=tty0"), true
+	return archiso("Arch Linux", u, "arch", dir+"/"+kernel, dir+"/"+initrd), true
+}
+
+// archiso is how Arch Linux ISOs and the ones built with it (SystemRescue, CachyOS ...) are started. Their initramfs has an NBD client of its own (the archiso_pxe_nbd hook):
+// the ISO is attached as /dev/nbd0 and the squashfs is read from it a piece at a time, with copytoram=n so that it is not copied into memory. That client takes the server's
+// address only, so it is used when the NBD server listens on the standard port; otherwise the squashfs is downloaded into memory over HTTP.
+func archiso(family string, u URLs, basedir, kernel, initrd string) Boot {
+	if u.NBDHost != "" && u.NBDPort == 10809 {
+		return boot(family, u, kernel, initrd, "ip=:::::eth0:dhcp archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n console=tty0")
+	}
+	return boot(family, u, kernel, initrd, "ip=:::::eth0:dhcp archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y console=tty0")
+}
+
+// SystemRescue: archiso with its own folder name.
+func systemRescue(t Tree, u URLs) (Boot, bool) {
+	const dir = "/sysresccd/boot/x86_64"
+	if !t.Exists(dir+"/vmlinuz") || !t.Exists(dir+"/sysresccd.img") {
+		return Boot{}, false
+	}
+	return archiso("SystemRescue", u, "sysresccd", dir+"/vmlinuz", dir+"/sysresccd.img"), true
 }
 
 // Debian live and the distributions built the same way (TrueNAS keeps its kernel at the top of the ISO): the squashfs comes from the web server.

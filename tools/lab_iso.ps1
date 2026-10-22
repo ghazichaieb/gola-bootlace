@@ -31,6 +31,9 @@ $ip = (Get-NetIPAddress -InterfaceAlias 'vEthernet (bootlace-lab)' -AddressFamil
 $prefix = ($ip -split '\.')[0..2] -join '.'
 $base = "http://${ip}:8080"
 
+# stop the server of the last run first: it holds its ISO open
+Get-Process bootlace -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep 1
 # the ISO, on a local disk (only this one stays in the folder)
 $src = @(Get-ChildItem $Source -Recurse -Filter *.iso | Where-Object { $_.Name -like "*$Iso*" })
 if ($src.Count -ne 1) { throw "'$Iso' matches $($src.Count) ISOs in ${Source}: $(($src | ForEach-Object Name) -join ', ')" }
