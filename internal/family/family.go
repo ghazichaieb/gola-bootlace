@@ -7,6 +7,7 @@ package family
 import (
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -27,8 +28,11 @@ type URLs struct {
 	// The network disk's address and the ISO's name on it, for the ones that attach it themselves (archiso has its own NBD client).
 	NBDHost, NBDName string
 	ISCSI            string // the ISO as a network CD-ROM (the address iPXE's sanboot takes), when the iSCSI server is on
-	NBDPort          int
-	Base             string // the server
+	// The same network CD-ROM for a Linux that logs in to it itself (dracut's iSCSI support): server, port and the target's name. Empty when the iSCSI server is off.
+	ISCSIHost, ISCSIIQN string
+	ISCSIPort           int
+	NBDPort             int
+	Base                string // the server
 }
 
 // Boot is how to start one ISO.
@@ -52,7 +56,7 @@ func Detect(t Tree, u URLs) (Boot, bool) {
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
+var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -225,6 +229,21 @@ func windows(t Tree, u URLs) (Boot, bool) {
 		return Boot{Family: "Windows PE", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
 	}
 	return Boot{Family: "Windows setup", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
+}
+
+// Fedora's live ISOs since version 44 (built with KIWI): kernel and initramfs in /boot/x86_64/loader, the system in /LiveOS/squashfs.img. The initramfs (dracut) has an iSCSI
+// client: it logs in to the ISO as a network CD-ROM and reads the system from it a piece at a time, so the PC does not need RAM for the whole ISO.
+func fedoraLiveISO(t Tree, u URLs) (Boot, bool) {
+	const dir = "/boot/x86_64/loader"
+	if !t.Exists(dir+"/linux") || !t.Exists(dir+"/initrd") || !t.Exists("/LiveOS/squashfs.img") || t.Exists("/.treeinfo") {
+		return Boot{}, false
+	}
+	if u.ISCSIHost != "" {
+		target := u.ISCSIHost + ":" + strconv.Itoa(u.ISCSIPort) + "-iscsi-" + u.ISCSIIQN + "-lun-0"
+		return boot("Fedora (live)", u, dir+"/linux", dir+"/initrd", "ip=dhcp rd.neednet=1 netroot=iscsi:"+u.ISCSIHost+"::"+strconv.Itoa(u.ISCSIPort)+"::"+u.ISCSIIQN+
+			" root=live:/dev/disk/by-path/ip-"+target+" rd.live.image console=tty0"), true
+	}
+	return boot("Fedora (live)", u, dir+"/linux", dir+"/initrd", "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"), true
 }
 
 // ShredOS (nwipe, for wiping drives): one kernel with everything inside it.

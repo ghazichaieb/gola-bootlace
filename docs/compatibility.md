@@ -56,3 +56,5 @@ It suits what boots and then runs from memory or only needs its loader's disk: r
 - **Windows installer through iSCSI** (tried with Server 2025): the ISO's boot sector asks "Press any key to boot from CD or DVD" (an ISO without that prompt, such as our image builder's, skips it);
   Setup started from the CD but then offered only "Install driver to show hardware", with no drives and no installation image. Windows cannot use an iPXE SAN CD once it has taken over from the firmware,
   so Windows installers stay on the file share.
+- **memtest / grub-memtest** start through iSCSI in a second (read block by block, no RAM disk). Not a substitute for a proper test: the iPXE program that started it and the
+  firmware's reserved memory stay untested, so use a USB boot for a thorough or intermittent-fault test. It stays in the menu as a quick check.

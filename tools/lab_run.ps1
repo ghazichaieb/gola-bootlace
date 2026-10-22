@@ -34,6 +34,7 @@ foreach ($t in $Tests) {
     $p = $t.Split(':')
     $e = [ordered]@{ Iso = $p[0]; Mem = [int]$p[1]; Wait = [int]$p[2]; SB = ($p -contains 'sb'); Native = ($p -contains 'native') }
     $src = @(Get-ChildItem $Source -Recurse -Filter *.iso | Where-Object { $_.Name -like "*$($e.Iso)*" })
+    if ($src.Count -gt 1 -and @($src | Where-Object { $_.Name -eq "$($e.Iso).iso" }).Count -eq 1) { $src = @($src | Where-Object { $_.Name -eq "$($e.Iso).iso" }) }   # an exact name wins
     if ($src.Count -ne 1) { throw "'$($e.Iso)' matches $($src.Count) ISOs: $(($src | ForEach-Object Name) -join ', ')" }
     $e.File = $src[0]
     $e.Name = 't' + (($e.Iso -replace '[^a-zA-Z0-9]', '').ToLower())
@@ -51,7 +52,7 @@ foreach ($e in $plan) {
 $env:Path += ';C:\tools\go\bin;C:\tools\wimlib'
 Push-Location $root; go build -o bin\bootlace.exe .\cmd\bootlace; Pop-Location
 Remove-Item (Join-Path $Work 'config.json'), (Join-Path $Work 'pcs.json') -ErrorAction SilentlyContinue
-$sargs = @('serve', '-iso-dir', "`"$IsoDir`"", '-ip', $ip, '-dhcp', 'full', '-pxe-only', '-mask', '255.255.0.0', '-range-start', "$prefix.150", '-range-end', "$prefix.220",
+$sargs = @('serve', '-iso-dir', "`"$IsoDir`"", '-ip', $ip, '-dhcp', 'full', '-pxe-only', '-mask', '255.255.0.0', '-router', $ip, '-range-start', "$prefix.150", '-range-end', "$prefix.220",
     '-smb-port', '4445', '-config', "`"$(Join-Path $Work 'config.json')`"", '-admin-password', $pw)
 Start-Process -FilePath (Join-Path $root 'bin\bootlace.exe') -ArgumentList $sargs -RedirectStandardOutput (Join-Path $Work 'out.log') -RedirectStandardError (Join-Path $Work 'err.log') -WindowStyle Hidden
 Start-Sleep 4
@@ -89,7 +90,7 @@ while ($pending.Count -gt 0) {
     foreach ($e in @($pending)) {
         $elapsed = ((Get-Date) - $e.Started).TotalSeconds
         $png = Join-Path $Out "$($e.Name).png"
-        & (Join-Path $PSScriptRoot 'pxe_vm.ps1') -Action shot -Name $e.Name -Out $png | Out-Null
+        try { & (Join-Path $PSScriptRoot 'pxe_vm.ps1') -Action shot -Name $e.Name -Out $png | Out-Null } catch { "$($e.Name): no picture ($($_.Exception.Message))" }   # a VM that shut itself down has none
         if ($elapsed -ge $e.Wait) {
             Copy-Item $png (Join-Path $Out "$($e.Name)-final.png") -Force
             Stop-VM -Name $e.Vm -TurnOff -Force -ErrorAction SilentlyContinue
