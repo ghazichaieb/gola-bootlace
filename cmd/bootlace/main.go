@@ -84,7 +84,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	smbPort := fs.Int("smb-port", 445, "the port of the share that Windows set-up reads its files from")
 	menuLocal := fs.Bool("menu-local", false, "after -menu-timeout seconds the PC goes on to its own disk instead of waiting (useful after an installation has restarted it)")
 	menuPick := fs.String("menu-pick", "", "the entry whose name contains this text starts by itself after -menu-timeout seconds (instead of -menu-default)")
-	menuTimeout := fs.Int("menu-timeout", 0, "seconds before the default menu entry starts (0: wait for ever)")
+	menuTimeout := fs.Int("menu-timeout", 20, "seconds before the default menu entry starts (0: wait for ever); the default entry is the PC's own disk unless another is chosen")
 	configPath := fs.String("config", "bootlace.json", "the file where the settings made in the web interface are kept (the menu options above only give its first contents)")
 	adminPassword := fs.String("admin-password", os.Getenv("BOOTLACE_ADMIN_PASSWORD"), "the password of the web interface (default: made up the first time and written in the log; also read from BOOTLACE_ADMIN_PASSWORD)")
 	noAdmin := fs.Bool("no-admin", false, "do not offer the web interface")
@@ -112,6 +112,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	base := fmt.Sprintf("http://%s:%d", ip, *httpPort)
 	registry := &handoff.Registry{}
 	seed := config.Config{MenuTimeout: *menuTimeout, PCDays: config.DefaultPCDays, Hidden: map[string]bool{}, Titles: map[string]string{}}
+	seed.Default = "local" // nothing chosen after the timeout: the PC goes on to its own disk, so that a PC started unattended does not sit at the menu
 	switch {
 	case *menuPick != "":
 		seed.Default = "pick:" + *menuPick
