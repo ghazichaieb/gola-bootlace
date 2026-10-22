@@ -35,3 +35,12 @@ Tested in a Proxmox VM (SeaBIOS, 6 GB) started from the network; the menu, with 
 - The PC needs a network card WinPE has a driver for (the VM's `virtio`, `e1000` and `e1000e` cards have none: "installation files could not be reached", ipconfig lists no adapter). So
   the install itself was not run through on BIOS; the network and share part is the same as on UEFI, where it works.
 - iPXE's old BIOS file (from boot.ipxe.org, 2019) has no `console`, `cpair` or PNG support. Bootlace now ships its own build (see NOTICE and tools/ipxe).
+
+## ISOs that are not started piece by piece: iSCSI (2026-10-22)
+
+An ISO that Bootlace does not recognise is handed to the PC as a **CD-ROM over iSCSI** (`internal/iscsi`, port 3260, `-iscsi-port`; 0 turns it off and brings back the old way,
+where iPXE downloads the whole file into the PC's memory). iPXE's `sanboot iscsi:<server>::3260:0:iqn.2026-10.org.gola:bootlace:<id>` reads it a block at a time. Tested in the
+Hyper-V lab (UEFI, Secure Boot off) with the Ubuntu 22.04.5 ISO forced through it from the iPXE shell: login, the ISO's own GRUB menu came up, and GRUB read the kernel and
+initramfs through the iSCSI disk (the connection is closed when idle and opened again on demand). What it cannot do: a kernel that wants the disk after it has started (Linux
+without an iSCSI initiator in its initramfs, Windows) cannot see an iPXE SAN disk, which is why recognised ISOs have their own ways (Ubuntu: network block disk; Windows: file share).
+It suits what boots and then runs from memory or only needs its loader's disk: rescue and test tools, wipers, firmware updaters.

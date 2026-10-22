@@ -80,6 +80,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	menuDefault := fs.Int("menu-default", 0, "the menu entry (counting from 1) that starts by itself after -menu-timeout seconds (0: wait for a choice)")
 	smbPasswordFlag := fs.String("smb-password", "", "the password Windows set-up logs in to the share with (default: made up once and kept in the settings file)")
 	nbdPort := fs.Int("nbd-port", 10809, "the port of the network disk server that a live Linux (Ubuntu) reads its ISO from instead of copying it into memory (0: off)")
+	iscsiPort := fs.Int("iscsi-port", 3260, "the port of the iSCSI target that shows an ISO Bootlace cannot start piece by piece as a CD-ROM (0: off, the ISO is then downloaded whole)")
 	wimlibFlag := fs.String("wimlib", "", "wimlib-imagex, which starts Windows with UEFI Secure Boot on (default: the one on the PATH)")
 	smbForward := fs.String("smb-forward", "", "for finding faults: pass the share connections on to this SMB server (host:port) and log them")
 	smbPort := fs.Int("smb-port", 445, "the port of the share that Windows set-up reads its files from")
@@ -143,7 +144,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}
 	dataDir := filepath.Dir(*configPath)
 	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
-		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort}
+		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort, ISCSIPort: *iscsiPort}
 	if winpe.Wimlib(*wimlibFlag) == "" {
 		logf("wimlib-imagex was not found: Windows cannot be started with UEFI Secure Boot on (install wimtools)")
 	}
@@ -178,6 +179,15 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}()
 	logf(`Windows set-up share: \\%s\%s on port %d`, ip, smbshare.ShareName, *smbPort)
 
+	if *iscsiPort != 0 {
+		iscsiListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, *iscsiPort))
+		if err != nil {
+			fmt.Fprintf(stderr, "bootlace: cannot open the iSCSI port %d: %v\n", *iscsiPort, err)
+			return 1
+		}
+		logf("iSCSI target on %s:%d (an ISO that is not started piece by piece is read from it as a CD-ROM)", ip, *iscsiPort)
+		go func() { errs <- web.ServeISCSI(iscsiListener) }()
+	}
 	if *nbdPort != 0 {
 		nbdListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, *nbdPort))
 		if err != nil {

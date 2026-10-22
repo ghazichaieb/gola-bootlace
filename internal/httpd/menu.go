@@ -67,7 +67,7 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 			e.Display = fmt.Sprintf("%s  [as a disk, %s]", e.Title, size)
 			e.Entry = menu.Entry{Name: e.Display, Title: e.Title, Kind: "as a disk", Size: size, Commands: []string{
 				"echo Loading " + oneWord(e.Title) + " ... the whole ISO is read into memory first, this takes a while",
-				"sanboot --no-describe --drive 0x80 " + s.Base + isoPath(iso.Name),
+				"sanboot --no-describe --drive 0x80 " + s.sanbootSource(iso),
 			}}
 		}
 		out = append(out, e)
@@ -266,4 +266,13 @@ func queryValue(q url.Values, key string, max int) string {
 		v = v[:max]
 	}
 	return v
+}
+
+// sanbootSource is where sanboot reads an ISO from: the iSCSI target (a block at a time) when there is one, otherwise the whole file over HTTP (which iPXE keeps in the
+// PC's memory).
+func (s *Server) sanbootSource(iso isos.ISO) string {
+	if u := s.iscsiURL(iso); u != "" {
+		return u
+	}
+	return s.Base + isoPath(iso.Name)
 }

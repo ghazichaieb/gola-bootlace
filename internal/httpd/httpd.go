@@ -43,7 +43,9 @@ type Server struct {
 	Wimlib, CacheDir string
 	// NBDPort is the port of the network block disk server (0: none, a live Linux then downloads its ISO into memory).
 	NBDPort int
-	patchMu sync.Mutex
+	// ISCSIPort is the port of the iSCSI target that shows an ISO as a CD-ROM (0: none, the ISO is then downloaded whole by iPXE).
+	ISCSIPort int
+	patchMu   sync.Mutex
 	// Mount adds handlers (the web interface) to the paths of the server.
 	Mount map[string]http.Handler
 
