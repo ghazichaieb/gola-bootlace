@@ -62,10 +62,10 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 		if b, ok := s.recognise(iso); ok {
 			e.Boot, e.Known = b, true
 			e.Display = fmt.Sprintf("%s  [%s, %s]", e.Title, b.Family, size)
-			e.Entry = menu.Entry{Name: e.Display, Commands: b.Commands}
+			e.Entry = menu.Entry{Name: e.Display, Commands: b.Commands, Title: e.Title, Kind: b.Family, Size: size}
 		} else {
 			e.Display = fmt.Sprintf("%s  [as a disk, %s]", e.Title, size)
-			e.Entry = menu.Entry{Name: e.Display, Commands: []string{
+			e.Entry = menu.Entry{Name: e.Display, Title: e.Title, Kind: "as a disk", Size: size, Commands: []string{
 				"echo Loading " + oneWord(e.Title) + " ... the whole ISO is read into memory first, this takes a while",
 				"sanboot --no-describe --drive 0x80 " + s.Base + isoPath(iso.Name),
 			}}
@@ -143,8 +143,11 @@ func (s *Server) menuURL(page int) string {
 // entriesPerPage is how many ISOs one page of the menu holds. The screen's size is known here: a UEFI PC shows the picture (a text area of 24 lines under
 // the logo) and a BIOS PC has the 25 lines of its text mode; the heading, the lace mark, the buttons to other pages and the three fixed lines take the rest.
 func entriesPerPage(platform string) int {
-	if platform == "efi" {
+	switch platform {
+	case "efi":
 		return 12
+	case "pcbios":
+		return 7 // the frame and the table's heading take more lines
 	}
 	return 10
 }
@@ -200,9 +203,12 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			entries = append(entries, e.Entry)
 		}
 	}
-	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout,
-		Picture: s.Base + "/bg.png", Width: gfx.Width, Height: gfx.Height, Top: gfx.LogoBottom + 16}
-	opts.TextBanner = client.Platform != "efi"
+	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout}
+	if client.Platform == "efi" {
+		opts.Picture, opts.Width, opts.Height, opts.Top = s.Base+"/bg.png", gfx.Width, gfx.Height, gfx.LogoBottom+16
+	} else if client.Platform == "pcbios" {
+		opts.Ascii = true // a BIOS PC gets the ASCII frame and table
+	}
 	perPage := entriesPerPage(client.Platform)
 	opts.Pages = (len(entries) + perPage - 1) / perPage
 	if opts.Pages < 1 {

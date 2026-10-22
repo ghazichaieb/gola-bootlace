@@ -12,6 +12,10 @@ import (
 type Entry struct {
 	Name     string
 	Commands []string
+
+	// For the text table of a BIOS screen (Options.Ascii): the name, what kind of start it gets and its size, one to a column. Without them the table
+	// shows Name in the first column.
+	Title, Kind, Size string
 }
 
 var notLabel = regexp.MustCompile(`[^a-z0-9]+`)
@@ -51,8 +55,9 @@ type Options struct {
 	Page, Pages int
 	Prev, Next  string
 
-	// TextBanner puts the ASCII mark (Banner) above the list of a text-mode screen. Only for a BIOS PC: its screen is code page 437, which is what the blanks need.
-	TextBanner bool
+	// Ascii draws the text screen as a frame and table in plain ASCII, with the lace mark above it. For a BIOS PC, whose screen is code page 437: the blanks
+	// that line things up are the byte 0xFF there (see Banner).
+	Ascii bool
 }
 
 // Banner is the picture a text-mode PC (BIOS, or a screen that cannot show the logo) gets above the list: the lace mark and the name, in plain ASCII.
@@ -63,6 +68,40 @@ var Banner = []string{
 	`  o  X  o    GOLA Bootlace`,
 	`  o / \ o    network boot for ISO files`,
 }
+
+// Widths of the ASCII table's columns, and of the frame: "| " name " | " kind " | " size " |".
+const (
+	colName  = 40
+	colKind  = 16
+	colSize  = 8
+	frameLen = 2 + colName + 3 + colKind + 3 + colSize + 2
+)
+
+// blank is what lines text up in a BIOS text screen: iPXE joins the words of an item with single spaces, so a real space cannot be repeated.
+const blank = "\xff"
+
+// cell cuts s to n characters (ending in ".." when it was longer) and fills it up with blanks; right puts the text at the right.
+func cell(s string, n int, right bool) string {
+	s = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ", "${", "$ {").Replace(strings.TrimSpace(s))
+	if len(s) > n {
+		s = s[:n-2] + ".."
+	}
+	fill := strings.Repeat(" ", n-len(s))
+	if right {
+		s = fill + s
+	} else {
+		s += fill
+	}
+	return strings.ReplaceAll(s, " ", blank)
+}
+
+func border() string { return "+" + strings.Repeat("-", frameLen-2) + "+" }
+
+// tableRow is one row with three columns, and fullRow one with a single text across the frame.
+func tableRow(name, kind, size string) string {
+	return "|" + blank + cell(name, colName, false) + blank + "|" + blank + cell(kind, colKind, false) + blank + "|" + blank + cell(size, colSize, true) + blank + "|"
+}
+func fullRow(text string) string { return "|" + blank + cell(text, frameLen-4, false) + blank + "|" }
 
 // ScriptWith is Script with options.
 func ScriptWith(title string, entries []Entry, o Options) string {
@@ -75,43 +114,82 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	} else {
 		b.WriteString("set menu-default shell\n")
 	}
+	gap := func(text string) { fmt.Fprintf(&b, "item --gap -- %s\n", text) }
+	// the list: one line to an ISO, then the way to other pages and the three fixed lines; ascii puts it in a table
+	items := func(ascii bool) {
+		line := func(label, text string) {
+			if ascii {
+				fmt.Fprintf(&b, "item %s %s\n", label, fullRow(text))
+			} else {
+				fmt.Fprintf(&b, "item %s %s\n", label, text)
+			}
+		}
+		if ascii {
+			for _, l := range Banner {
+				gap(strings.ReplaceAll(l, " ", blank))
+			}
+			gap(border())
+			gap(tableRow("Name", "Starts as", "Size"))
+			gap(border())
+		}
+		if len(entries) == 0 {
+			if ascii {
+				gap(fullRow("No ISO files were found in the server's folder."))
+			} else {
+				gap("No ISO files were found in the server's folder.")
+			}
+		}
+		for i, e := range entries {
+			switch {
+			case !ascii:
+				fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), clean(e.Name))
+			case e.Title != "":
+				fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), tableRow(e.Title, e.Kind, e.Size))
+			default:
+				fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), tableRow(e.Name, "", ""))
+			}
+		}
+		if ascii {
+			gap(border())
+		}
+		if o.Prev != "" || o.Next != "" {
+			if !ascii {
+				gap("")
+			}
+			if o.Prev != "" {
+				line("prev", "<< Previous page")
+			}
+			if o.Next != "" {
+				line("next", "Next page >>")
+			}
+		}
+		if !ascii {
+			gap("")
+		}
+		line("local", "Boot from this PC's own disk")
+		line("shell", "iPXE shell")
+		line("reboot", "Restart this PC")
+		if ascii {
+			gap(border())
+		}
+	}
 	if o.Picture != "" {
 		// the picture carries the logo, so the menu's own heading only says what to do; a PC that cannot show it falls back to the text menu with the name
 		fmt.Fprintf(&b, "console --x %d --y %d --picture %s --left 64 --right 64 --top %d --bottom 40 && goto gfx || goto plain\n", o.Width, o.Height, o.Picture, o.Top)
-		fmt.Fprintf(&b, ":gfx\nmenu Choose what to start%s\ngoto items\n:plain\n", pageNote(o, " - "))
+		fmt.Fprintf(&b, ":gfx\nmenu Choose what to start%s\n", pageNote(o, " - "))
+		gap("")
+		items(false)
+		b.WriteString("goto choose\n:plain\n")
 	}
-	// the text screen: Gola's red for the chosen line, on black, with the lace mark above the list
+	// the text screen: Gola's red for the chosen line, on black
 	// (the BIOS build of iPXE has no colour command: the guard keeps the script going)
 	b.WriteString("cpair --foreground 7 --background 0 0 || set colours default\ncpair --foreground 7 --background 1 2 || set colours default\n")
 	fmt.Fprintf(&b, "menu %s%s\n", clean(title), pageNote(o, " - "))
-	if o.TextBanner {
-		for _, line := range Banner {
-			fmt.Fprintf(&b, "item --gap -- %s\n", strings.ReplaceAll(line, " ", "\xff"))
-		}
+	if !o.Ascii {
+		gap("")
 	}
-	b.WriteString("item --gap --\n")
-	if o.Picture != "" {
-		b.WriteString(":items\n")
-	}
-	if len(entries) == 0 {
-		b.WriteString("item --gap -- No ISO files were found in the server's folder.\n")
-	}
-	for i, e := range entries {
-		fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), clean(e.Name))
-	}
-	if o.Prev != "" || o.Next != "" {
-		b.WriteString("item --gap --\n")
-		if o.Prev != "" {
-			b.WriteString("item prev << Previous page\n")
-		}
-		if o.Next != "" {
-			b.WriteString("item next Next page >>\n")
-		}
-	}
-	b.WriteString("item --gap --\n")
-	b.WriteString("item local Boot from this PC's own disk\n")
-	b.WriteString("item shell iPXE shell\n")
-	b.WriteString("item reboot Restart this PC\n")
+	items(o.Ascii)
+	b.WriteString(":choose\n")
 	if o.Timeout > 0 {
 		fmt.Fprintf(&b, "choose --default ${menu-default} --timeout %d selected || goto shell\n", o.Timeout*1000)
 	} else {

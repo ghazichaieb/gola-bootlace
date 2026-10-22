@@ -151,14 +151,14 @@ func TestALongMenuIsShownAPageAtATime(t *testing.T) {
 	defer ts.Close()
 
 	_, p1 := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=pcbios", nil)
-	if !strings.Contains(p1, "page 1 of 3") || !strings.Contains(p1, "iso00") || strings.Contains(p1, "iso10") || !strings.Contains(p1, "item next") || strings.Contains(p1, "item prev") {
-		t.Fatalf("first page (BIOS, 10 a page):\n%s", p1)
+	if !strings.Contains(p1, "page 1 of 4") || !strings.Contains(p1, "iso00") || strings.Contains(p1, "iso07") || !strings.Contains(p1, "item next") || strings.Contains(p1, "item prev") {
+		t.Fatalf("first page (BIOS, 7 a page):\n%s", p1)
 	}
 	if !strings.Contains(p1, "&page=2") {
 		t.Fatalf("the next page's address is missing:\n%s", p1)
 	}
-	_, p3 := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=pcbios&page=3", nil)
-	if !strings.Contains(p3, "page 3 of 3") || !strings.Contains(p3, "iso24") || strings.Contains(p3, "item next") || !strings.Contains(p3, "item prev") {
+	_, p3 := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=pcbios&page=4", nil)
+	if !strings.Contains(p3, "page 4 of 4") || !strings.Contains(p3, "iso24") || strings.Contains(p3, "item next") || !strings.Contains(p3, "item prev") {
 		t.Fatalf("last page:\n%s", p3)
 	}
 	_, efi := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=efi", nil)
@@ -168,7 +168,7 @@ func TestALongMenuIsShownAPageAtATime(t *testing.T) {
 	if n := len(s.Clients()); n != 1 || s.Clients()[0].Count != 2 {
 		t.Fatalf("looking at other pages is not a new start: %+v", s.Clients())
 	}
-	if _, beyond := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=pcbios&page=99", nil); !strings.Contains(beyond, "page 3 of 3") {
+	if _, beyond := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=pcbios&page=99", nil); !strings.Contains(beyond, "page 4 of 4") {
 		t.Fatalf("a page past the end shows the last: %s", beyond)
 	}
 }
