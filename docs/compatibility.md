@@ -109,3 +109,27 @@ so none of this showed in Hyper-V. Measured: the VM's MAC answered at 192.168.1.
 - Alpine standard (BIOS, e1000e card): the initramfs found no network card (`ERROR: IP requested but no network interface was found`): its card drivers come from the modloop, which needs the network.
 - Packed disk images are no longer unpacked when the list is read but when someone starts them, one at a time (three at once, with a 512 MB container, got the server killed by the out-of-memory killer
   and wiped the rules); the container now has 4 GB and 4 cores.
+
+## 2026-10-22 night, second batch (Proxmox test server, BIOS unless said)
+
+Recognised from their own files and tested:
+- **Pop!_OS 24.04**: casper, but its live system is in a folder called `casper_pop-os_24.04_..._debug_681` (kernel `vmlinuz.efi`), not `/casper`. The Ubuntu detector now looks for any `casper*` folder and tells casper
+  with `live-media-path=`. Reaches the installer's language screen.
+- **Gentoo minimal install CD and LiveGUI**: dracut live ISOs (`/boot/gentoo`, `/boot/gentoo.igz`, `/image.squashfs`), started like Fedora's: network block disk, `root=live:/dev/nbd0`, plus their own `rd.live.dir=/
+  rd.live.squashimg=image.squashfs cdroot`. Root prompt and a KDE desktop.
+- **Tiny Core (Core)**: kernel and a 20 MB initramfs started directly (`/boot/vmlinuz`, `/boot/core.gz`); prompt.
+- **VyOS rolling**: live-boot, but its start-up disk has no `nbd` driver (the network disk could not be attached: "open /dev/nbd0: no such file"). It now downloads only its system image (`filesystem.squashfs`,
+  a few hundred MB, not the whole ISO) with `fetch=`, and passes the options its own boot menu does (`noautologin ... union=overlay`): without them the console logged in as a user that does not exist, in a loop.
+  Login prompt.
+- **Super Grub2 Disk** (CD), **netboot.xyz** (ISO and disk image): need nothing, start as a CD/disk and show their menus.
+- **OpenBSD 8.0 install image** (`install80.img`, disk image): reaches the installer ("(I)nstall, (U)pgrade, (A)utoinstall or (S)hell?"): its boot loader and ramdisk kernel run from the firmware disk, the sets come over HTTP.
+
+Not working, and why (each is per-distribution work, none is a Bootlace fault):
+- **memtest.iso in BIOS mode**: iPXE refuses the CD ("Boot from SAN device 0x80 failed: Operation not supported"): the image uses an El Torito emulation mode that iPXE does not support. It works in UEFI (Hyper-V).
+- **Disk images of Linux systems (Tails, Lakka, Recalbox, SteamOS recovery)**: the boot loader starts from the network disk, then the kernel cannot see the disk it came from ("Unable to find a medium containing a live
+  file system", Lakka: "Could not mount UUID=..."; Recalbox: blank screen). The same limit as any "as a disk" start. To fix it the kernel and initramfs have to be read out of the image (partition table + FAT/ext4 reader),
+  and the whole image attached as a network block disk with its partitions for the system to find by label: new work, different for each image.
+- **ChimeraOS** (archiso, UEFI-only ISO): its kernel and initramfs are inside a FAT image embedded in the ISO (`loader/entries` point at `/arch/boot/x86_64/...`, which is not in the ISO's own file system): needs the same FAT reader.
+- **Garuda**: its initramfs uses systemd (`/init` is systemd, no `hooks/`), not archiso's hooks; **Alpine standard**: its initramfs has no driver for the network card of this VM (the drivers are in the modloop, which
+  needs the network); **NixOS**: kernel and initramfs sit in `/boot/nix/store/<hash>-...`, and its stage 1 looks for the ISO by label; **Porteus**, **Haiku**, **Qubes** (needs Xen): not looked at yet.
+- Packed ISOs (`.iso.bz2`: OPNsense), zip archives (FreeDOS, ReactOS, Super Grub2 USB), qcow2 (Rocky GenericCloud) and `.tar.gz` (Alpine netboot) are not offered yet.
