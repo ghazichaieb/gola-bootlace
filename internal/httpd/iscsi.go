@@ -29,13 +29,16 @@ func itoa(n int) string { return strconv.Itoa(n) }
 
 // ISCSIDisc is the target's way to a file: the ISO whose id is the end of the target name.
 func (s *Server) ISCSIDisc(id string) (iscsi.Disc, bool) {
-	list, err := isos.Scan(s.ISODir)
+	list, err := s.scan()
 	if err != nil {
 		return iscsi.Disc{}, false
 	}
 	for _, iso := range list {
 		if iso.ID != id {
 			continue
+		}
+		if iso.Packed != "" {
+			return iscsi.Disc{}, false // not unpacked yet
 		}
 		path, size, disk := iso.Path, iso.Size, iso.Disk
 		if disk {
@@ -61,7 +64,7 @@ func (s *Server) ISCSIDisc(id string) (iscsi.Disc, bool) {
 
 // ISCSIIDs lists the ISOs' ids.
 func (s *Server) ISCSIIDs() []string {
-	list, _ := isos.Scan(s.ISODir)
+	list, _ := s.scan()
 	var out []string
 	for _, iso := range list {
 		out = append(out, iso.ID)

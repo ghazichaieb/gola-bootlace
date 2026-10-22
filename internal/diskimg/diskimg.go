@@ -1,4 +1,4 @@
-// Package diskimg prepares disk images for being shown to a PC as a hard disk. An image that is compressed (.img.gz, .img.xz, .img.zst, .img.bz2) cannot be read at any place,
+// Package diskimg prepares packed files for being offered: a disk image or an ISO that is compressed (.img.gz, .iso.bz2 ...), or that is inside a zip archive. Such a file cannot be read at any place,
 // so it is unpacked once into the cache folder, in the background and one image at a time (unpacking is heavy on the disk and the memory of a small server). That starts when
 // someone starts the image (Start), not when the list is read, because an image can be many times its packed size. The menu shows how far it is. An image that is not compressed
 // is used where it is.
@@ -6,6 +6,7 @@
 package diskimg
 
 import (
+	"archive/zip"
 	"compress/bzip2"
 	"compress/gzip"
 	"crypto/sha256"
@@ -14,6 +15,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -52,7 +54,11 @@ type job struct {
 // target is the cache file of an image: named by the image's id and by the file's size and time, so that a replaced file is unpacked again.
 func (m *Manager) target(iso isos.ISO) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d", iso.Path, iso.Size, iso.ModTime.UnixNano())))
-	return filepath.Join(m.Dir, fmt.Sprintf("disk-%s-%s.img", iso.ID, hex.EncodeToString(sum[:])[:10]))
+	ext := ".img"
+	if !iso.Disk {
+		ext = ".iso"
+	}
+	return filepath.Join(m.Dir, fmt.Sprintf("disk-%s-%s%s", iso.ID, hex.EncodeToString(sum[:])[:10], ext))
 }
 
 // Status says whether the image can be read now and how far unpacking is; it never starts it.
@@ -133,6 +139,31 @@ func (m *Manager) unpack(iso isos.ISO, dst string, j *job) {
 	cr := counter{src, &j.read}
 	var r io.Reader
 	switch iso.Packed {
+	case "zip":
+		zr, err := zip.OpenReader(iso.Path)
+		if err != nil {
+			fail(err)
+			return
+		}
+		defer zr.Close()
+		var inner *zip.File
+		for _, f := range zr.File {
+			if f.Name == iso.Inner {
+				inner = f
+			}
+		}
+		if inner == nil {
+			fail(fmt.Errorf("%s is not in the archive any more", iso.Inner))
+			return
+		}
+		rc, err := inner.Open()
+		if err != nil {
+			fail(err)
+			return
+		}
+		defer rc.Close()
+		j.total.Store(int64(inner.UncompressedSize64)) // progress counts what is unpacked, not what is read of the archive
+		r = counter{rc, &j.read}
 	case "gz":
 		zr, err := gzip.NewReader(cr)
 		if err != nil {
@@ -224,9 +255,9 @@ func copySynced(out *os.File, r io.Reader) error {
 
 // removeOld deletes the unpacked copies of earlier versions of the same image.
 func (m *Manager) removeOld(iso isos.ISO, keep string) {
-	old, _ := filepath.Glob(filepath.Join(m.Dir, fmt.Sprintf("disk-%s-*.img", iso.ID)))
+	old, _ := filepath.Glob(filepath.Join(m.Dir, fmt.Sprintf("disk-%s-*", iso.ID)))
 	for _, f := range old {
-		if f != keep {
+		if f != keep && !strings.HasSuffix(f, ".part") {
 			os.Remove(f)
 		}
 	}

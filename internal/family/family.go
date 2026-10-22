@@ -113,7 +113,12 @@ func alpine(t Tree, u URLs) (Boot, bool) {
 	if t.Exists(modloop) {
 		args += " modloop=" + u.FS + modloop
 	}
-	return boot("Alpine Linux", u, kernel, initrd, args), true
+	if u.Extra != "" { // the start-up disk's network card drivers come in the extra archive, loaded by the script that rdinit= names (see package alpineinit)
+		b := boot("Alpine Linux", u, kernel, initrd, args+" rdinit=/bootlace-init")
+		return withExtra(b, u), true
+	}
+	b := boot("Alpine Linux", u, kernel, initrd, args)
+	return b, true
 }
 
 // Arch Linux and its relatives (archiso, CachyOS ...): the boot files and the squashfs come from the web server. The kernel is the one named
@@ -444,7 +449,7 @@ func freeBSD(t Tree, u URLs) (Boot, bool) {
 	// of that PC gets the loader as boot file straight from the firmware (see package handoff).
 	return Boot{Family: "FreeBSD, experimental", Commands: []string{
 		// (the hand-off has no boot file for a BIOS PC, which would restart for ever)
-		"iseq ${platform} pcbios && echo FreeBSD-based ISOs (pfSense, OPNsense) start on UEFI PCs only, not in BIOS mode. && sleep 8 && exit",
+		"iseq ${platform} pcbios && echo FreeBSD-based ISOs (pfSense, OPNsense) start on UEFI PCs only, not in BIOS mode. && sleep 8 && exit || echo", // (the menu adds "|| goto failed" to every line: on a UEFI PC iseq is false, and the echo makes the line succeed)
 		"echo Restarting this PC to start the FreeBSD loader from the firmware. It reads the kernel and the ISO by TFTP: this takes a while",
 		"imgfetch --name handoff " + u.Base + "/next?iso=" + path.Base(u.FS) + "&mac=${net0/mac}&ip=${net0/ip}",
 		"reboot",

@@ -46,6 +46,18 @@ func Read(r io.Reader, want ...string) (*Initrd, error) {
 	for _, w := range want {
 		wanted[w] = true
 	}
+	// a wanted name that starts with "*/" matches any file of that name below some folder (the modules' index files sit under a folder named for the kernel version)
+	matchWanted := func(name string) (string, bool) {
+		if wanted[name] {
+			return name, true
+		}
+		for w := range wanted {
+			if strings.HasPrefix(w, "*/") && strings.HasSuffix(name, w[1:]) {
+				return w, true
+			}
+		}
+		return "", false
+	}
 	for {
 		// skip padding between archives
 		for {
@@ -89,10 +101,11 @@ func Read(r io.Reader, want ...string) (*Initrd, error) {
 			return nil, fmt.Errorf("unknown archive start %x", magic)
 		}
 		e = walkCPIO(cr, func(name string, size int64, body io.Reader) error {
+			key, isWanted := matchWanted(name)
 			switch {
-			case wanted[name]:
+			case isWanted:
 				b, e := io.ReadAll(body)
-				res.Files[name] = b
+				res.Files[key] = b
 				return e
 			default:
 				for _, prefix := range []string{"lib/modules/", "usr/lib/modules/"} {
@@ -201,8 +214,8 @@ var NICModules = []string{
 
 // Module is a kernel module ready to be loaded: its file, uncompressed.
 type Module struct {
-	Path string // in the system image
-	Data []byte
+	Path string // in the system image, relative to the folder of the kernel's modules
+	Data []byte // the module itself, uncompressed
 }
 
 // Modules reads the wanted network drivers, and what they need, out of the system image. A module that is in have (the start-up disk's own) is not brought again. The
@@ -214,7 +227,7 @@ func Modules(sq io.ReaderAt, version string, have map[string]bool, names []strin
 	}
 	var base string
 	var dep []byte
-	for _, b := range []string{"usr/lib/modules/" + version + "/", "lib/modules/" + version + "/"} {
+	for _, b := range []string{"usr/lib/modules/" + version + "/", "lib/modules/" + version + "/", "modules/" + version + "/"} {
 		if dep, err = sqRead(rd, b+"modules.dep"); err == nil {
 			base = b
 			break
@@ -264,7 +277,7 @@ func Modules(sq io.ReaderAt, version string, have map[string]bool, names []strin
 		if b, err = decompress(p, b); err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
 		}
-		out = append(out, Module{p, b})
+		out = append(out, Module{Path: p, Data: b})
 	}
 	if len(out) == 0 {
 		return nil, errors.New("no network driver found in the system image")

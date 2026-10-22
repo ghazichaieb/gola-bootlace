@@ -17,7 +17,6 @@ import (
 
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
-	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 )
 
 // loaderConf is the ISO's own loader.conf with the lines added that make FreeBSD load the ISO into memory as a disk and start from it.
@@ -49,7 +48,7 @@ func (s *Server) next(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "mac, ip and iso are needed", http.StatusBadRequest)
 		return
 	}
-	list, err := isos.Scan(s.ISODir)
+	list, err := s.scan()
 	if err != nil {
 		http.Error(w, "cannot read the ISO folder", http.StatusInternalServerError)
 		return
@@ -98,7 +97,7 @@ func (s *Server) TFTPLookup(client net.IP, name string) (fs.File, bool) {
 	if isLoaderName(name) {
 		s.Handoff.Fetched(client.String())
 	}
-	list, err := isos.Scan(s.ISODir)
+	list, err := s.scan()
 	if err != nil {
 		return nil, false
 	}

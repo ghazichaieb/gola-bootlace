@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/alpineinit"
 	"github.com/ghazichaieb/gola-bootlace/internal/archisoesp"
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
@@ -61,7 +62,7 @@ func (s *Server) NBDExport(name string) (nbd.Export, bool) {
 
 // NBDNames lists the ISOs.
 func (s *Server) NBDNames() []string {
-	list, _ := isos.Scan(s.ISODir)
+	list, _ := s.scan()
 	var out []string
 	for _, iso := range list {
 		out = append(out, iso.ID)
@@ -92,6 +93,9 @@ func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) 
 			build = func() ([]byte, error) {
 				return pve.Extra(src.FS, pve.Settings{Host: set.Host, Port: set.Port, Name: set.Name}, helper)
 			}
+		case src.FS.Exists("/.alpine-release") && alpineFlavor(src.FS) != "":
+			flavor := alpineFlavor(src.FS)
+			build = func() ([]byte, error) { return alpineinit.Extra(src.FS, flavor, helper) }
 		case tails.Is(src.FS):
 			build = func() ([]byte, error) { return tails.Extra(src.FS, set, helper) }
 		case !src.ISO.Disk && src.FS.Exists("/arch/x86_64/airootfs.sfs"): // an archiso whose kernel is in the ISO's EFI image
@@ -145,7 +149,7 @@ func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	list, err := isos.Scan(s.ISODir)
+	list, err := s.scan()
 	if err != nil {
 		http.Error(w, "cannot read the ISO folder", http.StatusInternalServerError)
 		return
@@ -175,4 +179,18 @@ func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.NotFound(w, r)
+}
+
+// alpineFlavor is the kernel flavor ("lts", "virt" ...) of an Alpine ISO whose start-up disk can be given network card drivers, or empty.
+func alpineFlavor(t disc.FS) string {
+	names, err := t.List("/boot")
+	if err != nil {
+		return ""
+	}
+	for _, n := range names {
+		if flavor, ok := strings.CutPrefix(n, "initramfs-"); ok && alpineinit.Is(t, flavor) {
+			return flavor
+		}
+	}
+	return ""
 }

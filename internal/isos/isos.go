@@ -1,8 +1,10 @@
-// Package isos finds the files the server offers: every .iso under the ISO folder, and the disk images (.img, .raw, and those packed as .gz, .xz, .zst or .bz2), in a stable order.
+// Package isos finds the files the server offers: every .iso under the ISO folder, and the disk images (.img, .raw), in a stable order. Either may also be packed (.gz, .xz,
+// .zst, .bz2) or be inside a .zip archive: such a file is offered once it has been unpacked into the cache folder (see package diskimg).
 // Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
 package isos
 
 import (
+	"archive/zip"
 	"crypto/sha256"
 	"encoding/hex"
 	"io/fs"
@@ -10,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,21 +25,22 @@ type ISO struct {
 	Size    int64
 	ModTime time.Time
 	Disk    bool   // a disk image (shown to a PC as a hard disk), not an ISO
-	Packed  string // for a disk image that is compressed: "gz", "xz", "zst" or "bz2"
+	Packed  string // for a file that is compressed: "gz", "xz", "zst" or "bz2", or "zip" (an archive with the ISO or image inside)
+	Inner   string // for "zip": the name of the file inside that is offered
 }
 
 // packers are the compression suffixes of disk images that are unpacked once into the cache folder.
 var packers = map[string]string{".gz": "gz", ".xz": "xz", ".zst": "zst", ".bz2": "bz2"}
 
-// classify says what a file name is: an ISO, a disk image (with the compression it has), or not offered.
+// classify says what a file name is: an ISO or a disk image (with the compression it has), or not offered. (A zip archive is looked into, see peekZip.)
 func classify(name string) (title string, disk bool, packed string, ok bool) {
 	base := filepath.Base(name)
 	lower := strings.ToLower(base)
-	if strings.HasSuffix(lower, ".iso") {
-		return base[:len(base)-4], false, "", true
-	}
 	if p, found := packers[filepath.Ext(lower)]; found {
 		base, lower, packed = base[:len(base)-len(filepath.Ext(base))], strings.TrimSuffix(lower, filepath.Ext(lower)), p
+	}
+	if strings.HasSuffix(lower, ".iso") {
+		return base[:len(base)-4], false, packed, true
 	}
 	for _, ext := range []string{".img", ".raw"} {
 		if strings.HasSuffix(lower, ext) {
@@ -44,6 +48,54 @@ func classify(name string) (title string, disk bool, packed string, ok bool) {
 		}
 	}
 	return "", false, "", false
+}
+
+type zipKey struct {
+	path string
+	size int64
+	mod  int64
+}
+
+type zipInfo struct {
+	inner string
+	disk  bool
+	ok    bool
+}
+
+var (
+	zipMu    sync.Mutex
+	zipCache = map[zipKey]zipInfo{}
+)
+
+// peekZip looks at the file list of a zip archive for the ISO or disk image inside (the largest one, when there are several). The answer is kept: the folder is read for every request.
+func peekZip(path string, size int64, mod time.Time) (inner string, disk, ok bool) {
+	k := zipKey{path, size, mod.UnixNano()}
+	zipMu.Lock()
+	if z, found := zipCache[k]; found {
+		zipMu.Unlock()
+		return z.inner, z.disk, z.ok
+	}
+	zipMu.Unlock()
+	var z zipInfo
+	if r, err := zip.OpenReader(path); err == nil {
+		var best uint64
+		for _, f := range r.File {
+			if f.FileInfo().IsDir() {
+				continue
+			}
+			lower := strings.ToLower(f.Name)
+			isISO := strings.HasSuffix(lower, ".iso")
+			isImg := strings.HasSuffix(lower, ".img") || strings.HasSuffix(lower, ".raw")
+			if (isISO || isImg) && f.UncompressedSize64 > best {
+				best, z = f.UncompressedSize64, zipInfo{inner: f.Name, disk: isImg, ok: true}
+			}
+		}
+		r.Close()
+	}
+	zipMu.Lock()
+	zipCache[k] = z
+	zipMu.Unlock()
+	return z.inner, z.disk, z.ok
 }
 
 // Scan lists the ISO files under dir (at most four folders deep), sorted by name. A folder that does not exist is an empty list, not an error:
@@ -69,16 +121,31 @@ func Scan(dir string) ([]ISO, error) {
 			return nil
 		}
 		title, disk, packed, ok := classify(path)
+		inner := ""
+		var info fs.FileInfo
+		if !ok && strings.HasSuffix(strings.ToLower(path), ".zip") {
+			if info, err = d.Info(); err != nil {
+				return nil
+			}
+			if inner, disk, ok = peekZip(path, info.Size(), info.ModTime()); ok {
+				packed = "zip"
+				title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+				for _, e := range []string{".img", ".iso", ".raw"} {
+					title = strings.TrimSuffix(title, e)
+				}
+			}
+		}
 		if !ok {
 			return nil
 		}
-		info, err := d.Info()
-		if err != nil {
-			return nil
+		if info == nil {
+			if info, err = d.Info(); err != nil {
+				return nil
+			}
 		}
 		name := filepath.ToSlash(rel)
 		sum := sha256.Sum256([]byte(name))
-		found = append(found, ISO{Name: name, ID: hex.EncodeToString(sum[:5]), ModTime: info.ModTime(), Title: title, Path: path, Size: info.Size(), Disk: disk, Packed: packed})
+		found = append(found, ISO{Name: name, ID: hex.EncodeToString(sum[:5]), ModTime: info.ModTime(), Title: title, Path: path, Size: info.Size(), Disk: disk, Packed: packed, Inner: inner})
 		return nil
 	})
 	if err != nil {

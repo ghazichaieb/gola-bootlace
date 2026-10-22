@@ -1,6 +1,7 @@
 package diskimg
 
 import (
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"os"
@@ -93,5 +94,39 @@ func TestAPackedImageIsNotUnpackedUntilItIsAskedFor(t *testing.T) {
 	}
 	if st := m.Start(iso); !st.Started {
 		t.Fatalf("%+v", st)
+	}
+	for i := 0; i < 100 && m.Status(iso).Err == nil; i++ { // (the garbage fails to unpack: wait for that, so that the folder is not being written to when the test ends)
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestAFileInsideAZipArchiveIsUnpacked(t *testing.T) {
+	data := bytes.Repeat([]byte("iso!"), 50000)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "x.zip")
+	f, _ := os.Create(path)
+	zw := zip.NewWriter(f)
+	w, _ := zw.Create("notes.txt")
+	w.Write([]byte("hello"))
+	w, _ = zw.Create("disc/X.iso")
+	w.Write(data)
+	zw.Close()
+	f.Close()
+	st0, _ := os.Stat(path)
+	iso := isos.ISO{ID: "z", Name: "x.zip", Path: path, Size: st0.Size(), Packed: "zip", Inner: "disc/X.iso", ModTime: time.Unix(1, 0)}
+	m := &Manager{Dir: filepath.Join(dir, "cache")}
+	var st State
+	for i := 0; i < 200; i++ {
+		if st = m.Start(iso); st.Ready || st.Err != nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if st.Err != nil || !st.Ready || st.Size != int64(len(data)) || filepath.Ext(st.Path) != ".iso" {
+		t.Fatalf("%+v", st)
+	}
+	got, _ := os.ReadFile(st.Path)
+	if !bytes.Equal(got, data) {
+		t.Fatal("the unpacked file differs")
 	}
 }

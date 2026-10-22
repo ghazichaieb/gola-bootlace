@@ -66,13 +66,16 @@ type source struct {
 // openSource opens what a spec names.
 func (s *Server) openSource(spec string) (source, error) {
 	id, part := splitSpec(spec)
-	list, err := isos.Scan(s.ISODir)
+	list, err := s.scan()
 	if err != nil {
 		return source{}, err
 	}
 	for _, iso := range list {
 		if iso.ID != id {
 			continue
+		}
+		if iso.Packed != "" {
+			return source{}, errors.New("the file is not unpacked yet")
 		}
 		path, size := iso.Path, iso.Size
 		if iso.Disk {

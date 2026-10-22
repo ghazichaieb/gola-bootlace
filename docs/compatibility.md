@@ -129,7 +129,7 @@ Not working, and why (each is per-distribution work, none is a Bootlace fault):
 - **Recalbox and the SteamOS recovery image**: see "Disk images with a Linux on them" below.
 - **Garuda**: its initramfs uses systemd (`/init` is systemd, no `hooks/`), not archiso's hooks; **Alpine standard**: its initramfs has no driver for the network card of this VM (the drivers are in the modloop, which
   needs the network); **NixOS**: kernel and initramfs sit in `/boot/nix/store/<hash>-...`, and its stage 1 looks for the ISO by label; **Porteus**, **Haiku**, **Qubes** (needs Xen): not looked at yet.
-- Packed ISOs (`.iso.bz2`: OPNsense), zip archives (FreeDOS, ReactOS, Super Grub2 USB), qcow2 (Rocky GenericCloud) and `.tar.gz` (Alpine netboot) are not offered yet.
+- Not offered: qcow2 (Rocky GenericCloud: a cloud image that needs cloud-init and a converter) and `.tar.gz` (Alpine netboot: a kernel, initramfs and modloop that fetch their packages from a mirror on the Internet). Both need a decision on whether they are worth it.
 
 ## Disk images with a Linux on them, and kernels inside an ISO's EFI image (2026-10-22, late)
 
@@ -148,3 +148,21 @@ Also changed: the Proxmox installer's and Tails's initramfs reading and driver c
 (the last three).
 
 Regression run after these changes (BIOS, Proxmox test server): Debian live (GNOME), Linux Mint, Arch Linux, Fedora Workstation, Proxmox VE and Ubuntu Server 26.04 all start as before.
+
+## Packed files, zip archives and Alpine's network card (2026-10-23)
+
+An ISO or disk image can now be packed (`.iso.bz2`, `.img.xz` ...) or inside a `.zip` archive (the largest `.iso`/`.img`/`.raw` in it is offered). It shows in the menu as "[ISO, packed, unpacks when started]";
+choosing it asks the server to unpack it once into the cache folder (one at a time; the menu shows the progress); after that it is an ordinary ISO or disk image and starts like any other. (The Windows
+set-up share does not unpack: a packed Windows ISO must be unpacked by hand.)
+
+| File | What was done | Result (Proxmox test server) |
+|---|---|---|
+| **FD14-LiveCD.zip** (FreeDOS) | ISO inside a zip: unpacked, offered as a CD | Reaches FreeDOS's prompt (`D:\>`) |
+| **FD14-FullUSB.zip** (FreeDOS) | disk image inside a zip: unpacked, offered as a hard disk | Reaches the installer's language screen |
+| **supergrub2 USB `.img.zip`** | same | Super Grub2's menu |
+| **ReactOS 0.4.16 zip** | ISO inside a zip | Starts its boot loader; not looked at beyond that |
+| **OPNsense 26.7 `.iso.bz2`** | unpacked (2.3 GB) and recognised as FreeBSD-based | Same state as pfSense: the PC is restarted so that its firmware loads the FreeBSD loader over the network, which the test server's virtual firmware cannot do (issue #9: needs a real PC) |
+| **Alpine standard 3.24** | Its start-up disk had no driver for the network card ("IP requested but no network interface was found"): the drivers are in the modloop, which needs the network. The common wired drivers are read out of the modloop and brought in the extra archive; an `rdinit=` script loads them with Bootlace's helper and then runs Alpine's own start-up script. (Adding them to the initramfs's `modules.dep` does not work: its `modprobe` reads a binary index.) | Reaches the login prompt, with the 293 MB modloop fetched over the network |
+
+Also fixed: the line that tells a BIOS PC that FreeBSD-based ISOs need UEFI (`iseq ${platform} pcbios && ... && exit`) was made a failing chain on UEFI PCs by the menu's added `|| goto failed`, which
+sent every UEFI PC to the failure screen for pfSense and OPNsense; it now ends with `|| echo`. A test now covers it.

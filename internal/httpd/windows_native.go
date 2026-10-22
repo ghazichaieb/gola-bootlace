@@ -111,7 +111,7 @@ func (s *Server) patchedBootWIM(iso isos.ISO) (string, error) {
 
 // windowsTFTP answers the boot manager's requests from the ISO the PC chose.
 func (s *Server) windowsTFTP(client net.IP, id, name string) (fs.File, bool) {
-	list, err := isos.Scan(s.ISODir)
+	list, err := s.scan()
 	if err != nil {
 		return nil, false
 	}

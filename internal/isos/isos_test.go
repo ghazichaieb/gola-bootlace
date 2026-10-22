@@ -1,6 +1,7 @@
 package isos
 
 import (
+	"archive/zip"
 	"os"
 	"path/filepath"
 	"testing"
@@ -74,5 +75,53 @@ func TestDiskImagesAreListedWithTheirCompression(t *testing.T) {
 	}
 	if d := got["disc.iso"]; d.Disk {
 		t.Fatalf("%+v", d)
+	}
+}
+
+func writeZip(t *testing.T, path string, files map[string]int) {
+	t.Helper()
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zw := zip.NewWriter(f)
+	for name, n := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w.Write(make([]byte, n))
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPackedIsosAndZipArchivesAreListedWithWhatIsInside(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "OPNsense-26.7-dvd-amd64.iso.bz2"), 10)
+	writeZip(t, filepath.Join(dir, "FD14-LiveCD.zip"), map[string]int{"readme.txt": 5, "FD14LIVE.iso": 5000})
+	writeZip(t, filepath.Join(dir, "supergrub2-USB.img.zip"), map[string]int{"supergrub2-USB.img": 3000})
+	writeZip(t, filepath.Join(dir, "docs.zip"), map[string]int{"a.txt": 5})
+	list, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]ISO{}
+	for _, i := range list {
+		got[i.Name] = i
+	}
+	if len(list) != 3 {
+		t.Fatalf("%d entries: %+v", len(list), list)
+	}
+	if i := got["OPNsense-26.7-dvd-amd64.iso.bz2"]; i.Disk || i.Packed != "bz2" || i.Title != "OPNsense-26.7-dvd-amd64" {
+		t.Errorf("packed ISO: %+v", i)
+	}
+	if i := got["FD14-LiveCD.zip"]; i.Disk || i.Packed != "zip" || i.Inner != "FD14LIVE.iso" || i.Title != "FD14-LiveCD" {
+		t.Errorf("zip with an ISO: %+v", i)
+	}
+	if i := got["supergrub2-USB.img.zip"]; !i.Disk || i.Packed != "zip" || i.Inner != "supergrub2-USB.img" || i.Title != "supergrub2-USB" {
+		t.Errorf("zip with an image: %+v", i)
 	}
 }

@@ -134,11 +134,29 @@ func (s *Server) recognise(iso isos.ISO) (family.Boot, bool) {
 	return result.boot, result.ok
 }
 
+// find is isos.Find with the unpacked files taken into account (see scan).
+func (s *Server) find(name string) (isos.ISO, bool) {
+	list, err := s.scan()
+	if err != nil {
+		return isos.ISO{}, false
+	}
+	for _, iso := range list {
+		if iso.Name == name {
+			return iso, true
+		}
+	}
+	return isos.ISO{}, false
+}
+
 func (s *Server) iso(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimPrefix(r.URL.Path, "/iso/")
-	iso, ok := isos.Find(s.ISODir, name)
+	iso, ok := s.find(name)
 	if !ok {
 		http.NotFound(w, r)
+		return
+	}
+	if iso.Packed != "" {
+		http.Error(w, "the file is not unpacked yet", http.StatusConflict)
 		return
 	}
 	f, err := os.Open(iso.Path)
@@ -207,7 +225,7 @@ func (s *Server) loader(w http.ResponseWriter, r *http.Request) {
 // windows serves the files made for one Windows ISO: /w/<id>/boot.ipxe, winpeshl.ini and bootlace.cmd.
 func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
 	id, file, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/w/"), "/")
-	list, err := isos.Scan(s.ISODir)
+	list, err := s.scan()
 	if err != nil {
 		http.Error(w, "cannot read the ISO folder", http.StatusInternalServerError)
 		return

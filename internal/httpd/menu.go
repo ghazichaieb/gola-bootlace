@@ -63,7 +63,7 @@ func addArgs(commands []string, extra string) []string {
 }
 
 func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
-	list, err := isos.Scan(s.ISODir)
+	list, err := s.scan()
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +76,11 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 		size := fmt.Sprintf("%.1f GB", float64(iso.Size)/(1<<30))
 		var diskBoot family.Boot
 		diskKnown := false
+		if iso.Packed != "" { // packed, and not unpacked yet
+			e.Display, e.Entry, e.Known, e.Boot = s.diskEntry(iso, e.Title, size)
+			out = append(out, e)
+			continue
+		}
 		if iso.Disk {
 			diskBoot, diskKnown = s.recogniseDisk(iso) // a disk image with a Linux on it that is started from the files inside
 		}

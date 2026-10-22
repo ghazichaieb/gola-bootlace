@@ -99,6 +99,12 @@ func TestFreeBSDRestartsThePcSoThatItsFirmwareStartsTheLoader(t *testing.T) {
 	if !ok || !strings.HasPrefix(b.Family, "FreeBSD") || !strings.Contains(lines(b), "imgfetch --name handoff http://s/next?iso=abc&mac=${net0/mac}&ip=${net0/ip}") || !strings.Contains(lines(b), "reboot") {
 		t.Fatalf("%v %v", b, ok)
 	}
+	// the menu adds "|| goto failed" to every line: the line that stops a BIOS PC must not fail on a UEFI PC (where iseq is false)
+	for _, c := range b.Commands {
+		if strings.HasPrefix(c, "iseq ${platform} pcbios") && !strings.HasSuffix(c, "|| echo") {
+			t.Fatalf("the BIOS check fails on a UEFI PC: %q", c)
+		}
+	}
 	if _, ok := Detect(fake{"/boot/kernel/kernel": true}, urls); ok {
 		t.Fatal("a kernel without the UEFI loader is not enough")
 	}
