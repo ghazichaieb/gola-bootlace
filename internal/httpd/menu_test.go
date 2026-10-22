@@ -1,6 +1,7 @@
 package httpd
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -135,5 +136,39 @@ func TestThePcListSurvivesARestartAndOldPcsAreForgotten(t *testing.T) {
 	}
 	if !again.ForgetPC("aa:bb:cc:dd:ee:11") || again.ForgetPC("aa:bb:cc:dd:ee:11") || len(again.Clients()) != 0 {
 		t.Fatal("ForgetPC")
+	}
+}
+
+func TestALongMenuIsShownAPageAtATime(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 25; i++ {
+		if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("iso%02d.iso", i)), []byte("0123456789"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Server{ISODir: dir, Base: "http://10.0.0.1:8080"}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+
+	_, p1 := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=pcbios", nil)
+	if !strings.Contains(p1, "page 1 of 3") || !strings.Contains(p1, "iso00") || strings.Contains(p1, "iso10") || !strings.Contains(p1, "item next") || strings.Contains(p1, "item prev") {
+		t.Fatalf("first page (BIOS, 10 a page):\n%s", p1)
+	}
+	if !strings.Contains(p1, "&page=2") {
+		t.Fatalf("the next page's address is missing:\n%s", p1)
+	}
+	_, p3 := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=pcbios&page=3", nil)
+	if !strings.Contains(p3, "page 3 of 3") || !strings.Contains(p3, "iso24") || strings.Contains(p3, "item next") || !strings.Contains(p3, "item prev") {
+		t.Fatalf("last page:\n%s", p3)
+	}
+	_, efi := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=efi", nil)
+	if !strings.Contains(efi, "page 1 of 3") || !strings.Contains(efi, "iso11") || strings.Contains(efi, "iso12") {
+		t.Fatalf("first UEFI page holds 12:\n%s", efi)
+	}
+	if n := len(s.Clients()); n != 1 || s.Clients()[0].Count != 2 {
+		t.Fatalf("looking at other pages is not a new start: %+v", s.Clients())
+	}
+	if _, beyond := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:20&plat=pcbios&page=99", nil); !strings.Contains(beyond, "page 3 of 3") {
+		t.Fatalf("a page past the end shows the last: %s", beyond)
 	}
 }

@@ -45,6 +45,23 @@ type Options struct {
 	Picture       string
 	Width, Height int
 	Top           int
+
+	// Page of Pages: a long list is shown a page at a time, with a way to the page before and after (the addresses of those menus; empty where
+	// there is none). The entries given are the ones of this page.
+	Page, Pages int
+	Prev, Next  string
+
+	// TextBanner puts the ASCII mark (Banner) above the list of a text-mode screen. Only for a BIOS PC: its screen is code page 437, which is what the blanks need.
+	TextBanner bool
+}
+
+// Banner is the picture a text-mode PC (BIOS, or a screen that cannot show the logo) gets above the list: the lace mark and the name, in plain ASCII.
+// iPXE joins the words of an item with single spaces, so the spaces that line the mark up are written as byte 0xFF, which a BIOS text screen (code page 437)
+// shows as a blank.
+var Banner = []string{
+	`  o \ / o`,
+	`  o  X  o    GOLA Bootlace`,
+	`  o / \ o    network boot for ISO files`,
 }
 
 // ScriptWith is Script with options.
@@ -61,9 +78,18 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	if o.Picture != "" {
 		// the picture carries the logo, so the menu's own heading only says what to do; a PC that cannot show it falls back to the text menu with the name
 		fmt.Fprintf(&b, "console --x %d --y %d --picture %s --left 64 --right 64 --top %d --bottom 40 && goto gfx || goto plain\n", o.Width, o.Height, o.Picture, o.Top)
-		b.WriteString(":gfx\nmenu Choose what to start\ngoto items\n:plain\n")
+		fmt.Fprintf(&b, ":gfx\nmenu Choose what to start%s\ngoto items\n:plain\n", pageNote(o, " - "))
 	}
-	fmt.Fprintf(&b, "menu %s\n", clean(title))
+	// the text screen: Gola's red for the chosen line, on black, with the lace mark above the list
+	// (the BIOS build of iPXE has no colour command: the guard keeps the script going)
+	b.WriteString("cpair --foreground 7 --background 0 0 || set colours default\ncpair --foreground 7 --background 1 2 || set colours default\n")
+	fmt.Fprintf(&b, "menu %s%s\n", clean(title), pageNote(o, " - "))
+	if o.TextBanner {
+		for _, line := range Banner {
+			fmt.Fprintf(&b, "item --gap -- %s\n", strings.ReplaceAll(line, " ", "\xff"))
+		}
+	}
+	b.WriteString("item --gap --\n")
 	if o.Picture != "" {
 		b.WriteString(":items\n")
 	}
@@ -72,6 +98,15 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	}
 	for i, e := range entries {
 		fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), clean(e.Name))
+	}
+	if o.Prev != "" || o.Next != "" {
+		b.WriteString("item --gap --\n")
+		if o.Prev != "" {
+			b.WriteString("item prev << Previous page\n")
+		}
+		if o.Next != "" {
+			b.WriteString("item next Next page >>\n")
+		}
 	}
 	b.WriteString("item --gap --\n")
 	b.WriteString("item local Boot from this PC's own disk\n")
@@ -89,6 +124,12 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 			fmt.Fprintf(&b, "%s || goto failed\n", c)
 		}
 		b.WriteString("goto failed\n\n")
+	}
+	if o.Prev != "" {
+		fmt.Fprintf(&b, ":prev\nchain %s || goto shell\n\n", o.Prev)
+	}
+	if o.Next != "" {
+		fmt.Fprintf(&b, ":next\nchain %s || goto shell\n\n", o.Next)
 	}
 	b.WriteString(":failed\necho Booting did not work: read the message above, then press a key for the menu.\nprompt\nchain ${self} || goto shell\n\n")
 	b.WriteString(":local\necho Leaving the network boot: the PC goes on to its own disk.\nexit\n\n:reboot\nreboot\n\n:shell\nshell\n")
@@ -111,4 +152,11 @@ func Direct(why string, e Entry) string {
 // Local is the script for a PC that a rule sends to its own disk.
 func Local(why string) string {
 	return "#!ipxe\necho " + clean(why) + "\nexit\n"
+}
+
+func pageNote(o Options, sep string) string {
+	if o.Pages > 1 {
+		return fmt.Sprintf("%spage %d of %d", sep, o.Page, o.Pages)
+	}
+	return ""
 }

@@ -51,3 +51,7 @@ A UEFI PC shows the Gola Bootlace logo with the menu on top of it (iPXE's graphi
 - A PC's address is the one its request came from.
 - The page is paged (10, 25, 50 or 100 per page; the choice is remembered in the browser, and the first guess comes from the window's height, because the number that fits cannot be known) and has a search box. `/api/pcs` takes `limit`, `offset` and `q`.
 - "Forget" removes one PC, "Forget them now" removes the PCs not seen for N days, and a PC is forgotten by itself after `pcDays` days without a start (default 90, 0 keeps all). Rules are never removed by this.
+
+## Long menus
+
+The menu on the PC is shown a page at a time when there are more ISOs than fit: 12 per page on a UEFI PC (the picture leaves 24 text lines) and 10 on a BIOS PC (80 x 25), with "Previous page" and "Next page" lines and "page 2 of 3" in the heading. Flipping pages is not counted as a new start in the PCs list, a timeout never fires while someone is looking through the pages, and the menu opens on the page that holds the entry that starts by itself. A BIOS PC also gets a small ASCII lace mark above the list (iPXE's BIOS build cannot draw a picture or change colours; the blanks that line the mark up are the byte 0xFF, because iPXE joins words with single spaces).

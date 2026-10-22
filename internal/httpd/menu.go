@@ -128,7 +128,25 @@ func (s *Server) bootScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintf(w, "#!ipxe\nchain %s/menu?mac=${mac}&ip=${ip}&plat=${platform}&man=${manufacturer:uristring}&prod=${product:uristring}&serial=${serial:uristring} || shell\n", s.Base)
+	fmt.Fprintf(w, "#!ipxe\nchain %s || shell\n", s.menuURL(0))
+}
+
+// menuURL is the address of a menu as iPXE asks for it: its identity filled in by iPXE itself, and a page when there is more than one.
+func (s *Server) menuURL(page int) string {
+	u := s.Base + "/menu?mac=${mac}&ip=${ip}&plat=${platform}&man=${manufacturer:uristring}&prod=${product:uristring}&serial=${serial:uristring}"
+	if page > 0 {
+		u += "&page=" + strconv.Itoa(page)
+	}
+	return u
+}
+
+// entriesPerPage is how many ISOs one page of the menu holds. The screen's size is known here: a UEFI PC shows the picture (a text area of 24 lines under
+// the logo) and a BIOS PC has the 25 lines of its text mode; the heading, the lace mark, the buttons to other pages and the three fixed lines take the rest.
+func entriesPerPage(platform string) int {
+	if platform == "efi" {
+		return 12
+	}
+	return 10
 }
 
 // menu is the menu of one PC.
@@ -139,11 +157,18 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cannot read the ISO folder: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	client := s.noteClient(r)
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	paged := page > 0 // a later page of a menu already shown: not a new start, and the PC's rule was applied at the first
+	var client Client
+	if paged {
+		client = Client{MAC: "page", IP: r.RemoteAddr, Platform: queryValue(r.URL.Query(), "plat", 20)}
+	} else {
+		client = s.noteClient(r)
+	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
 	for _, rule := range cfg.Rules {
-		if rule.MAC != client.MAC || rule.Action == "menu" {
+		if paged || rule.MAC != client.MAC || rule.Action == "menu" {
 			continue
 		}
 		why := "Rule for this PC"
@@ -177,8 +202,47 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 	}
 	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout,
 		Picture: s.Base + "/bg.png", Width: gfx.Width, Height: gfx.Height, Top: gfx.LogoBottom + 16}
-	s.logf("menu for %s (%s): %d ISO file(s)", client.IP, client.MAC, len(entries))
-	fmt.Fprint(w, menu.ScriptWith("Gola Bootlace", entries, opts))
+	opts.TextBanner = client.Platform != "efi"
+	perPage := entriesPerPage(client.Platform)
+	opts.Pages = (len(entries) + perPage - 1) / perPage
+	if opts.Pages < 1 {
+		opts.Pages = 1
+	}
+	if page == 0 && opts.Default >= 1 { // the page of the entry that starts by itself is the one to show first
+		page = (opts.Default-1)/perPage + 1
+	}
+	if page < 1 {
+		page = 1
+	}
+	if page > opts.Pages {
+		page = opts.Pages
+	}
+	opts.Page = page
+	first := (page - 1) * perPage
+	last := first + perPage
+	if last > len(entries) {
+		last = len(entries)
+	}
+	if opts.Default >= 1 { // the default is counted in the whole list; the page counts its own
+		if opts.Default > first && opts.Default <= last {
+			opts.Default -= first
+		} else {
+			opts.Default = 0
+		}
+	}
+	if paged {
+		opts.Timeout = 0 // the PC is being looked through, not left alone
+	}
+	if page > 1 {
+		opts.Prev = s.menuURL(page - 1)
+	}
+	if page < opts.Pages {
+		opts.Next = s.menuURL(page + 1)
+	}
+	if !paged {
+		s.logf("menu for %s (%s): %d ISO file(s)", client.IP, client.MAC, len(entries))
+	}
+	fmt.Fprint(w, menu.ScriptWith("Gola Bootlace", entries[first:last], opts))
 }
 
 // queryValue is a value iPXE put in the web address, without anything that could break a line of the log.
