@@ -44,3 +44,15 @@ Hyper-V lab (UEFI, Secure Boot off) with the Ubuntu 22.04.5 ISO forced through i
 initramfs through the iSCSI disk (the connection is closed when idle and opened again on demand). What it cannot do: a kernel that wants the disk after it has started (Linux
 without an iSCSI initiator in its initramfs, Windows) cannot see an iPXE SAN disk, which is why recognised ISOs have their own ways (Ubuntu: network block disk; Windows: file share).
 It suits what boots and then runs from memory or only needs its loader's disk: rescue and test tools, wipers, firmware updaters.
+
+### Run C and the Windows tests (2026-10-22, Hyper-V lab, UEFI, Secure Boot off)
+
+- Working: CachyOS (4 GB VM, network block disk), Debian 13.7 and Kali 2026.2 netinst (installer starts, language page), SystemRescue (a graphical session via `startx` works).
+- **ShredOS** needs more memory than it looks: its kernel is 352 MB with the whole system inside, iPXE holds it and the kernel unpacks it. With 2 GB nothing appears on screen
+  (no message at all); with 4 GB it boots to nwipe. There is no streaming alternative (one file), so the menu cannot do better than "needs about 4 GB".
+- **Hiren's BootCD PE** (a Windows PE with no installation image): through wimboot it failed with `0xc0000017 not enough memory to create a ramdisk` even with 4 GB, because the
+  1.8 GB `boot.wim` is held twice (wimboot's copy and Windows' RAM disk). Started as an iSCSI CD-ROM it boots to the desktop with 4 GB. Bootlace now does that for a Windows PE
+  with no `install.wim` when the iSCSI server is on (wimboot remains the fallback).
+- **Windows installer through iSCSI** (tried with Server 2025): the ISO's boot sector asks "Press any key to boot from CD or DVD" (an ISO without that prompt, such as our image builder's, skips it);
+  Setup started from the CD but then offered only "Install driver to show hardware", with no drives and no installation image. Windows cannot use an iPXE SAN CD once it has taken over from the firmware,
+  so Windows installers stay on the file share.
