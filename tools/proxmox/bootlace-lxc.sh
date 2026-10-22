@@ -95,6 +95,8 @@ if [ -n "${CTID:-}" ] && pct status "$CTID" >/dev/null 2>&1; then
 	say "Updating the Bootlace container $CTID ..."
 	pct status "$CTID" | grep -q running || pct start "$CTID"
 	pct exec "$CTID" -- systemctl stop bootlace || true
+	# wimlib-imagex lets Bootlace start Windows with UEFI Secure Boot on (it puts its files into a copy of boot.wim)
+	pct exec "$CTID" -- sh -c 'command -v wimlib-imagex >/dev/null || (apt-get update -qq && apt-get install -y -qq wimtools >/dev/null)' || true
 	pct push "$CTID" "$tmp/bootlace" /usr/local/bin/bootlace --perms 755
 	write_unit
 	pct push "$CTID" "$tmp/bootlace.service" /etc/systemd/system/bootlace.service
@@ -148,6 +150,7 @@ for _ in $(seq 1 30); do
 done
 [ -n "$addr" ] || die "the container got no address (is the bridge $BRIDGE connected to the network?)"
 pct exec "$CTID" -- mkdir -p /srv/isos
+pct exec "$CTID" -- sh -c 'apt-get update -qq && apt-get install -y -qq wimtools >/dev/null' || echo "wimtools could not be installed: Windows cannot be started with Secure Boot on until it is (apt install wimtools in the container)"
 
 say "Installing Bootlace in the container ..."
 write_unit
