@@ -61,7 +61,7 @@ func Extra(img disc.FS, s initrd.Settings, helper []byte) ([]byte, error) {
 		{Name: "bootlace/modules", Mode: 0o755, Dir: true},
 	}
 	for i, m := range mods {
-		files = append(files, initrd.File{Name: fmt.Sprintf("bootlace/modules/%02d-%s", i, strings.TrimSuffix(path.Base(m.Path), path.Ext(path.Base(m.Path)))+".ko"), Mode: 0o644, Data: m.Data})
+		files = append(files, initrd.File{Name: fmt.Sprintf("bootlace/modules/%02d-%s", i, strings.SplitN(path.Base(m.Path), ".ko", 2)[0]+".ko"), Mode: 0o644, Data: m.Data})
 	}
 	// two archives one after the other are one initramfs to the kernel
 	return append(initrd.Extra(s, helper), initrd.Archive(files)...), nil

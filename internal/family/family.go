@@ -171,8 +171,16 @@ func DetectInImage(t, esp Tree, u URLs, espFS string) (Boot, bool) {
 	if !esp.Exists(initrd) {
 		return Boot{}, false
 	}
-	u.KernelFS = espFS
-	return archiso("Arch Linux (kernel in the EFI image)", u, "ip=:::::eth0:dhcp", "arch", kernel, initrd), true
+	if u.NBD == "" || u.Extra == "" { // its initramfs has no network start of its own: only the extra archive's hook makes one
+		return Boot{}, false
+	}
+	args := "archisobasedir=arch archisodevice=/dev/nbd0 copytoram=n console=tty0"
+	return Boot{Family: "Arch Linux (kernel in the EFI image)", Kernel: kernel, Initrd: initrd, Args: args, ExtraInitrd: u.Extra, Commands: []string{
+		"kernel " + espFS + kernel + " " + args,
+		"initrd " + espFS + initrd,
+		"initrd " + u.Extra,
+		"boot",
+	}}, true
 }
 
 // SystemRescue: archiso with its own folder name.

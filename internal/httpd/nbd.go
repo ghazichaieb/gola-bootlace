@@ -10,7 +10,9 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/archisoesp"
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
+	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
 	"github.com/ghazichaieb/gola-bootlace/internal/iscsi"
@@ -80,13 +82,34 @@ func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) 
 		return nil, err
 	}
 	defer src.Close()
-	if src.FS != nil && libreelec.Is(src.FS) {
-		return libreelec.Extra(set, assets.NBDHelper()), nil
+	helper := assets.NBDHelper()
+	var build func() ([]byte, error) // set for the kinds whose archive takes seconds to make (drivers are read out of the system image and unpacked)
+	if src.FS != nil {
+		switch {
+		case libreelec.Is(src.FS):
+			return libreelec.Extra(set, helper), nil
+		case pve.Is(src.FS):
+			build = func() ([]byte, error) {
+				return pve.Extra(src.FS, pve.Settings{Host: set.Host, Port: set.Port, Name: set.Name}, helper)
+			}
+		case tails.Is(src.FS):
+			build = func() ([]byte, error) { return tails.Extra(src.FS, set, helper) }
+		case !src.ISO.Disk && src.FS.Exists("/arch/x86_64/airootfs.sfs"): // an archiso whose kernel is in the ISO's EFI image
+			if parts, err := disc.OpenDisk(src.R, src.Size); err == nil {
+				for _, p := range parts {
+					if archisoesp.Is(p.FS) {
+						esp := p.FS
+						build = func() ([]byte, error) { return archisoesp.Extra(esp, src.FS, set, helper) }
+						break
+					}
+				}
+			}
+		}
 	}
-	if src.FS == nil || !(pve.Is(src.FS) || tails.Is(src.FS)) {
-		return initrd.Extra(set, assets.NBDHelper()), nil
+	if build == nil {
+		return initrd.Extra(set, helper), nil
 	}
-	// those two archives take seconds to make (drivers are read out of the system image and unpacked), so the last few are kept
+	// the last few are kept
 	key := fmt.Sprintf("%s|%s|%d|%d|%s", spec, src.ISO.Path, src.Size, src.ISO.ModTime.UnixNano(), set.Host)
 	s.mu.Lock()
 	for _, c := range s.extras {
@@ -96,12 +119,7 @@ func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) 
 		}
 	}
 	s.mu.Unlock()
-	var data []byte
-	if pve.Is(src.FS) {
-		data, err = pve.Extra(src.FS, pve.Settings{Host: set.Host, Port: set.Port, Name: set.Name}, assets.NBDHelper())
-	} else {
-		data, err = tails.Extra(src.FS, set, assets.NBDHelper())
-	}
+	data, err := build()
 	if err != nil {
 		return nil, err
 	}

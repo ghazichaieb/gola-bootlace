@@ -55,7 +55,7 @@ func Extra(img disc.FS, s Settings, helper []byte) ([]byte, error) {
 		{Name: "init", Mode: 0o755, Data: []byte(patched)},
 		{Name: "bootlace", Mode: 0o755, Dir: true},
 		{Name: "bootlace/bootlace-nbd", Mode: 0o755, Data: helper},
-		{Name: "bootlace/udhcpc.sh", Mode: 0o755, Data: []byte(udhcpcScript)},
+		{Name: "bootlace/udhcpc.sh", Mode: 0o755, Data: []byte(initrd.UdhcpcScript)},
 		{Name: "bootlace/modules", Mode: 0o755, Dir: true},
 	}
 	for i, m := range mods {
@@ -63,19 +63,6 @@ func Extra(img disc.FS, s Settings, helper []byte) ([]byte, error) {
 	}
 	return initrd.Archive(files), nil
 }
-
-const udhcpcScript = `#!/bin/sh
-# Gola Bootlace: what busybox's udhcpc runs when it has an address.
-case "$1" in
-bound|renew)
-    ifconfig "$interface" "$ip" netmask "${subnet:-255.255.255.0}" up
-    for r in $router; do
-        route add default gw "$r" dev "$interface" 2>/dev/null
-    done
-    ;;
-esac
-exit 0
-`
 
 // Patch adds Bootlace's lines to the installer's start-up script, or says that the script does not look as expected (then the old way, the whole ISO inside the
 // initramfs, is still there).

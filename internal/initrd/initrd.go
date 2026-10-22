@@ -168,3 +168,17 @@ func Extra(s Settings, helper []byte) []byte {
 
 // shellWord keeps a value from being read as anything but one word.
 func shellWord(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+// UdhcpcScript is what busybox's udhcpc runs when it has an address (for start-up disks that have no network configuration of their own).
+const UdhcpcScript = `#!/bin/sh
+# Gola Bootlace: what busybox's udhcpc runs when it has an address.
+case "$1" in
+bound|renew)
+    ifconfig "$interface" "$ip" netmask "${subnet:-255.255.255.0}" up
+    for r in $router; do
+        route add default gw "$r" dev "$interface" 2>/dev/null
+    done
+    ;;
+esac
+exit 0
+`
