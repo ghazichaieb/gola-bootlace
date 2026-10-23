@@ -298,6 +298,107 @@ func (a *Admin) uploadCheck(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a.o.Importer.CheckUpload(in))
 }
 
+// ---- uploads in pieces (resumable)
+
+func sessionJSON(s importer.Session) map[string]any {
+	return map[string]any{"id": s.ID, "name": s.Request.Name, "folder": s.Request.Folder, "size": s.Request.Size, "received": s.Received, "updated": s.Updated}
+}
+
+func (a *Admin) uploadSessions(w http.ResponseWriter, _ *http.Request) {
+	out := []map[string]any{}
+	for _, s := range a.o.Importer.Uploads() {
+		out = append(out, sessionJSON(s))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"uploads": out, "maxChunk": importer.MaxChunk})
+}
+
+// uploadSessionStart opens an upload (or finds the open one for the same file: a page that was reloaded continues it).
+func (a *Admin) uploadSessionStart(w http.ResponseWriter, r *http.Request) {
+	var in importer.UploadRequest
+	if !readJSON(w, r, &in) {
+		return
+	}
+	s, check, err := a.o.Importer.StartUpload(in)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error(), "check": check})
+		return
+	}
+	out := sessionJSON(*s)
+	out["check"] = check
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (a *Admin) uploadSessionGet(w http.ResponseWriter, r *http.Request) {
+	s, err := a.o.Importer.UploadState(r.PathValue("id"))
+	if err != nil {
+		fail(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sessionJSON(*s))
+}
+
+// uploadSessionChunk is PATCH .../sessions/{id}?offset=N with a piece of the file as the body. The offset must be where the server's copy ends: 409 says where that is.
+func (a *Admin) uploadSessionChunk(w http.ResponseWriter, r *http.Request) {
+	select {
+	case a.uploads <- struct{}{}:
+		defer func() { <-a.uploads }()
+	default:
+		fail(w, http.StatusTooManyRequests, "two uploads are running already: wait for one of them to end")
+		return
+	}
+	offset, err := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
+	if err != nil || offset < 0 {
+		fail(w, http.StatusBadRequest, "the offset is needed")
+		return
+	}
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
+	s, err := a.o.Importer.UploadChunk(r.PathValue("id"), offset, r.Body)
+	if err != nil {
+		var oe *importer.OffsetError
+		switch {
+		case errors.As(err, &oe):
+			writeJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "received": oe.Received})
+		case errors.Is(err, importer.ErrNoSession):
+			fail(w, http.StatusNotFound, err.Error())
+		default:
+			out := map[string]any{"error": err.Error()}
+			if s != nil {
+				out["received"] = s.Received
+			}
+			writeJSON(w, http.StatusBadRequest, out)
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"received": s.Received})
+}
+
+func (a *Admin) uploadSessionFinish(w http.ResponseWriter, r *http.Request) {
+	rc := http.NewResponseController(w)
+	_ = rc.SetWriteDeadline(time.Time{}) // (checking a big file takes a while)
+	dest, warnings, err := a.o.Importer.FinishUpload(r.PathValue("id"))
+	if err != nil {
+		code := http.StatusBadRequest
+		if errors.Is(err, importer.ErrNoSession) {
+			code = http.StatusNotFound
+		}
+		fail(w, code, err.Error())
+		return
+	}
+	a.logf("web interface: %s uploaded to the library (in pieces)", dest)
+	a.o.Backend.Rescan()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "dest": dest, "warnings": warnings})
+}
+
+func (a *Admin) uploadSessionAbort(w http.ResponseWriter, r *http.Request) {
+	if err := a.o.Importer.AbortUpload(r.PathValue("id")); err != nil {
+		fail(w, http.StatusNotFound, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // upload takes the file as the body of the request: /api/library/upload?name=&folder=&size=&sha256=. It is written to disk as it arrives.
 func (a *Admin) upload(w http.ResponseWriter, r *http.Request) {
 	select {

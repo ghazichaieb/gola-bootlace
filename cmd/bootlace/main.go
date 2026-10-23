@@ -209,8 +209,12 @@ func serve(args []string, stdout, stderr io.Writer) int {
 					owned[filepath.Base(j.Part)] = true
 				}
 			}
+			for part := range imp.UploadParts() { // an upload in pieces that is still open
+				owned[part] = true
+			}
 			return owned
-		}}
+		},
+		Expire: imp.ExpireUploads}
 	go tidier.Loop(background)
 	if winpe.Wimlib(*wimlibFlag) == "" {
 		logf("wimlib-imagex was not found: Windows cannot be started with UEFI Secure Boot on (install wimtools)")

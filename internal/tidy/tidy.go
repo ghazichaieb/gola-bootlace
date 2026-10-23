@@ -24,6 +24,7 @@ type Tidier struct {
 	ISOIDs  func() (map[string]bool, error) // the ids of every ISO and image in the library, hidden ones included
 	Caches  func() []string                 // the cache folders (the container's own and the library's)
 	Owned   func() map[string]bool          // names of partial files that a job still owns (it can resume them)
+	Expire  func() int                      // ends the uploads nobody touched for a week (and removes what they received); says how many
 	Logf    func(format string, args ...any)
 	Now     func() time.Time // (a test sets it)
 }
@@ -32,6 +33,7 @@ type Tidier struct {
 type Report struct {
 	Parts, Cache int
 	Index        int
+	Uploads      int
 	Bytes        int64
 }
 
@@ -57,6 +59,9 @@ func (t *Tidier) Run() Report {
 	var r Report
 	if t.Library == nil || t.Library.Check() != nil {
 		return r
+	}
+	if t.Expire != nil {
+		r.Uploads = t.Expire()
 	}
 	t.parts(&r)
 	t.cache(&r)
@@ -139,7 +144,7 @@ func (t *Tidier) Loop(stop <-chan struct{}) {
 			return
 		case <-time.After(wait):
 		}
-		if r := t.Run(); r.Parts+r.Cache+r.Index > 0 {
+		if r := t.Run(); r.Parts+r.Cache+r.Index+r.Uploads > 0 {
 			t.logf("clean-up done: %d partial file(s), %d cache entrie(s), %d index record(s); %d MB freed", r.Parts, r.Cache, r.Index, r.Bytes>>20)
 		}
 		wait = 24 * time.Hour

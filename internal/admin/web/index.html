@@ -572,7 +572,7 @@ function renderTransfers() {
     <div>${stateBadge(j.state)} ${j.state === "running" || j.state === "queued" ? `<button class="btn small" data-jc="${j.id}">Cancel</button>` : ""}${j.state === "interrupted" || j.state === "failed" ? `<button class="btn small" data-jr="${j.id}">Try again</button> <button class="btn small" data-jc="${j.id}">Remove</button>` : ""}${j.state === "done" || j.state === "canceled" ? `<button class="btn small" data-jd="${j.id}">Dismiss</button>` : ""}</div></div>
     ${j.state === "running" ? prog(j.done, j.size) + `<div class="small muted">${bytes(j.done)}${j.size > 0 ? " of " + bytes(j.size) : ""}${j.speed ? ", " + (j.speed / 1048576).toFixed(1) + " MB/s" : ""}</div>` : ""}${j.error ? `<div class="small" style="color:var(--bad)">${esc(j.error)}</div>` : ""}${(j.warnings || []).map(w => `<div class="small" style="color:var(--warn)">${esc(w)}</div>`).join("")}</div>`).join("");
   box.innerHTML = `<h2>Transfers</h2>${upRows}${jobRows}`;
-  box.querySelectorAll("[data-upcancel]").forEach(b => b.onclick = () => { const u = transfers.uploads[+b.dataset.upcancel]; if (u && u.xhr) u.xhr.abort(); });
+  box.querySelectorAll("[data-upcancel]").forEach(b => b.onclick = () => { const u = transfers.uploads[+b.dataset.upcancel]; if (u && u.abort) u.abort(); else if (u && u.xhr) u.xhr.abort(); });
   box.querySelectorAll("[data-updismiss]").forEach(b => b.onclick = () => { transfers.uploads.splice(+b.dataset.updismiss, 1); renderTransfers(); });
   const jobCall = (attr, action) => box.querySelectorAll(`[data-${attr}]`).forEach(b => b.onclick = guard(async () => { await api(`/api/library/jobs/${b.dataset[attr]}/${action}`, "POST", {}); transfers.refresh && transfers.refresh(); }));
   jobCall("jc", "cancel"); jobCall("jr", "resume"); jobCall("jd", "dismiss");
@@ -588,6 +588,7 @@ async function uploadFile(file, folder, sha) {
     if ((chk.problems || []).length) { item.state = "failed"; item.error = (chk.problems || []).join("; "); return; }
     if ((chk.matches || []).some(m => m.reason === "name")) { item.state = "failed"; item.error = "A file with this name is already in the library: rename or delete it first."; return; }
     if ((chk.matches || []).length && !await ask("Upload it anyway?", matchesHTML(chk.matches || []), "Upload anyway")) { item.state = "canceled"; return; }
+    if (file.size >= PIECED_FROM) { await uploadInPieces(file, folder, sha, item); return; }
     await new Promise(resolve => {
       const xhr = new XMLHttpRequest();
       item.xhr = xhr; item.state = "sending"; renderTransfers();
@@ -605,6 +606,54 @@ async function uploadFile(file, folder, sha) {
     });
   } catch (e) { item.state = "failed"; item.error = e.message; }
   finally { delete item.xhr; renderTransfers(); if (transfers.refresh) transfers.refresh(); }
+}
+
+// A big file is sent in pieces to an upload session on the server, so that a connection that breaks continues from what the server has (also after the page was reloaded:
+// choose the same file again and it goes on). Smaller files are one request.
+const PIECED_FROM = 64 << 20, PIECE = 8 << 20;
+function sendPiece(id, offset, blob, item) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    item.xhr = xhr;
+    xhr.open("PATCH", `/api/library/upload/sessions/${id}?offset=${offset}`);
+    xhr.setRequestHeader("X-Bootlace", "1");
+    xhr.upload.onprogress = e => { item.sent = offset + e.loaded; renderTransfers(); };
+    xhr.onload = () => {
+      let r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) { /* no body */ }
+      if (xhr.status === 200) resolve(r.received);
+      else { const err = new Error(r.error || ("error " + xhr.status)); err.status = xhr.status; err.received = r.received; reject(err); }
+    };
+    xhr.onerror = () => { const err = new Error("the connection was lost"); err.status = 0; reject(err); };
+    xhr.onabort = () => { const err = new Error("canceled"); err.status = -1; reject(err); };
+    xhr.send(blob);
+  });
+}
+async function uploadInPieces(file, folder, sha, item) {
+  const s = await api("/api/library/upload/sessions", "POST", { name: file.name, folder, size: file.size, sha256: sha || "" });
+  const url = "/api/library/upload/sessions/" + s.id;
+  let received = s.received || 0, retries = 0, aborted = false;
+  item.state = "sending"; item.sent = received; item.abort = () => { aborted = true; if (item.xhr) item.xhr.abort(); }; renderTransfers();
+  const drop = async () => { try { await api(url, "DELETE"); } catch (e) { /* already gone */ } };
+  while (received < file.size && !aborted) {
+    try {
+      received = await sendPiece(s.id, received, file.slice(received, Math.min(received + PIECE, file.size)), item);
+      retries = 0;
+    } catch (e) {
+      if (aborted || e.status === -1) break;
+      if (e.status === 409 && typeof e.received === "number") { received = e.received; item.sent = received; continue; } // go on from where the server has it
+      const broken = e.status === 0 || e.status >= 500 || e.status === 429;
+      if (!broken) { if (e.status !== 401) await drop(); throw e; } // refused for a reason: nothing to go on with
+      if (++retries > 8) throw new Error("the connection keeps breaking: choose the same file again to go on from where it stopped");
+      item.error = "the connection broke, trying again ..."; renderTransfers();
+      await new Promise(r => setTimeout(r, Math.min(30000, 1000 * 2 ** retries)));
+      try { received = (await api(url)).received; } catch (e2) { /* still down */ }
+      item.error = "";
+    }
+  }
+  if (aborted) { await drop(); item.state = "canceled"; return; }
+  item.state = "checking"; item.sent = file.size; renderTransfers();       // (the server reads the whole file once to check it)
+  const r = await api(url + "/finish", "POST", {});
+  item.state = "done"; item.warnings = r.warnings || [];
 }
 
 // ---- dialogs
