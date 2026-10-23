@@ -29,6 +29,8 @@ case $VERSION in
 *) [ "$snapshot" = 1 ] || { echo "release: $VERSION is not a version number (X.Y.Z or X.Y.Z-rc.N)" >&2; exit 1; } ;;
 esac
 export VERSION
+SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+export SOURCE_DATE_EPOCH
 
 rm -rf dist
 mkdir -p dist/stage
@@ -43,16 +45,12 @@ for target in linux/amd64 linux/arm64 windows/amd64; do
 	[ "$os" = windows ] && bin=bootlace.exe
 	mv "dist/bootlace-$os-$arch$([ "$os" = windows ] && echo .exe)" "$dir/$bin"
 	cp README.md CHANGELOG.md LICENSE ADDITIONAL-TERMS.md NOTICE "$dir/"
-	if [ "$os" = windows ]; then
-		if command -v zip >/dev/null 2>&1; then
-			(cd dist/stage && zip -qr "../$name.zip" "$name")
-		else
-			powershell -NoProfile -Command "Compress-Archive -Path 'dist/stage/$name' -DestinationPath 'dist/$name.zip'" >/dev/null
-		fi
-	else
-		tar -C dist/stage -czf "dist/$name.tar.gz" "$name"
-	fi
-	echo "made dist/$name.$([ "$os" = windows ] && echo zip || echo tar.gz)"
+	ext=tar.gz
+	[ "$os" = windows ] && ext=zip
+	# tools/archive makes the same archive on every computer: owner 0 (an archive that names the builder's own user cannot be unpacked by root in an
+	# unprivileged container), the program executable (Windows has no such bit), every file with the time of the commit
+	go run ./tools/archive "$dir" "dist/$name.$ext"
+	echo "made dist/$name.$ext"
 done
 rm -rf dist/stage
 (cd dist && sha256sum bootlace-* >SHA256SUMS)

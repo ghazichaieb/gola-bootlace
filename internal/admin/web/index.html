@@ -190,7 +190,7 @@ function render() {
     <div class="tools"><button class="icon" id="theme" title="Light or dark" aria-label="Switch between light and dark">◐</button><button class="icon" id="out" style="padding:0 12px;font-weight:600">Log out</button></div>
   </div></header>
   <main id="page" tabindex="-1"></main>
-  <footer>Gola Bootlace, by Gola Services. Copyright (c) 2026 Gola Services SUARL. GPL-3.0-or-later.</footer>`;
+  <footer>Gola Bootlace, by <a href="https://gola.tn" target="_blank" rel="noopener">Gola Services</a>. Copyright (c) 2026 Gola Services SUARL. GPL-3.0-or-later.</footer>`;
   app.querySelectorAll("nav button").forEach(b => b.onclick = () => { state.view = b.dataset.v; location.hash = state.view; render(); });
   $("#theme").onclick = toggleTheme;
   $("#out").onclick = guard(async () => { await api("/api/logout", "POST", {}); state.authed = false; render(); });

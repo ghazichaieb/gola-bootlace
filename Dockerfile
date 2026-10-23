@@ -32,6 +32,8 @@ HEALTHCHECK --interval=30s --timeout=6s --start-period=15s --retries=3 CMD ["boo
 
 LABEL org.opencontainers.image.title="Gola Bootlace" \
       org.opencontainers.image.description="Network boot server: start Windows and Linux installers from ISO files over the network" \
+      org.opencontainers.image.url="https://gola.tn" \
+      org.opencontainers.image.documentation="https://github.com/ghazichaieb/gola-bootlace/blob/main/docs/docker.md" \
       org.opencontainers.image.source="https://github.com/ghazichaieb/gola-bootlace" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
       org.opencontainers.image.vendor="Gola Services SUARL"

@@ -8,7 +8,7 @@
 # Gola Bootlace
 
 **Install Windows and Linux on any PC without a USB stick.** Put your ISO files in a folder on one computer; every other PC on the network can start any of them from its
-boot menu, run it, and install it. Think of [Ventoy](https://github.com/ventoy/Ventoy), but over the network.
+boot menu, run it, and install it. Think of [Ventoy](https://github.com/ventoy/Ventoy), but over the network. Made by [Gola Services](https://gola.tn).
 
 **Status: early.** It works on the ISOs listed in [docs/compatibility.md](docs/compatibility.md), tested in a lab of virtual machines (Proxmox and Hyper-V), with a
 handful of real PCs still to try. The ISO files are never changed.
@@ -63,8 +63,8 @@ asking"), and watch what is happening. It is described in [docs/web-interface.md
 
 ### Running it for good
 
-- **Proxmox:** one command on the host makes a small container with Bootlace in it ([docs/proxmox.md](docs/proxmox.md)).
-- **Docker:** not ready yet (`deploy/docker-compose.yml` is a placeholder; it needs host networking, because network boot uses broadcast traffic that Docker's normal network does not pass).
+- **Proxmox:** one command on the host makes a small container with Bootlace in it ([docs/proxmox.md](docs/proxmox.md)). What a container, Docker or a PC needs: [docs/requirements.md](docs/requirements.md).
+- **Docker:** `docker compose -f deploy/docker-compose.yml up -d` on a Linux host ([docs/docker.md](docs/docker.md)). It needs host networking, because network boot uses broadcast traffic that Docker's own networks do not pass.
 - **On a PC or laptop** for a quick job: just run it, as above. Windows needs one extra thing: its own file sharing must not hold port 445 (see below).
 
 ### Good to know

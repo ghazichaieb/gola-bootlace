@@ -1,0 +1,47 @@
+{
+  "name": "Gola Bootlace",
+  "slug": "golabootlace",
+  "categories": [2, 4],
+  "date_created": "2026-10-23",
+  "type": "ct",
+  "updateable": true,
+  "privileged": false,
+  "interface_port": 8080,
+  "documentation": "https://github.com/ghazichaieb/gola-bootlace#readme",
+  "website": "https://gola.tn",
+  "repository": "https://github.com/ghazichaieb/gola-bootlace",
+  "logo": "https://cdn.jsdelivr.net/gh/ghazichaieb/gola-bootlace@main/branding/bootlace-mark.svg",
+  "description": "Gola Bootlace is a network boot (PXE) server for ISO files. Put Windows, Linux and rescue ISOs in one folder and any PC on the network can start and install them from its boot menu, without a USB stick. It works next to your own DHCP server, with a web interface to upload ISOs, give each PC a rule and watch what happens.",
+  "install_methods": [
+    {
+      "type": "default",
+      "script": "ct/golabootlace.sh",
+      "config_path": "/etc/bootlace.env",
+      "resources": {
+        "cpu": 1,
+        "ram": 512,
+        "hdd": 8,
+        "os": "Debian",
+        "version": "13"
+      }
+    }
+  ],
+  "default_credentials": {
+    "username": null,
+    "password": null
+  },
+  "notes": [
+    {
+      "text": "The password of the web interface is made up at the first start and written once in the log: journalctl -u bootlace | grep -i password. Change it under Account.",
+      "type": "info"
+    },
+    {
+      "text": "ISOs are kept in /srv/bootlace/library on the container's disk. For more room, add a mount point to a host folder or a network share, then choose it under Server in the web interface.",
+      "type": "info"
+    },
+    {
+      "text": "The container must be on the same network as the PCs to install. Secure Boot has to be off on those PCs, except for Windows and Ubuntu.",
+      "type": "warning"
+    }
+  ]
+}
