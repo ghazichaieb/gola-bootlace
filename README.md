@@ -61,11 +61,77 @@ Open `http://<server address>:8080/admin/` in a browser (the password is in the 
 asked for a menu, rename or hide an ISO, choose what starts by itself after some seconds, give one PC a rule ("always boot from your own disk", "start this ISO without
 asking"), and watch what is happening. It is described in [docs/web-interface.md](docs/web-interface.md).
 
-### Running it for good
+### Running it on your own server
 
-- **Proxmox:** one command on the host makes a small container with Bootlace in it ([docs/proxmox.md](docs/proxmox.md)). What a container, Docker or a PC needs: [docs/requirements.md](docs/requirements.md).
-- **Docker:** `docker compose -f deploy/docker-compose.yml up -d` on a Linux host ([docs/docker.md](docs/docker.md); the image is on Docker Hub). It needs host networking, because network boot uses broadcast traffic that Docker's own networks do not pass.
-- **On a PC or laptop** for a quick job: just run it, as above. Windows needs one extra thing: its own file sharing must not hold port 445 (see below).
+Pick the one that fits the computer you have. All four give the same program and the same web page; they differ in how it is kept running. Whichever you choose, the server must be on
+the **same network as the PCs** (cabled), and the first thing it shows is a password for the web page (see [docs/web-interface.md](docs/web-interface.md#password) if you miss it).
+What each one needs in memory and disk: [docs/requirements.md](docs/requirements.md).
+
+**1. A Proxmox container (the easiest if you have Proxmox).** On the Proxmox host, in a terminal as root:
+
+```
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ghazichaieb/gola-bootlace/main/tools/proxmox/bootlace-lxc.sh)"
+```
+
+It asks a few questions (container number, network, and where the ISOs are kept: inside the container, a folder of the host, or a network share), makes a small Debian container,
+installs Bootlace, starts it and prints the address and the password. Later, type `update` in the container's console to update it. Details: [docs/proxmox.md](docs/proxmox.md).
+
+**2. Docker (any Linux machine).** Needs Docker with Compose, on a Linux host (not Docker Desktop on Windows or macOS). Save this as `compose.yaml` in a new folder, put your ISOs in a folder `library` next to it:
+
+```yaml
+services:
+  bootlace:
+    image: ghazichaieb/gola-bootlace:latest
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - bootlace-data:/data
+      - ./library:/library
+volumes:
+  bootlace-data:
+```
+
+Then `docker compose up -d`, and `docker compose logs bootlace | grep -i password` for the password. The page is `http://<the host's address>:8080/admin/`. Options go in the
+`environment:` part as `BOOTLACE_<NAME>` (for example `BOOTLACE_IP`); to update, `docker compose pull && docker compose up -d`. Details: [docs/docker.md](docs/docker.md).
+
+**3. Linux, as a service (a PC, a mini PC, a Raspberry Pi, a virtual machine).** Download `bootlace-<version>-linux-amd64.tar.gz` (or `arm64`) from the
+[Releases page](https://github.com/ghazichaieb/gola-bootlace/releases), then, as root (Debian or Ubuntu shown; install `wimtools` with your system's package manager otherwise):
+
+```
+apt install -y wimtools                      # only needed to start Windows with Secure Boot on
+mkdir -p /opt/bootlace /srv/isos /var/lib/bootlace
+tar xzf bootlace-*-linux-amd64.tar.gz --strip-components=1 -C /opt/bootlace
+cat >/etc/systemd/system/bootlace.service <<'EOF'
+[Unit]
+Description=Gola Bootlace network boot server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/bootlace/bootlace serve -config /var/lib/bootlace/bootlace.json -iso-dir /srv/isos
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl enable --now bootlace
+journalctl -u bootlace | grep -i password
+```
+
+Copy your ISOs into `/srv/isos` (or add them from the web page). If the server has several networks, add `-ip <the address the PCs reach it at>` to the `ExecStart` line. It runs as
+root because it listens on low ports (67, 69, 445). To update, unpack the new archive over `/opt/bootlace` and `systemctl restart bootlace`.
+
+**4. Windows (for a quick job, or a PC that is on for the day).** Download `bootlace-<version>-windows-amd64.zip` from the Releases page and unzip it. In a terminal in that folder:
+
+```
+bootlace.exe serve -iso-dir D:\isos
+```
+
+When Windows asks, allow it through the firewall on **private** networks. Windows' own file sharing holds port 445: if the Windows installer cannot reach its files, start with
+`-smb-port 4445` (a different port works only with a recent Windows installer) or use one of the other three choices. It runs only while the window is open, so this is for jobs, not for a server that stays on. (Without Secure Boot,
+`wimlib-imagex` is not needed.)
+
+In all four, check it from a PC: restart it, choose **boot from network**, and the Bootlace menu should appear. If it does not, the web page's **Log** shows what the PC asked for.
 
 ### Good to know
 
