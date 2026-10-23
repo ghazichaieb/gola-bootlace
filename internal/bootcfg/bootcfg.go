@@ -46,14 +46,28 @@ func Parse(file, text string, inc Include) []Entry {
 	for _, e := range es {
 		e.Source = file
 		e.Kernel = clean(e.Kernel)
+		bad := hasControl(e.Kernel)
 		for i, in := range e.Initrds {
 			e.Initrds[i] = clean(in)
+			bad = bad || hasControl(e.Initrds[i])
 		}
-		if isKernel(e.Kernel) {
+		// A path with a control character (a carriage return inside a menu line) could end up in a line of an iPXE script: such an entry is not offered. The arguments lose them.
+		e.Args = strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f {
+				return ' '
+			}
+			return r
+		}, e.Args)
+		if !bad && isKernel(e.Kernel) {
 			out = append(out, e)
 		}
 	}
 	return out
+}
+
+// hasControl says whether a path holds a control character.
+func hasControl(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
 }
 
 // isKernel is false for the loader modules and chain files that menus also start.
