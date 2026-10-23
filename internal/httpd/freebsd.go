@@ -29,6 +29,9 @@ func loaderConf(own []byte) []byte {
 	b.WriteString("\n# added by Gola Bootlace: the whole ISO is loaded as a memory disk and is the root file system\n")
 	b.WriteString("mdroot_load=\"YES\"\nmdroot_type=\"md_image\"\nmdroot_name=\"/boot.iso\"\n")
 	b.WriteString("vfs.root.mountfrom=\"cd9660:/dev/md0\"\nvfs.root.mountfrom.options=\"ro\"\n")
+	// The kernel's call into the PC's firmware for the clock (efirtc) made the kernel of a real PC (AMI firmware, Core i9-7920X) stop in its debugger at an address
+	// inside the firmware: FreeBSD has a switch to leave the firmware's run-time services alone. Verbose start-up shows where it stops if it stops elsewhere.
+	b.WriteString("efi.rt.disabled=\"1\"\nboot_verbose=\"YES\"\n")
 	return b.Bytes()
 }
 

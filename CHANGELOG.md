@@ -3,6 +3,10 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **pfSense, OPNsense, FreeBSD: leave the PC's firmware clock alone.** With 0.1.4 the loader read the kernel and the whole ISO by TFTP (it takes a few minutes) and pfSense's kernel started, then stopped in its debugger right after `netgate0` at an address inside the firmware (the kernel's EFI clock, `efirtc`, is the next thing it starts). The boot settings that Bootlace adds now include `efi.rt.disabled="1"`, FreeBSD's switch for that, and `boot_verbose="YES"` so that the last lines on screen say more if it stops somewhere else.
+
 ## 0.1.4 - 2026-10-23
 
 - **FreeBSD, pfSense and OPNsense: read the files by TFTP, not NFS.** A packet capture on the first real PC showed that after getting its address FreeBSD's loader asked this server's port 111 (the NFS port mapper) over and over and waited. FreeBSD's loader reads its files by NFS unless the DHCP root path starts with `tftp://`. The answer Bootlace gives to the loader's own address request now carries the root path `tftp://<this server>/`, so the loader asks for its files by TFTP, which Bootlace serves from the ISO.
