@@ -6,6 +6,7 @@ program is not yet in its final form and any release may change how it is set up
 ## Unreleased
 
 - **A log file, and a button to download the log (#46).** `-log-file PATH` (or `BOOTLACE_LOG_FILE`) also writes the log to a file that keeps to `-log-size` MB (default 5): when it is full it becomes `PATH.1` (the one older file that is kept) and a new one starts, so a restart of a container or of Windows no longer loses the log. The password made up at the first start is shown on the console and in the web log but never written to the file. The Log page has a "Download the log" button.
+- **A failed start no longer ends at the PC's disk (#53).** After "Booting did not work" the message stays for 20 seconds (a key press ends the wait), then the menu is shown again, on a page without the PC's rule and without a timeout, so a PC that is set to start pfSense by itself waits at the menu instead of silently booting its disk. Before, the menu script went back to a `${self}` setting that iPXE does not have (it ended at the iPXE shell) and a rule's script waited for a key for ever. The messages "this ISO is still being unpacked, try again", "could not be unpacked", "needs the iSCSI server" and "FreeBSD starts on UEFI only" also come back to the menu after a few seconds instead of leaving the network boot. Going to the disk is now only the explicit "Boot from this PC's own disk" line.
 
 ## 0.1.5 - 2026-10-23
 
