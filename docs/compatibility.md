@@ -201,5 +201,6 @@ start each one. All eleven were recognised as the right make **and started** (BI
 Along the way the generic reading of menus found and fixed: tabs between `linux` and its path (Ubuntu's GRUB menu), a kernel called `vmlinuz.efi` (Pop!_OS), menus in `/EFI/<name>/grub.cfg` (Tails), and
 `filesystem.packages` taken for a system image (VyOS). Not covered: start-up disks of other makes (Manjaro's and Garuda's `miso`, NixOS, Void, Slax and the like): they stay "as a disk".
 
-After the reorganisation of the code the ISOs that were tested before were started again by name (BIOS, Proxmox test server): see the line below.
+After the reorganisation of the code, Tails, Linux Mint, Debian live, Arch Linux, Fedora Workstation, Ubuntu Server and VyOS were started again by name (BIOS, Proxmox test server) and all reach the screens in
+the tables above; Alpine, Proxmox VE, ChimeraOS and Lakka were started again after the first stage of the reorganisation, with the same results as before.
 
