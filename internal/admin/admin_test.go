@@ -438,11 +438,14 @@ func TestTuningAndPatternsAreSavedAndPatternsHideIsos(t *testing.T) {
 	if code, _ := r.do("PUT", "/api/tuning", map[string]any{"tftpBlockSize": 100}, nil); code != 400 {
 		t.Fatalf("a block size under 512: %d", code)
 	}
-	code, _ := r.do("PUT", "/api/tuning", map[string]any{"tftpBlockSize": 1024, "tftpWindow": 2, "hidePatterns": []string{" old/ ", "", "*beta*"}}, nil)
+	code, _ := r.do("PUT", "/api/tuning", map[string]any{"tftpBlockSize": 1024, "tftpWindow": 2, "hidePatterns": []string{" old/ ", "", "*beta*"}, "setupChecks": map[string]bool{"tpm": true, "ram": true}}, nil)
 	if code != 200 || r.backend.rescans != 1 {
 		t.Fatalf("%d, rescans %d", code, r.backend.rescans)
 	}
 	_, out := r.do("GET", "/api/tuning", nil, nil)
+	if sc, _ := out["setupChecks"].(map[string]any); sc["tpm"] != true || sc["ram"] != true || sc["cpu"] != nil {
+		t.Fatalf("the Windows 11 checks to skip are saved and read back: %v", out["setupChecks"])
+	}
 	pats := out["hidePatterns"].([]any)
 	if out["tftpBlockSize"].(float64) != 1024 || out["tftpWindow"].(float64) != 2 || len(pats) != 2 || pats[0] != "old/" {
 		t.Fatalf("%v", out)

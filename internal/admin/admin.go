@@ -777,15 +777,16 @@ func (a *Admin) selfTest(w http.ResponseWriter, r *http.Request) {
 // tuningGet and tuningSet are the TFTP knobs and the patterns that keep ISOs out of the menu.
 func (a *Admin) tuningGet(w http.ResponseWriter, _ *http.Request) {
 	c := a.o.Store.Get()
-	writeJSON(w, http.StatusOK, map[string]any{"tftpBlockSize": c.Tuning.TFTPBlockSize, "tftpWindow": c.Tuning.TFTPWindow, "hidePatterns": c.HidePatterns, "menuAccent": c.MenuAccent, "accents": config.AccentNames})
+	writeJSON(w, http.StatusOK, map[string]any{"tftpBlockSize": c.Tuning.TFTPBlockSize, "tftpWindow": c.Tuning.TFTPWindow, "hidePatterns": c.HidePatterns, "menuAccent": c.MenuAccent, "accents": config.AccentNames, "setupChecks": c.SetupChecks})
 }
 
 func (a *Admin) tuningSet(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		TFTPBlockSize int      `json:"tftpBlockSize"`
-		TFTPWindow    int      `json:"tftpWindow"`
-		HidePatterns  []string `json:"hidePatterns"`
-		MenuAccent    string   `json:"menuAccent"`
+		TFTPBlockSize int                `json:"tftpBlockSize"`
+		TFTPWindow    int                `json:"tftpWindow"`
+		HidePatterns  []string           `json:"hidePatterns"`
+		MenuAccent    string             `json:"menuAccent"`
+		SetupChecks   config.SetupChecks `json:"setupChecks"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -794,6 +795,7 @@ func (a *Admin) tuningSet(w http.ResponseWriter, r *http.Request) {
 		c.Tuning = config.Tuning{TFTPBlockSize: in.TFTPBlockSize, TFTPWindow: in.TFTPWindow}
 		c.HidePatterns = in.HidePatterns
 		c.MenuAccent = in.MenuAccent
+		c.SetupChecks = in.SetupChecks
 		return nil
 	})
 	if err != nil {

@@ -52,7 +52,7 @@ func (s *Server) winSettings(iso isos.ISO) (winpe.Settings, error) {
 		return winpe.Settings{}, err
 	}
 	return winpe.Settings{Base: s.Base, FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Host: u.Hostname(), Share: smbshare.ShareName, Folder: iso.ID,
-		User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort, Hold: os.Getenv("BOOTLACE_WINPE_HOLD") != ""}, nil
+		User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort, Hold: os.Getenv("BOOTLACE_WINPE_HOLD") != "", Bypass: s.settings().SetupChecks.LabConfig()}, nil
 }
 
 // patchedBootWIM is the copy of the ISO's boot.wim with Bootlace's files in it, made when it is first needed. The file's name says what it was made for (the

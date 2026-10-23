@@ -21,6 +21,9 @@ type Settings struct {
 	Port     int  // SMB port (445 unless Windows cannot reach the server there)
 	Hold     bool // test aid: connect to the share but leave Setup for the person at the keyboard to start
 	PEOnly   bool // a Windows PE with no installation image: nothing is added to it
+	// Bypass names the checks of Windows 11 Setup to skip, as the names of the LabConfig values (BypassTPMCheck ...): each is written as 1 before Setup starts, which is how Setup is told to
+	// go on on a PC that does not have what Windows 11 asks for. Empty skips none.
+	Bypass []string
 }
 
 // IPXE is the script that loads the set-up environment: wimboot with the boot files of the ISO and the two files of this package. The same script
@@ -98,6 +101,9 @@ func Cmd(s Settings) string {
 	// (Windows Deployment Services client), which Microsoft has blocked for Windows 11 ("WdsClient: There was a problem initializing WDS Mode"). Without the record
 	// Setup starts as it does from a DVD.
 	line(`reg delete HKLM\SYSTEM\CurrentControlSet\Control\PXE /f > nul 2>&1`)
+	for _, name := range s.Bypass {
+		line(`reg add HKLM\SYSTEM\Setup\LabConfig /v %s /t REG_DWORD /d 1 /f > nul 2>&1`, name)
+	}
 	line(`cd /d Z:\%s`, s.Folder)
 	line(`set IMAGE=Z:\%s\sources\install.wim`, s.Folder)
 	line(`if not exist %%IMAGE%% set IMAGE=Z:\%s\sources\install.esd`, s.Folder)

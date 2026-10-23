@@ -84,6 +84,7 @@ type Config struct {
 	ImportLimitMBps int                  `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
 	Cache           CacheSettings        `json:"cache"`
 	Tuning          Tuning               `json:"tuning"`
+	SetupChecks     SetupChecks          `json:"setupChecks"`    // checks of Windows 11 Setup to skip
 	PasswordChosen  bool                 `json:"passwordChosen"` // the person set the web interface's password (it was not only made up at the first start)
 	FirstStartDone  bool                 `json:"firstStartDone"` // the first-start guide was finished or skipped
 	LibrarySync     string               `json:"librarySync"`    // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
@@ -93,6 +94,30 @@ type Config struct {
 
 // AccentNames are the colours the menu's highlighted line may have (see package menu).
 var AccentNames = []string{"red", "green", "yellow", "blue", "magenta", "cyan", "white"}
+
+// SetupChecks says which checks of Windows 11 Setup are skipped when a PC is installed through Bootlace. Each one lets Windows 11 be installed on a PC that Microsoft does not
+// list as supported; Windows then runs there without a promise of updates or support from Microsoft. Nothing is skipped by default.
+type SetupChecks struct {
+	TPM        bool `json:"tpm,omitempty"`
+	SecureBoot bool `json:"secureBoot,omitempty"`
+	RAM        bool `json:"ram,omitempty"`
+	CPU        bool `json:"cpu,omitempty"`
+	Storage    bool `json:"storage,omitempty"`
+}
+
+// LabConfig are the names of the values of HKLM\SYSTEM\Setup\LabConfig that skip the checks that are on.
+func (c SetupChecks) LabConfig() []string {
+	var out []string
+	for _, e := range []struct {
+		on   bool
+		name string
+	}{{c.TPM, "BypassTPMCheck"}, {c.SecureBoot, "BypassSecureBootCheck"}, {c.RAM, "BypassRAMCheck"}, {c.CPU, "BypassCPUCheck"}, {c.Storage, "BypassStorageCheck"}} {
+		if e.on {
+			out = append(out, e.name)
+		}
+	}
+	return out
+}
 
 // Tuning are the knobs of the network boot itself, for firmware and switches that do not cope with the defaults.
 type Tuning struct {

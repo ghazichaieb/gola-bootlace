@@ -971,10 +971,13 @@ async function pageMenu() {
     <div class="grid two"><div class="field"><label for="tb">Largest TFTP block (bytes)</label><input id="tb" type="number" min="0" max="65464" value="${tuning.tftpBlockSize}"><p class="hint">0 follows what each PC asks for. Some switches and firmware only work with small blocks: try 1024 or 512 (at least 512) when a PC stops at the start of a download.</p></div>
     <div class="field"><label for="tw">TFTP blocks sent ahead (FreeBSD loader)</label><input id="tw" type="number" min="0" max="16" value="${tuning.tftpWindow}"><p class="hint">0 keeps the program's own number (4). 1 sends one block and waits, as the protocol says.</p></div></div>
     <div class="field"><label for="ta">Colour of the highlighted line</label><select id="ta"><option value="">Gola red (default)</option>${(tuning.accents || []).filter(c => c !== "red").map(c => `<option value="${c}"${tuning.menuAccent === c ? " selected" : ""}>${c[0].toUpperCase() + c.slice(1)}</option>`).join("")}</select><p class="hint">The chosen line and the section headings of the menu on a PC. A PC in UEFI mode shows the Gola Bootlace logo picture behind the menu; the colour of the line follows this choice when one other than the default is set.</p></div>
+    <div class="field"><label>Windows 11 Setup: skip these checks</label>
+      <div class="row small" style="gap:16px;flex-wrap:wrap">${[["tpm", "TPM 2.0"], ["secureBoot", "Secure Boot"], ["ram", "4 GB of memory"], ["cpu", "Supported processor"], ["storage", "64 GB of storage"]].map(([k, t]) => `<label class="row small" style="margin:0;font-weight:500"><input type="checkbox" data-sc="${k}" ${tuning.setupChecks && tuning.setupChecks[k] ? "checked" : ""}> ${t}</label>`).join("")}</div>
+      <p class="hint">For installing Windows 11 on PCs that Microsoft does not list as supported (older PCs, virtual machines without a TPM). Windows then works there, but without a promise of updates or support from Microsoft. Applies to the Windows 11 ISOs started from the menu, at their next start. Nothing is skipped unless ticked.</p></div>
     <button class="btn primary">Save</button></form>`);
   $("#tf").onsubmit = guard(async e => {
     e.preventDefault();
-    await api("/api/tuning", "PUT", { hidePatterns: $("#hp").value.split("\n"), tftpBlockSize: parseInt($("#tb").value || "0", 10), tftpWindow: parseInt($("#tw").value || "0", 10), menuAccent: $("#ta").value });
+    await api("/api/tuning", "PUT", { hidePatterns: $("#hp").value.split("\n"), tftpBlockSize: parseInt($("#tb").value || "0", 10), tftpWindow: parseInt($("#tw").value || "0", 10), menuAccent: $("#ta").value, setupChecks: Object.fromEntries([...document.querySelectorAll("input[data-sc]")].map(i => [i.dataset.sc, i.checked])) });
     toast("Saved");
   });
   $("#mf").onsubmit = guard(async e => {
