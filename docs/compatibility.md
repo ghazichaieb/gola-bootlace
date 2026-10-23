@@ -127,8 +127,7 @@ Recognised from their own files and tested:
 Not working, and why (each is per-distribution work, none is a Bootlace fault):
 - **memtest.iso in BIOS mode**: iPXE refuses the CD ("Boot from SAN device 0x80 failed: Operation not supported"): the image uses an El Torito emulation mode that iPXE does not support. It works in UEFI (Hyper-V).
 - **Recalbox and the SteamOS recovery image**: see "Disk images with a Linux on them" below.
-- **Garuda**: its initramfs uses systemd (`/init` is systemd, no `hooks/`), not archiso's hooks; **Alpine standard**: its initramfs has no driver for the network card of this VM (the drivers are in the modloop, which
-  needs the network); **NixOS**: kernel and initramfs sit in `/boot/nix/store/<hash>-...`, and its stage 1 looks for the ISO by label; **Porteus**, **Haiku**, **Qubes** (needs Xen): not looked at yet.
+- **Garuda, NixOS, Haiku, Qubes**: see "The last of the unusual ISOs" below.
 - Not offered: qcow2 (Rocky GenericCloud: a cloud image that needs cloud-init and a converter) and `.tar.gz` (Alpine netboot: a kernel, initramfs and modloop that fetch their packages from a mirror on the Internet). Both need a decision on whether they are worth it.
 
 ## Disk images with a Linux on them, and kernels inside an ISO's EFI image (2026-10-22, late)
@@ -166,3 +165,15 @@ set-up share does not unpack: a packed Windows ISO must be unpacked by hand.)
 
 Also fixed: the line that tells a BIOS PC that FreeBSD-based ISOs need UEFI (`iseq ${platform} pcbios && ... && exit`) was made a failing chain on UEFI PCs by the menu's added `|| goto failed`, which
 sent every UEFI PC to the failure screen for pfSense and OPNsense; it now ends with `|| echo`. A test now covers it.
+
+## The last of the unusual ISOs (2026-10-23)
+
+| ISO | What was done | Result (Proxmox test server) |
+|---|---|---|
+| **Porteus KDE 5.1** | Its start-up script finds its files on a disk, over NFS (a fixed layout of its own) or in an ISO file named by `from=`. The ISO is delivered as an initrd file at `/mnt/bootlace/porteus.iso` (the script looks in the folders under `/mnt`) and started with `from=/porteus.iso nomagic base_only norootcopy`. iPXE does not create folders in the initrd, and a file whose folder is missing is dropped without a message, so a tiny extra archive makes `/mnt/bootlace`. | Reaches the KDE desktop. The PC needs memory for the whole ISO twice over (about 1.3 GB plus the system): this is the one family here that is not read piece by piece. |
+| **Haiku R1/beta6 anyboot** | Nothing works yet. In BIOS mode iPXE stops with "Operation not supported": the ISO boots through an *emulated floppy* (El Torito), which iPXE cannot do. Offered as a hard disk instead (it has a partition table) the same message comes back, and the cause was not found in iPXE's source (the real MBR error is hidden behind the El Torito one); memtest.iso behaves the same, so that experiment was removed again. | BIOS: does not start. UEFI: the PC reads the disc and then stays black (the loader runs, but nothing could be seen in the VM). Needs a real PC to judge. |
+| **Garuda Sway** | Manjaro's `miso`, with a systemd initramfs: no BusyBox, no network tools, no hook system like archiso's. It would need systemd units in the initramfs and a DHCP client of its own (the kernel's `ip=` only works for built-in card drivers). | Not started. |
+| **NixOS 26.05 graphical** | Kernel and initrd are in `/boot/nix/store/<hash>-.../` (found from the boot menu text) and its stage 1 looks for the ISO by label; there is no network card driver or network disk in it, and the squashfs `/nix-store.squashfs` holds the modules. Same kind of work as Garuda. | Not started. |
+| **Qubes R4.3.2** | Needs Xen. | Not started. |
+
+A DHCP client inside the helper (so that a start-up disk without BusyBox or `ip=` support can get an address) would be the shared piece for Garuda and NixOS: say if they are worth it.
