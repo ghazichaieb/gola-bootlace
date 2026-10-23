@@ -92,6 +92,17 @@ are in fact known.
    tests with `BOOTLACE_TEST_ISODIR=<folder of ISOs> go test ./internal/family`.
 5. Try it on a PC or VM and write the result in `compatibility.md`.
 
+## Tools for finding faults
+
+Meant for development and for reporting a problem; none of them changes what is served.
+
+| Switch | What it does |
+|---|---|
+| `BOOTLACE_GENERIC_ONLY=<ISO names>` (environment) | skips the recognition by name for those files, to try the generic path on a known ISO |
+| `-debug-smb` | logs every message of the Windows file share (a lot) |
+| `-smb-forward host:port` | passes the share's connections on to another SMB server and logs them, to compare with a real Windows share |
+| `bootlace inspect <iso>` | says how the server would start an ISO and prints the commands, without a network |
+
 ## Where things are
 
 | Package | Role |
