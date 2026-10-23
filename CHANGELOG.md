@@ -3,6 +3,10 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- The Proxmox script's closing message and `docs/proxmox.md` told people to run `pct exec <number> update`, which fails ("No such file or directory"): `pct exec` does not search `/usr/local/bin`. They now give the full path, and say that `pct enter <number>` needs no password (the container console asks for one because the container's root has none).
+
 ## 0.1.2 - 2026-10-23
 
 - **FreeBSD, pfSense and OPNsense on a PC with more than one network card.** The hand-off told the server the address and MAC of the *first* card (`net0`), not of the card that got the address, so the server answered "HTTP 4xx" and the PC went on to its disk. It now uses the card that is in use. Found on the first real UEFI PC (two network cards).

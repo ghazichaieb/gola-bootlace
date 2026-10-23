@@ -60,7 +60,7 @@ Keeping the library "inside the container" closes no door. To move to a host fol
 
 ### Updating
 
-Type `update` in the container's console (or `pct exec <number> update` on the host). It says which version is installed and which is the latest, asks before restarting the
+Type `update` in the container's console (on the host: `pct exec <number> -- /usr/local/bin/update`, the full path is needed because `pct exec` does not search `/usr/local/bin`; `pct enter <number>` gives a shell where plain `update` works, and needs no password). It says which version is installed and which is the latest, asks before restarting the
 server (PCs that are installing from it are interrupted), checks the download against the release's checksum, replaces the program and starts it. If the new version does
 not answer, it goes back to the old one by itself. The old program is kept as `/usr/local/bin/bootlace.previous`. `update --check` only looks, `update -v 0.2.0` goes to a given
 version, `update -y` does not ask.

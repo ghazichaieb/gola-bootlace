@@ -440,7 +440,7 @@ Gola Bootlace is running in container $CTID at $addr.
   menu        http://$addr:8080/boot.ipxe
   log         pct exec $CTID -- journalctl -u bootlace -f
   settings    kept in the container: /var/lib/bootlace/config.json (changed in the web page)
-  update      type "update" in the container's console (or: pct exec $CTID update): it checks, asks, replaces the program and goes back if the new one does not answer
+  update      type "update" in the container's console (or on this host: pct exec $CTID -- /usr/local/bin/update): it checks, asks, replaces the program and goes back if the new one does not answer
   set up again (the unit, the update command)   CTID=$CTID bash -c "\$(curl -fsSL https://raw.githubusercontent.com/$BOOTLACE_REPO/main/tools/proxmox/bootlace-lxc.sh)"
   remove      pct stop $CTID && pct destroy $CTID
 
