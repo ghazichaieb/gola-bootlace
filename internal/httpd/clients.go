@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
@@ -18,21 +19,50 @@ import (
 
 // Client is one PC that asked for a menu. iPXE sends what it knows about itself with the request.
 type Client struct {
-	MAC          string    `json:"mac"`
-	IP           string    `json:"ip"`
-	Platform     string    `json:"platform"` // "efi" or "pcbios"
-	Manufacturer string    `json:"manufacturer"`
-	Product      string    `json:"product"`
-	Serial       string    `json:"serial"`
-	Hostname     string    `json:"hostname,omitempty"` // the host name the PC gave in its DHCP request (option 12), if it gave one: not trusted, only offered as a name
-	Asset        string    `json:"asset,omitempty"`    // the asset tag of its SMBIOS, if it has one
-	FirstSeen    time.Time `json:"firstSeen"`
-	LastSeen     time.Time `json:"lastSeen"`
-	Count        int       `json:"count"` // how many times it asked for a menu
-	LastAction   string    `json:"lastAction"`
+	MAC          string         `json:"mac"`
+	IP           string         `json:"ip"`
+	Platform     string         `json:"platform"` // "efi" or "pcbios"
+	Manufacturer string         `json:"manufacturer"`
+	Product      string         `json:"product"`
+	Serial       string         `json:"serial"`
+	Hostname     string         `json:"hostname,omitempty"` // the host name the PC gave in its DHCP request (option 12), if it gave one: not trusted, only offered as a name
+	Asset        string         `json:"asset,omitempty"`    // the asset tag of its SMBIOS, if it has one
+	FirstSeen    time.Time      `json:"firstSeen"`
+	LastSeen     time.Time      `json:"lastSeen"`
+	Count        int            `json:"count"` // how many times it asked for a menu
+	LastAction   string         `json:"lastAction"`
+	History      []HistoryEvent `json:"history,omitempty"` // the last things that happened to this PC, oldest first
 }
 
 const maxClients = 200
+
+// HistoryEvent is one thing that happened to a PC: it was shown the menu, a rule sent it somewhere, it started fetching an ISO.
+type HistoryEvent struct {
+	Time time.Time `json:"time"`
+	What string    `json:"what"`
+}
+
+const (
+	maxHistory      = 40              // events kept per PC
+	historyDedupFor = 2 * time.Minute // the same thing again within this long is one event (an ISO is fetched in many requests)
+)
+
+// note adds an event to the PC's history (the caller holds clientsMu).
+func (c *Client) note(what string, now time.Time) {
+	what = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, what)
+	if n := len(c.History); n > 0 && c.History[n-1].What == what && now.Sub(c.History[n-1].Time) < historyDedupFor {
+		return
+	}
+	c.History = append(c.History, HistoryEvent{Time: now, What: what})
+	if len(c.History) > maxHistory {
+		c.History = append([]HistoryEvent(nil), c.History[len(c.History)-maxHistory:]...)
+	}
+}
 
 // noteClient records the PC behind a menu request and returns what is known of it.
 func (s *Server) noteClient(r *http.Request) Client {
@@ -68,6 +98,7 @@ func (s *Server) noteClient(r *http.Request) Client {
 	}
 	c.IP, c.LastSeen = ip, now
 	c.Count++
+	c.note("asked for the menu", now)
 	s.changed()
 	// a request without these (an old script, a test) must not wipe what an earlier one told
 	for key, dst := range map[string]*string{"plat": &c.Platform, "man": &c.Manufacturer, "prod": &c.Product, "serial": &c.Serial, "host": &c.Hostname, "asset": &c.Asset} {
@@ -100,6 +131,7 @@ func (s *Server) setAction(mac, action string) {
 	defer s.clientsMu.Unlock()
 	if c := s.clients[mac]; c != nil {
 		c.LastAction = action
+		c.note(action, time.Now())
 		s.changed()
 	}
 }
@@ -116,6 +148,7 @@ func (s *Server) noteFetch(remoteAddr, title string) {
 		if c.IP == host {
 			c.LastAction = "booting " + title
 			c.LastSeen = time.Now()
+			c.note(c.LastAction, c.LastSeen)
 			s.changed()
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"embed"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -122,6 +123,7 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("GET /api/settings", a.authed(a.settings))
 	api.HandleFunc("PUT /api/settings", a.authed(a.settingsUpdate))
 	api.HandleFunc("GET /api/pcs", a.authed(a.pcs))
+	api.HandleFunc("GET /api/pcs/history.csv", a.authed(a.pcHistoryCSV))
 	api.HandleFunc("DELETE /api/pcs/{mac}", a.authed(a.pcForget))
 	api.HandleFunc("POST /api/pcs/clean", a.authed(a.pcClean))
 	api.HandleFunc("PUT /api/pcs/{mac}/name", a.authed(a.pcRename))
@@ -908,6 +910,40 @@ func (a *Admin) pcForget(w http.ResponseWriter, r *http.Request) {
 		a.o.Logf("web interface: %s removed from the list of PCs", mac)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// pcHistoryCSV is what happened to every PC, newest first, as a CSV file to open in a spreadsheet.
+func (a *Admin) pcHistoryCSV(w http.ResponseWriter, _ *http.Request) {
+	type row struct {
+		t             time.Time
+		mac, name, ip string
+		what          string
+	}
+	names := a.o.Store.Get().PCNames
+	var rows []row
+	for _, c := range a.o.Backend.Clients() {
+		for _, e := range c.History {
+			rows = append(rows, row{e.Time, c.MAC, names[c.MAC], c.IP, e.What})
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].t.After(rows[j].t) })
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="bootlace-pc-history-`+time.Now().Format("20060102-150405")+`.csv"`)
+	w.Header().Set("Cache-Control", "no-store")
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"time", "mac", "name", "address", "what"})
+	for _, r := range rows {
+		_ = cw.Write([]string{r.t.Local().Format("2006-01-02 15:04:05"), r.mac, csvSafe(r.name), r.ip, csvSafe(r.what)})
+	}
+	cw.Flush()
+}
+
+// csvSafe keeps a spreadsheet from running a cell as a formula: names and descriptions come from PCs and from people.
+func csvSafe(s string) string {
+	if s != "" && strings.ContainsRune("=+-@\t\r", rune(s[0])) {
+		return "'" + s
+	}
+	return s
 }
 
 // pcRename gives a PC a name of the person's choice, or takes it away (an empty name). The name is kept with the MAC address, also when the PC is forgotten.
