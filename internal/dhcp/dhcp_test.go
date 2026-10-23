@@ -151,3 +151,69 @@ func TestAPCSentToFreeBSDsLoaderGetsTheLoaderAsBootFileFromItsFirmwareOnly(t *te
 		t.Fatalf("a client that already runs iPXE keeps its script: %q", reply.File)
 	}
 }
+
+// FreeBSD's loader asks for an address again after the firmware has started it: a vendor class of PXEClient, but no architecture.
+func loaderRequest(msg byte, serverID net.IP) *Packet {
+	p := &Packet{
+		Op: bootRequest, HType: 1, HLen: 6, XID: 0x1234, Flags: flagBroadcast,
+		CHAddr: [16]byte{0x04, 0x42, 0x1a, 0xed, 0xec, 0xe6},
+		Opts:   map[byte][]byte{OptMessageType: {msg}, OptVendorClass: []byte("PXEClient:Arch:00000:UNDI:002001")},
+	}
+	if serverID != nil {
+		p.Opts[OptServerID] = v4(serverID)
+	}
+	return p
+}
+
+func loaderBoot() Boot {
+	b := boot()
+	b.Mask = net.CIDRMask(24, 32)
+	b.LoaderAddress = func(mac string) (net.IP, bool) {
+		if mac == "04:42:1a:ed:ec:e6" {
+			return net.IPv4(192, 168, 8, 2).To4(), true
+		}
+		return nil, false
+	}
+	return b
+}
+
+func TestTheLoaderGetsItsAddressAndThisServerInOneAnswer(t *testing.T) {
+	for _, tc := range []struct {
+		msg  byte
+		want byte
+	}{{Discover, Offer}, {Request, ACK}} {
+		reply, ok := loaderBoot().Reply(loaderRequest(tc.msg, nil))
+		if !ok {
+			t.Fatalf("message %d: no answer", tc.msg)
+		}
+		if reply.MessageType() != tc.want || !reply.YIAddr.Equal(net.IPv4(192, 168, 8, 2)) || !reply.SIAddr.Equal(net.IPv4(192, 168, 1, 10)) {
+			t.Errorf("message %d: type %d yiaddr %v siaddr %v", tc.msg, reply.MessageType(), reply.YIAddr, reply.SIAddr)
+		}
+		if string(reply.Opts[OptSubnetMask]) != string(net.CIDRMask(24, 32)) || len(reply.Opts[OptLeaseTime]) != 4 {
+			t.Errorf("message %d: mask %v lease %v", tc.msg, reply.Opts[OptSubnetMask], reply.Opts[OptLeaseTime])
+		}
+	}
+}
+
+func TestARequestForTheNetworksOwnServerIsLeftAlone(t *testing.T) {
+	if _, ok := loaderBoot().Reply(loaderRequest(Request, net.IPv4(192, 168, 1, 1))); ok {
+		t.Error("the loader chose the router's offer: this server must stay silent")
+	}
+	if _, ok := loaderBoot().Reply(loaderRequest(Request, net.IPv4(192, 168, 1, 10))); !ok {
+		t.Error("a request to this server must be answered")
+	}
+}
+
+func TestAnOrdinaryPXEBootOfThatPCIsStillAProxyAnswer(t *testing.T) {
+	req, _ := Parse(pxeRequest(Discover, 7, "")) // with an architecture: the firmware, not the loader
+	req.CHAddr = [16]byte{0x04, 0x42, 0x1a, 0xed, 0xec, 0xe6}
+	reply, ok := loaderBoot().Reply(req)
+	if !ok || !reply.YIAddr.Equal(net.IPv4zero) || reply.File != "bootlace-x64.efi" {
+		t.Fatalf("got %+v ok=%v", reply, ok)
+	}
+	other := loaderRequest(Discover, nil) // another PC without a hand-off
+	other.CHAddr = [16]byte{1, 2, 3, 4, 5, 6}
+	if r, ok := loaderBoot().Reply(other); !ok || !r.YIAddr.Equal(net.IPv4zero) {
+		t.Errorf("a PC with no hand-off gets the usual proxy answer, got %+v ok=%v", r, ok)
+	}
+}

@@ -5,6 +5,7 @@
 package handoff
 
 import (
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ type Registry struct {
 	mu      sync.Mutex
 	pending map[string]entry // by MAC: the next network boot goes to the loader
 	chosen  map[string]entry // by IP address: the ISO that PC reads by TFTP
+	byMAC   map[string]entry // by MAC: the address the PC had when it chose the ISO (FreeBSD's loader asks for an address again, see LoaderAddress)
 }
 
 type entry struct {
@@ -53,11 +55,25 @@ func (r *Registry) SetKind(mac, ip, iso, kind string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.pending == nil {
-		r.pending, r.chosen = map[string]entry{}, map[string]entry{}
+		r.pending, r.chosen, r.byMAC = map[string]entry{}, map[string]entry{}, map[string]entry{}
 	}
 	now := r.now()
 	r.pending[norm(mac)] = entry{iso: iso, ip: ip, kind: kind, until: now.Add(pendingFor)}
 	r.chosen[ip] = entry{iso: iso, ip: ip, kind: kind, until: now.Add(chosenFor)}
+	r.byMAC[norm(mac)] = entry{iso: iso, ip: ip, kind: kind, until: now.Add(chosenFor)}
+}
+
+// LoaderAddress is the address that the PC with this MAC address had when it chose a FreeBSD ISO. FreeBSD's loader asks for an address by itself, with a DHCP request
+// of its own, and needs both an address and the name of this server in the answer: a network with a proxy DHCP server gives it only half each.
+func (r *Registry) LoaderAddress(mac string) (net.IP, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e, ok := r.byMAC[norm(mac)]
+	if !ok || e.kind != FreeBSD || r.now().After(e.until) {
+		return nil, false
+	}
+	ip := net.ParseIP(e.ip).To4()
+	return ip, ip != nil
 }
 
 // BootFile is the boot file to name in the DHCP answer for this PC, when its next network boot is meant for FreeBSD's loader.
@@ -92,7 +108,7 @@ func (r *Registry) Pending(mac, iso, kind string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.pending == nil {
-		r.pending, r.chosen = map[string]entry{}, map[string]entry{}
+		r.pending, r.chosen, r.byMAC = map[string]entry{}, map[string]entry{}, map[string]entry{}
 	}
 	r.pending[norm(mac)] = entry{iso: iso, kind: kind, until: r.now().Add(pendingFor)}
 }
@@ -102,7 +118,7 @@ func (r *Registry) Bind(ip, iso, kind string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.pending == nil {
-		r.pending, r.chosen = map[string]entry{}, map[string]entry{}
+		r.pending, r.chosen, r.byMAC = map[string]entry{}, map[string]entry{}, map[string]entry{}
 	}
 	r.chosen[ip] = entry{iso: iso, ip: ip, kind: kind, until: r.now().Add(chosenFor)}
 	for mac, e := range r.pending {

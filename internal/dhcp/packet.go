@@ -21,6 +21,8 @@ const (
 
 // Option numbers used here.
 const (
+	OptSubnetMask   = 1
+	OptLeaseTime    = 51
 	OptMessageType  = 53
 	OptServerID     = 54
 	OptVendorClass  = 60

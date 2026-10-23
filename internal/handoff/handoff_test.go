@@ -1,6 +1,7 @@
 package handoff
 
 import (
+	"net"
 	"testing"
 	"time"
 )
@@ -44,5 +45,30 @@ func TestChoicesExpire(t *testing.T) {
 	now = now.Add(chosenFor)
 	if _, ok := r.ISO("10.0.0.6"); ok {
 		t.Fatal("the ISO choice should have expired")
+	}
+}
+
+func TestLoaderAddressIsKnownByMACForFreeBSDOnly(t *testing.T) {
+	now := time.Now()
+	r := &Registry{Now: func() time.Time { return now }}
+	if _, ok := r.LoaderAddress("04:42:1a:ed:ec:e6"); ok {
+		t.Fatal("nothing was chosen yet")
+	}
+	r.Set("04-42-1A-ED-EC-E6", "192.168.8.2", "abc")
+	ip, ok := r.LoaderAddress("04:42:1a:ed:ec:e6")
+	if !ok || !ip.Equal(net.IPv4(192, 168, 8, 2)) {
+		t.Fatalf("got %v %v", ip, ok)
+	}
+	r.Fetched("192.168.8.2") // the loader was fetched: the PC is no longer pending, but its address is still known
+	if _, ok := r.LoaderAddress("04:42:1a:ed:ec:e6"); !ok {
+		t.Error("the address must survive the fetch of the loader")
+	}
+	r.SetKind("aa:bb:cc:dd:ee:01", "192.168.8.3", "abc", Windows)
+	if _, ok := r.LoaderAddress("aa:bb:cc:dd:ee:01"); ok {
+		t.Error("only FreeBSD hand-offs ask for this")
+	}
+	now = now.Add(chosenFor + time.Minute)
+	if _, ok := r.LoaderAddress("04:42:1a:ed:ec:e6"); ok {
+		t.Error("it must expire")
 	}
 }

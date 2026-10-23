@@ -295,7 +295,7 @@ func dhcpResponder(mode string, ip net.IP, base string, registry *handoff.Regist
 		}
 		return web.NativeBootFile(mac, efi)
 	}
-	boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Handoff: handoffFile, Seen: web.NoteDHCP, Files: map[dhcp.Arch]string{
+	boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Handoff: handoffFile, Seen: web.NoteDHCP, LoaderAddress: registry.LoaderAddress, Mask: maskOf(ip), Files: map[dhcp.Arch]string{
 		dhcp.ArchBIOS: "undionly.kpxe", dhcp.ArchX64EFI: "ipxe.efi",
 	}}
 	if mode == "proxy" {
@@ -360,4 +360,19 @@ func virtualInterface(name string) bool {
 		}
 	}
 	return false
+}
+
+// maskOf is the network mask of the network card that has this address (24 bits when it is not found).
+func maskOf(ip net.IP) net.IPMask {
+	addrs, _ := net.InterfaceAddrs()
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.Equal(ip) && len(n.Mask) > 0 {
+			if m := n.Mask; len(m) == 16 {
+				return m[12:]
+			} else {
+				return m
+			}
+		}
+	}
+	return net.CIDRMask(24, 32)
 }

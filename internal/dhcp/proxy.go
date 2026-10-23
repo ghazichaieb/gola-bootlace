@@ -77,6 +77,11 @@ type Boot struct {
 	Handoff func(mac string, efi bool) (string, bool)
 	// Seen is told of every PXE client that asks, so that the web interface can list a PC that never gets as far as a menu (Secure Boot refusing iPXE).
 	Seen func(mac string, efi, ipxe bool)
+	// LoaderAddress gives the address of a PC that was sent to FreeBSD's loader. The loader makes a DHCP request of its own (with a vendor class of PXEClient but no
+	// architecture, which a PC's firmware always sends) and needs an address and this server's name in one answer, which a proxy answer does not have.
+	LoaderAddress func(mac string) (net.IP, bool)
+	// Mask is the network mask of the network this server is on, told to that loader.
+	Mask net.IPMask
 }
 
 // Reply builds the proxy answer to a PXE request: an offer to a discover, an acknowledgement to a request. It returns false when the client
@@ -84,6 +89,11 @@ type Boot struct {
 func (b Boot) Reply(req *Packet) (*Packet, bool) {
 	if !IsPXE(req) {
 		return nil, false
+	}
+	if _, hasArch := req.Opts[OptClientArch]; !hasArch && b.LoaderAddress != nil {
+		if ip, ok := b.LoaderAddress(req.MAC().String()); ok {
+			return b.loaderReply(req, ip)
+		}
 	}
 	file := b.Script
 	if b.Seen != nil {
@@ -132,4 +142,35 @@ func (b Boot) handoff(req *Packet, a Arch) (string, bool) {
 		return "", false
 	}
 	return b.Handoff(req.MAC().String(), a != ArchBIOS)
+}
+
+// loaderReply answers the DHCP request that FreeBSD's loader makes after the firmware has started it: the address the PC already had (the network's DHCP server gave it a
+// moment ago) and this server as the server to read the kernel and the ISO from. A request meant for another DHCP server (the network's own) is left alone.
+func (b Boot) loaderReply(req *Packet, ip net.IP) (*Packet, bool) {
+	if id := req.Opts[OptServerID]; len(id) == 4 && !net.IP(id).Equal(b.ServerIP) {
+		return nil, false
+	}
+	kind := byte(Offer)
+	switch req.MessageType() {
+	case Discover:
+	case Request:
+		kind = ACK
+	default:
+		return nil, false
+	}
+	mask := b.Mask
+	if len(mask) != 4 {
+		mask = net.CIDRMask(24, 32)
+	}
+	return &Packet{
+		Op: bootReply, HType: req.HType, HLen: req.HLen, XID: req.XID, Secs: req.Secs, Flags: req.Flags,
+		CIAddr: net.IPv4zero, YIAddr: ip, SIAddr: b.ServerIP, GIAddr: req.GIAddr, CHAddr: req.CHAddr,
+		File: "boot/loader.efi",
+		Opts: map[byte][]byte{
+			OptMessageType: {kind},
+			OptServerID:    v4(b.ServerIP),
+			OptSubnetMask:  []byte(mask),
+			OptLeaseTime:   {0, 0, 0x0e, 0x10}, // an hour: the PC only needs it until it has started FreeBSD
+		},
+	}, true
 }
