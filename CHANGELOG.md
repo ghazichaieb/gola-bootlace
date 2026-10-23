@@ -3,6 +3,11 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **Security fixes found by `govulncheck`.** The `.xz` reader is updated (v0.5.12 to v0.5.17: a damaged packed file could use up memory), and the build needs Go 1.27.3 (a fix in the certificate checks used when a file is downloaded from a web address). Not in a release yet.
+- The Proxmox documentation now says plainly that the community-scripts project cannot take Bootlace until it is six months old with 600 stars (#50); `tools/proxmox/bootlace-lxc.sh` is the way to install in a container.
+
 ## 0.1.0 - 2026-10-23
 
 The first release. What the program does is listed at the end of this section.

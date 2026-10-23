@@ -2,14 +2,15 @@
 
 Two ways, with the same result: a small Debian container with Bootlace running in it as a service.
 
-## 1. The community-scripts script (recommended once it is published)
+## 1. The community-scripts script (not published yet: use the second way today)
 
-Bootlace is submitted to the [Proxmox VE Helper-Scripts / community-scripts](https://community-scripts.org/scripts). When it is there, it is installed from the Proxmox
-host's shell with the command shown on the script's page, and updated by typing `update` in the container's console. The files for it are in
-[deploy/community-scripts/](../deploy/community-scripts/) (`ct/`, `install/` and `json/`, in the layout that project asks for). The container has 1 core, 512 MB and 8 GB
+The [Proxmox VE Helper-Scripts / community-scripts](https://community-scripts.org/scripts) only take applications that are at least six months old, have 600 GitHub stars and are
+maintained, so Bootlace cannot be offered there yet (it is tracked in issue #50). The files are ready, in the layout that project asks for, and tested with its engine; once
+it is accepted it will be installed from the Proxmox host's shell with the command shown on the script's page, and updated by typing `update` in the container's console. They are in
+[deploy/community-scripts/](../deploy/community-scripts/) (`ct/`, `install/` and `json/`). The container has 1 core, 512 MB and 8 GB
 by default; the library (the ISOs) is a folder in the container (`/srv/bootlace/library`) until you add a mount point and choose it under Server in the web interface.
 
-## 2. This repository's own script
+## 2. This repository's own script (works today)
 
 [`tools/proxmox/bootlace-lxc.sh`](../tools/proxmox/bootlace-lxc.sh) makes the container, asks the few questions that matter, and installs the program from the release
 files. Run it as root on the Proxmox host, in a terminal:

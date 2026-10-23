@@ -1,12 +1,12 @@
 module github.com/ghazichaieb/gola-bootlace
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/CalebQ42/squashfs v1.4.1
 	github.com/klauspost/compress v1.20.3
 	github.com/sonroyaalmerol/go-smb-server v0.2.0
-	github.com/ulikunitz/xz v0.5.12
+	github.com/ulikunitz/xz v0.5.17
 )
 
 require (
