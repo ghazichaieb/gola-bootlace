@@ -46,6 +46,71 @@ type Config struct {
 	Access          Access            `json:"access"`          // which addresses may use the server, besides the local network
 	ImportLimitMBps int               `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
 	Cache           CacheSettings     `json:"cache"`
+	Tuning          Tuning            `json:"tuning"`
+	HidePatterns    []string          `json:"hidePatterns"` // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
+}
+
+// Tuning are the knobs of the network boot itself, for firmware and switches that do not cope with the defaults.
+type Tuning struct {
+	TFTPBlockSize int `json:"tftpBlockSize"` // the largest TFTP block to agree to; 0 follows what each client asks for (up to 65464)
+	TFTPWindow    int `json:"tftpWindow"`    // blocks sent ahead to FreeBSD's loader; 0 keeps the program's own number (-tftp-window), 1 sends one at a time
+}
+
+// MaxHidePatterns and MaxHidePattern bound the list of patterns and the length of one.
+const (
+	MaxHidePatterns = 200
+	MaxHidePattern  = 200
+)
+
+// MatchesHide says whether the path of an ISO in the library (with "/" between folders) matches one of the patterns. A pattern is compared without regard to case.
+// "*" stands for any text (also across folders) and "?" for one character, so "old/*" is everything in the folder old and "*beta*" any path with beta in it. A
+// pattern without them that ends in "/" is a folder (everything under it); any other must be the whole path or the file's own name.
+func MatchesHide(patterns []string, rel string) bool {
+	rel = strings.ToLower(rel)
+	base := rel[strings.LastIndex(rel, "/")+1:]
+	for _, p := range patterns {
+		p = strings.ToLower(strings.TrimSpace(p))
+		switch {
+		case p == "":
+		case strings.ContainsAny(p, "*?"):
+			if glob(p, rel) {
+				return true
+			}
+		case strings.HasSuffix(p, "/"):
+			if strings.HasPrefix(rel, p) {
+				return true
+			}
+		case p == rel || p == base:
+			return true
+		}
+	}
+	return false
+}
+
+// glob reports whether s matches the pattern, where * is any text and ? is any one character.
+func glob(p, s string) bool {
+	pr, sr := []rune(p), []rune(s)
+	star, mark := -1, 0
+	pi, si := 0, 0
+	for si < len(sr) {
+		switch {
+		case pi < len(pr) && (pr[pi] == '?' || pr[pi] == sr[si]) && pr[pi] != '*':
+			pi++
+			si++
+		case pi < len(pr) && pr[pi] == '*':
+			star, mark = pi, si
+			pi++
+		case star >= 0:
+			pi, mark = star+1, mark+1
+			si = mark
+		default:
+			return false
+		}
+	}
+	for pi < len(pr) && pr[pi] == '*' {
+		pi++
+	}
+	return pi == len(pr)
 }
 
 // Library is the folder the ISOs are in, as it was added (see package library): its path and the id that was written into its marker.
@@ -127,6 +192,27 @@ func (c *Config) Validate() error {
 		}
 		c.Titles[id] = t
 	}
+	if c.Tuning.TFTPBlockSize != 0 && (c.Tuning.TFTPBlockSize < 512 || c.Tuning.TFTPBlockSize > 65464) {
+		return errors.New("the TFTP block size must be 0 (follow the PC) or between 512 and 65464")
+	}
+	if c.Tuning.TFTPWindow < 0 || c.Tuning.TFTPWindow > 16 {
+		return errors.New("the TFTP window must be 0 (the program's own number) or between 1 and 16")
+	}
+	if len(c.HidePatterns) > MaxHidePatterns {
+		return fmt.Errorf("at most %d patterns", MaxHidePatterns)
+	}
+	patterns := []string{}
+	for _, p := range c.HidePatterns {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if strings.ContainsAny(p, "\r\n\x00") || utf8.RuneCountInString(p) > MaxHidePattern {
+			return fmt.Errorf("a pattern must be one line of at most %d characters", MaxHidePattern)
+		}
+		patterns = append(patterns, p)
+	}
+	c.HidePatterns = patterns
 	for id, h := range c.Hidden {
 		if !idPattern.MatchString(id) || !h {
 			delete(c.Hidden, id)
@@ -206,6 +292,7 @@ func (c Config) clone() Config {
 	}
 	d.Rules = append([]Rule(nil), c.Rules...)
 	d.Access.Networks = append([]string(nil), c.Access.Networks...)
+	d.HidePatterns = append([]string(nil), c.HidePatterns...)
 	return d
 }
 

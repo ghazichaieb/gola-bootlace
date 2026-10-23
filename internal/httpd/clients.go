@@ -145,9 +145,10 @@ type ISOInfo struct {
 	Size     int64     `json:"size"`
 	Modified time.Time `json:"modified"`
 	Hidden   bool      `json:"hidden"`
-	Method   string    `json:"method"`           // "recognised" or "disk"
-	Family   string    `json:"family,omitempty"` // for example "Windows setup" or "Ubuntu (casper)"
-	Args     string    `json:"args,omitempty"`   // extra kernel arguments for this ISO
+	ByRule   bool      `json:"hiddenByRule,omitempty"` // hidden by a pattern (Menu page), so its own switch does not apply
+	Method   string    `json:"method"`                 // "recognised" or "disk"
+	Family   string    `json:"family,omitempty"`       // for example "Windows setup" or "Ubuntu (casper)"
+	Args     string    `json:"args,omitempty"`         // extra kernel arguments for this ISO
 }
 
 // ISOInfos lists the ISOs of the folder with what is known of each.
@@ -158,7 +159,7 @@ func (s *Server) ISOInfos() ([]ISOInfo, error) {
 	}
 	out := make([]ISOInfo, 0, len(infos))
 	for _, e := range infos {
-		i := ISOInfo{ID: e.ISO.ID, Name: e.ISO.Name, Title: e.Title, Original: e.ISO.Title, Size: e.ISO.Size, Modified: e.ISO.ModTime, Hidden: e.Hidden, Method: "disk"}
+		i := ISOInfo{ID: e.ISO.ID, Name: e.ISO.Name, Title: e.Title, Original: e.ISO.Title, Size: e.ISO.Size, Modified: e.ISO.ModTime, Hidden: e.Hidden, ByRule: e.ByRule, Method: "disk"}
 		if e.Known {
 			i.Method, i.Family = "recognised", e.Boot.Family
 		}

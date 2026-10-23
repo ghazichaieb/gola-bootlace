@@ -73,14 +73,21 @@ func isLoaderName(name string) bool { return name == "boot/loader.efi" || name =
 // TFTPWindow says how many blocks to send ahead to a client: more than one only for FreeBSD's loader once it is running (it has fetched its own loader file
 // already, by the firmware's TFTP client, which does not take blocks ahead).
 func (s *Server) TFTPWindow(client net.IP, name string) int {
-	if s.Handoff == nil || s.TFTPAhead <= 1 || isLoaderName(name) || s.Handoff.Kind(client.String()) != handoff.FreeBSD {
+	ahead := s.TFTPAhead
+	if w := s.settings().Tuning.TFTPWindow; w > 0 { // (the setting made in the web interface wins over the command line)
+		ahead = w
+	}
+	if s.Handoff == nil || ahead <= 1 || isLoaderName(name) || s.Handoff.Kind(client.String()) != handoff.FreeBSD {
 		return 1
 	}
 	if _, ok := s.Handoff.ISO(client.String()); !ok {
 		return 1
 	}
-	return s.TFTPAhead
+	return ahead
 }
+
+// TFTPMaxBlock is the largest TFTP block size to agree to: the setting made in the web interface, 0 when each PC may ask for what it likes.
+func (s *Server) TFTPMaxBlock() int { return s.settings().Tuning.TFTPBlockSize }
 
 // TFTPLookup answers a TFTP request from the ISO the client chose; it has no answer for clients that did not choose a FreeBSD ISO.
 func (s *Server) TFTPLookup(client net.IP, name string) (fs.File, bool) {

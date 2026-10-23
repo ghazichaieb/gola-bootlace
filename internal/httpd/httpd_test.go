@@ -225,3 +225,35 @@ func TestTheNameAPCOffersIsKeptAndANamedPCIsNamedInTheLog(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestAnIsoMatchingAHidePatternIsNotInTheMenuButStillListed(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"My Linux.iso", "old/Retired.iso"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(dir, n)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("0123456789"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store, _, err := config.Open(filepath.Join(t.TempDir(), "c.json"), config.Config{HidePatterns: []string{"old/"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{ISODir: dir, Base: "http://10.0.0.1:8080", Config: store}
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+	_, body := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:ff&ip=10.0.0.9", nil)
+	if !strings.Contains(body, "My Linux") || strings.Contains(body, "Retired") {
+		t.Fatalf("the menu must hold the first and not the second:\n%s", body)
+	}
+	infos, err := s.ISOInfos()
+	if err != nil || len(infos) != 2 {
+		t.Fatalf("%v %v", infos, err)
+	}
+	for _, i := range infos {
+		if want := i.Name == "old/Retired.iso"; i.Hidden != want || i.ByRule != want {
+			t.Errorf("%s: hidden %v, by rule %v", i.Name, i.Hidden, i.ByRule)
+		}
+	}
+}

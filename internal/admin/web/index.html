@@ -617,7 +617,7 @@ async function pageISOs() {
       <td data-l="Name in the menu"><input class="inline" type="text" value="${esc(i.title)}" data-id="${i.id}" data-orig="${esc(i.original)}" aria-label="Name of ${esc(i.original)} in the menu" maxlength="120"><div class="muted small mono">${esc(i.name)}</div>${i.method === "recognised" && !/^(Windows|Disk image|Proxmox)/.test(i.family || "") ? `<input class="inline small" type="text" value="${esc(i.args || "")}" data-args="${i.id}" placeholder="Extra kernel arguments (optional)" aria-label="Extra kernel arguments for ${esc(i.title)}" maxlength="300">` : ""}</td>
       <td class="hide-s" data-l="Starts as">${i.method === "recognised" ? `<span class="badge ok">${esc(i.family)}</span>` : `<span class="badge warn" title="Handed to the PC as a disk: needs a lot of memory and works for few systems">as a disk</span>`}</td>
       <td class="hide-s" data-l="Size">${bytes(i.size)}</td>
-      <td data-l="In the menu"><label class="switch"><input type="checkbox" data-hide="${i.id}" ${i.hidden ? "" : "checked"} aria-label="Show ${esc(i.title)} in the menu"><span></span></label></td>
+      <td data-l="In the menu"><label class="switch"${i.hiddenByRule ? ' title="Hidden by a pattern on the Menu page"' : ""}><input type="checkbox" data-hide="${i.id}" ${i.hidden ? "" : "checked"} ${i.hiddenByRule ? "disabled" : ""} aria-label="Show ${esc(i.title)} in the menu"><span></span></label>${i.hiddenByRule ? `<div class="muted small">by a pattern</div>` : ""}</td>
       <td data-l="By itself"><label class="row small" style="margin:0;font-weight:500"><input type="radio" name="dflt" data-dflt="${i.id}" ${state.defaultAction === "iso:" + i.id ? "checked" : ""}> this one</label></td></tr>`).join("")}</tbody></table>
       <div style="margin:10px"><div class="small" style="font-weight:600">What starts by itself when nobody chooses in the menu</div>
         <label class="row small" style="margin:4px 0;font-weight:500"><input type="radio" name="dflt" data-dflt-other="local" ${state.defaultAction === "local" ? "checked" : ""}> The PC's own disk (the PC carries on as if Bootlace was not there)</label>
@@ -743,6 +743,18 @@ async function pageMenu() {
     $("#prev").innerHTML = `<div class="in"><div class="h">Choose what to start</div>` + items.map(x => `<div class="${x === sel ? "sel" : ""}">${esc(x.t)}</div>`).join("") + `<div style="margin-top:.8em;opacity:.8">${t > 0 && d ? "Starts the highlighted line after " + t + " s." : "Waits for a choice."}</div></div>`;
   };
   ["mo", "md"].forEach(id => $("#" + id).oninput = preview); preview();
+  const tuning = await api("/api/tuning");
+  page.insertAdjacentHTML("beforeend", `<form class="card" id="tf" style="margin-top:14px"><h2>Tuning</h2>
+    <div class="field"><label for="hp">Keep these ISOs out of the menu</label><textarea id="hp" rows="4" spellcheck="false" placeholder="old/&#10;*beta*&#10;Backups/*">${esc((tuning.hidePatterns || []).join("\n"))}</textarea>
+      <p class="hint">One pattern a line, compared with the path of the file in the library, without regard to case. <code>*</code> is any text and <code>?</code> one character: <code>old/</code> or <code>old/*</code> is everything in the folder old, <code>*beta*</code> any path with beta in it, <code>win11.iso</code> that one file. An ISO kept out this way is still listed on the ISOs page, marked "by a pattern".</p></div>
+    <div class="grid two"><div class="field"><label for="tb">Largest TFTP block (bytes)</label><input id="tb" type="number" min="0" max="65464" value="${tuning.tftpBlockSize}"><p class="hint">0 follows what each PC asks for. Some switches and firmware only work with small blocks: try 1024 or 512 (at least 512) when a PC stops at the start of a download.</p></div>
+    <div class="field"><label for="tw">TFTP blocks sent ahead (FreeBSD loader)</label><input id="tw" type="number" min="0" max="16" value="${tuning.tftpWindow}"><p class="hint">0 keeps the program's own number (4). 1 sends one block and waits, as the protocol says.</p></div></div>
+    <button class="btn primary">Save</button></form>`);
+  $("#tf").onsubmit = guard(async e => {
+    e.preventDefault();
+    await api("/api/tuning", "PUT", { hidePatterns: $("#hp").value.split("\n"), tftpBlockSize: parseInt($("#tb").value || "0", 10), tftpWindow: parseInt($("#tw").value || "0", 10) });
+    toast("Saved");
+  });
   $("#mf").onsubmit = guard(async e => {
     e.preventDefault();
     await api("/api/settings", "PUT", { menuTimeout: parseInt($("#mo").value || "0", 10), default: $("#md").value });

@@ -420,3 +420,23 @@ func TestAPCCanBeNamedAndTheNameIsSearchedAndKeptWhenForgotten(t *testing.T) {
 		t.Fatalf("%v", out)
 	}
 }
+
+func TestTuningAndPatternsAreSavedAndPatternsHideIsos(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	if code, _ := r.do("PUT", "/api/tuning", map[string]any{"tftpBlockSize": 100}, nil); code != 400 {
+		t.Fatalf("a block size under 512: %d", code)
+	}
+	code, _ := r.do("PUT", "/api/tuning", map[string]any{"tftpBlockSize": 1024, "tftpWindow": 2, "hidePatterns": []string{" old/ ", "", "*beta*"}}, nil)
+	if code != 200 || r.backend.rescans != 1 {
+		t.Fatalf("%d, rescans %d", code, r.backend.rescans)
+	}
+	_, out := r.do("GET", "/api/tuning", nil, nil)
+	pats := out["hidePatterns"].([]any)
+	if out["tftpBlockSize"].(float64) != 1024 || out["tftpWindow"].(float64) != 2 || len(pats) != 2 || pats[0] != "old/" {
+		t.Fatalf("%v", out)
+	}
+	if got := r.store.Get(); got.Tuning.TFTPBlockSize != 1024 || len(got.HidePatterns) != 2 {
+		t.Fatalf("%+v", got)
+	}
+}

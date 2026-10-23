@@ -107,3 +107,45 @@ func TestPCNamesAreKeyedByNormalisedMACAndCleaned(t *testing.T) {
 		t.Fatal("a refused change must leave the name as it was")
 	}
 }
+
+func TestHidePatterns(t *testing.T) {
+	patterns := []string{"old/", "*BETA*", "win11.iso", "Backups/*.iso", "dev-?.img", "  "}
+	for rel, want := range map[string]bool{
+		"old/a.iso": true, "Old/sub/a.iso": true, "older/a.iso": false, "x/old/a.iso": false,
+		"ubuntu-beta-2.iso": true, "x/Ubuntu_BETA.iso": true,
+		"win11.iso": true, "Windows/WIN11.ISO": true, "win11.iso.bak": false, "mywin11.iso": false,
+		"backups/2024/a.iso": true, "backups/a.img": false,
+		"dev-1.img": true, "dev-10.img": false,
+		"keep.iso": false,
+	} {
+		if got := MatchesHide(patterns, rel); got != want {
+			t.Errorf("%q: got %v, want %v", rel, got, want)
+		}
+	}
+	if MatchesHide(nil, "a.iso") || MatchesHide([]string{" "}, "a.iso") {
+		t.Error("no pattern matches nothing")
+	}
+}
+
+func TestTuningAndPatternsAreChecked(t *testing.T) {
+	s, _ := open(t)
+	if err := s.Update(func(c *Config) error { c.Tuning.TFTPBlockSize = 100; return nil }); err == nil {
+		t.Error("a block size under 512 must be refused")
+	}
+	if err := s.Update(func(c *Config) error { c.Tuning.TFTPWindow = 17; return nil }); err == nil {
+		t.Error("a window over 16 must be refused")
+	}
+	if err := s.Update(func(c *Config) error { c.HidePatterns = []string{"a\nb"}; return nil }); err == nil {
+		t.Error("a pattern with a line break must be refused")
+	}
+	if err := s.Update(func(c *Config) error {
+		c.Tuning = Tuning{TFTPBlockSize: 1024, TFTPWindow: 8}
+		c.HidePatterns = []string{" old/ ", "", "*beta*"}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Get(); got.Tuning.TFTPBlockSize != 1024 || len(got.HidePatterns) != 2 || got.HidePatterns[0] != "old/" {
+		t.Fatalf("%+v", got)
+	}
+}

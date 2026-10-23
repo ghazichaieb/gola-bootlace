@@ -51,6 +51,9 @@ type Server struct {
 	// receive them in order and to acknowledge each one: FreeBSD's loader, which otherwise needs a whole round trip through the firmware's network driver for every
 	// 1428 bytes. 1 or less sends one block and waits, as the protocol says.
 	Window func(client net.IP, name string) int
+	// MaxBlock, when set, is asked for every transfer and gives the largest block size to agree to (0: whatever the client asks for). Some switches and firmware only
+	// work with small blocks.
+	MaxBlock func() int
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -164,6 +167,11 @@ func (s *Server) read(conn net.PacketConn, client net.Addr, raw []byte) error {
 	if v, ok := req.options["blksize"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			block = min(max(n, minBlock), maxBlock)
+			if s.MaxBlock != nil {
+				if limit := s.MaxBlock(); limit >= minBlock {
+					block = min(block, limit)
+				}
+			}
 			oack = append(oack, "blksize", strconv.Itoa(block))
 		}
 	}

@@ -282,3 +282,26 @@ func TestAClientThatAsksForAWindowIsLeftToTheNormalWay(t *testing.T) {
 		t.Errorf("err %q, %d bytes", errMsg, len(got))
 	}
 }
+
+func TestTheBlockSizeCanBeCapped(t *testing.T) {
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	limit := 1024
+	s := &Server{FS: fstest.MapFS{"f": {Data: content(5000)}}, Timeout: 300 * time.Millisecond, Retries: 3, MaxBlock: func() int { return limit }}
+	go s.Serve(conn)
+	server := conn.LocalAddr().(*net.UDPAddr)
+	got, oack, msg := get(t, server, "f", "blksize", "1428")
+	if msg != "" || !bytes.Equal(got, content(5000)) || oack["blksize"] != "1024" {
+		t.Fatalf("error %q, %d bytes, %v", msg, len(got), oack)
+	}
+	if _, oack, _ = get(t, server, "f", "blksize", "700"); oack["blksize"] != "700" {
+		t.Errorf("a smaller block size than the cap is kept: %v", oack)
+	}
+	limit = 0 // changed in the web interface while the server runs: no cap
+	if _, oack, _ = get(t, server, "f", "blksize", "1428"); oack["blksize"] != "1428" {
+		t.Errorf("no cap: %v", oack)
+	}
+}

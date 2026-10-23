@@ -126,6 +126,8 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("POST /api/library/upload/check", a.authed(a.uploadCheck))
 	api.HandleFunc("PUT /api/library/upload", a.authed(a.upload))
 	api.HandleFunc("GET /api/log/download", a.authed(a.logDownload))
+	api.HandleFunc("GET /api/tuning", a.authed(a.tuningGet))
+	api.HandleFunc("PUT /api/tuning", a.authed(a.tuningSet))
 	api.HandleFunc("GET /api/cache", a.authed(a.cacheGet))
 	api.HandleFunc("PUT /api/cache", a.authed(a.cacheSet))
 	api.HandleFunc("GET /api/access", a.authed(a.accessGet))
@@ -456,6 +458,37 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// tuningGet and tuningSet are the TFTP knobs and the patterns that keep ISOs out of the menu.
+func (a *Admin) tuningGet(w http.ResponseWriter, _ *http.Request) {
+	c := a.o.Store.Get()
+	writeJSON(w, http.StatusOK, map[string]any{"tftpBlockSize": c.Tuning.TFTPBlockSize, "tftpWindow": c.Tuning.TFTPWindow, "hidePatterns": c.HidePatterns})
+}
+
+func (a *Admin) tuningSet(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		TFTPBlockSize int      `json:"tftpBlockSize"`
+		TFTPWindow    int      `json:"tftpWindow"`
+		HidePatterns  []string `json:"hidePatterns"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	err := a.o.Store.Update(func(c *config.Config) error {
+		c.Tuning = config.Tuning{TFTPBlockSize: in.TFTPBlockSize, TFTPWindow: in.TFTPWindow}
+		c.HidePatterns = in.HidePatterns
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	a.o.Backend.Rescan()
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: tuning saved (TFTP block size %d, window %d, %d hide pattern(s))", in.TFTPBlockSize, in.TFTPWindow, len(in.HidePatterns))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

@@ -24,6 +24,7 @@ type entryInfo struct {
 	Known   bool // the ISO is started from its own files; otherwise it is handed to the PC as a disk
 	Title   string
 	Hidden  bool
+	ByRule  bool // hidden by a pattern of the settings, not by the ISO's own switch
 	Entry   menu.Entry
 	Display string // the title and what kind of start it gets, as the menu shows it
 }
@@ -69,7 +70,8 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 	}
 	out := make([]entryInfo, 0, len(list))
 	for _, iso := range list {
-		e := entryInfo{ISO: iso, Title: iso.Title, Hidden: cfg.Hidden[iso.ID]}
+		byRule := config.MatchesHide(cfg.HidePatterns, iso.Name)
+		e := entryInfo{ISO: iso, Title: iso.Title, Hidden: cfg.Hidden[iso.ID] || byRule, ByRule: byRule}
 		if t := cfg.Titles[iso.ID]; t != "" {
 			e.Title = t
 		}
