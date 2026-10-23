@@ -101,6 +101,8 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	menuTimeout := fs.Int("menu-timeout", 20, "seconds before the default menu entry starts (0: wait for ever); the default entry is the PC's own disk unless another is chosen")
 	configPath := fs.String("config", "bootlace.json", "the file where the settings made in the web interface are kept (the menu options above only give its first contents)")
 	adminPassword := fs.String("admin-password", "", "the password of the web interface (default: made up the first time and written in the log)")
+	logFile := fs.String("log-file", "", "also write the log to this file (kept at the size of -log-size, with one older file next to it); the generated password is never written to it")
+	logSize := fs.Int("log-size", 5, "the size in MB at which the log file is replaced by a new one")
 	noAdmin := fs.Bool("no-admin", false, "do not offer the web interface")
 	debugSMB := fs.Bool("debug-smb", false, "log every message of the Windows file share (a lot: for finding faults)")
 	if err := applyEnv(fs, osLookup); err != nil { // (before the command line, so that the command line wins)
@@ -118,6 +120,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	logf := func(format string, a ...any) {
 		fmt.Fprintf(stdout, time.Now().Format("15:04:05")+"  "+format+"\n", a...)
 		history.Logf(format, a...)
+	}
+	if *logFile != "" {
+		if err := history.SetFile(*logFile, int64(*logSize)<<20); err != nil {
+			fmt.Fprintf(stderr, "bootlace: cannot write the log file: %v\n", err)
+			return 1
+		}
+		defer history.Close()
 	}
 	ip := net.ParseIP(*ipFlag)
 	if ip == nil {
@@ -190,7 +199,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			return 1
 		}
 		if generated != "" {
-			logf("web interface: the password was made up: %s  (change it under Account; it is shown only this once)", generated)
+			// shown on the console and in the web log, never written to the log file
+			line := fmt.Sprintf("web interface: the password was made up: %s  (change it under Account; it is shown only this once)", generated)
+			fmt.Fprintln(stdout, time.Now().Format("15:04:05")+"  "+line)
+			history.AddPrivate(line)
 		}
 		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
 			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}

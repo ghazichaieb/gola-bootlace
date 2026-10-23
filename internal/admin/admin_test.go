@@ -369,3 +369,23 @@ func TestPcListIsPagedSearchedAndCleaned(t *testing.T) {
 		t.Fatal("a save that leaves pcDays out must keep it")
 	}
 }
+
+func TestTheLogCanBeDownloadedOnlyAfterALogin(t *testing.T) {
+	r := newRig(t)
+	if code, _ := r.do("GET", "/api/log/download", nil, nil); code != 401 {
+		t.Fatalf("without a login: %d", code)
+	}
+	r.login()
+	req, _ := http.NewRequest("GET", r.ts.URL+"/api/log/download", nil)
+	req.AddCookie(r.cookie)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var body bytes.Buffer
+	_, _ = body.ReadFrom(res.Body)
+	if res.StatusCode != 200 || !strings.HasPrefix(res.Header.Get("Content-Disposition"), "attachment;") || !strings.Contains(body.String(), "  first line\n") {
+		t.Fatalf("%d %q %q", res.StatusCode, res.Header.Get("Content-Disposition"), body.String())
+	}
+}

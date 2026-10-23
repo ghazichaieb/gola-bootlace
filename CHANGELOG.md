@@ -3,6 +3,10 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **A log file, and a button to download the log (#46).** `-log-file PATH` (or `BOOTLACE_LOG_FILE`) also writes the log to a file that keeps to `-log-size` MB (default 5): when it is full it becomes `PATH.1` (the one older file that is kept) and a new one starts, so a restart of a container or of Windows no longer loses the log. The password made up at the first start is shown on the console and in the web log but never written to the file. The Log page has a "Download the log" button.
+
 ## 0.1.5 - 2026-10-23
 
 - **FreeBSD, pfSense and OPNsense: reading the ISO by TFTP is several times faster.** FreeBSD's loader reads its kernel and the whole ISO by TFTP, one 1428-byte block at a time, and on the first real PC that took about 30 minutes for pfSense's 875 MB (a round trip through the firmware's network driver for every block). Bootlace now sends up to four blocks ahead of the acknowledgements to that loader (only to it: not to a client that asks for a window itself, and not to the firmware's own TFTP client), and sends the blocks again from the oldest one that is not acknowledged when the client says it missed one. `-tftp-window N` (or `BOOTLACE_TFTP_WINDOW`) changes the number; 1 turns it off. The log now says how long a large TFTP transfer took and its speed.

@@ -123,6 +123,7 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("PUT /api/library/limit", a.authed(a.limitSet))
 	api.HandleFunc("POST /api/library/upload/check", a.authed(a.uploadCheck))
 	api.HandleFunc("PUT /api/library/upload", a.authed(a.upload))
+	api.HandleFunc("GET /api/log/download", a.authed(a.logDownload))
 	api.HandleFunc("GET /api/cache", a.authed(a.cacheGet))
 	api.HandleFunc("PUT /api/cache", a.authed(a.cacheSet))
 	api.HandleFunc("GET /api/access", a.authed(a.accessGet))
@@ -657,6 +658,14 @@ func (a *Admin) logLines(w http.ResponseWriter, r *http.Request) {
 	}
 	lines, last := a.o.Log.After(after, limit)
 	writeJSON(w, http.StatusOK, map[string]any{"lines": lines, "last": last})
+}
+
+// logDownload sends the whole log as a text file: the log file (and the older one) when there is one, else what is kept in memory.
+func (a *Admin) logDownload(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="bootlace-`+time.Now().Format("20060102-150405")+`.log"`)
+	w.Header().Set("Cache-Control", "no-store")
+	_ = a.o.Log.Dump(w)
 }
 
 func atoi(s string) int {

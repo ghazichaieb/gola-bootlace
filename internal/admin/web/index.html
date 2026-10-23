@@ -742,7 +742,7 @@ async function pageMenu() {
 // ---- log
 async function pageLog() {
   const page = $("#page");
-  page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Log</h1><div class="row"><label class="row small" style="margin:0;font-weight:500"><input type="checkbox" id="follow" checked> Follow</label><input id="flt" class="inline" type="text" placeholder="Filter" style="width:180px" aria-label="Filter the log"></div></div><div class="log" id="logbox" tabindex="0" aria-label="Server log"></div>`;
+  page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Log</h1><div class="row"><label class="row small" style="margin:0;font-weight:500"><input type="checkbox" id="follow" checked> Follow</label><input id="flt" class="inline" type="text" placeholder="Filter" style="width:180px" aria-label="Filter the log"><a class="btn small" href="/api/log/download" download>Download the log</a></div></div><div class="log" id="logbox" tabindex="0" aria-label="Server log"></div>`;
   const box = $("#logbox");
   const kind = t => /dhcp:/.test(t) ? "dhcp" : /tftp:/.test(t) ? "tftp" : /smb:|share/.test(t) ? "smb" : /menu|rule/.test(t) ? "menu" : /web interface/.test(t) ? "web" : "";
   const paint = () => {

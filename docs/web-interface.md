@@ -30,7 +30,7 @@ minutes. Anyone on the network can reach the login page, so use a password you w
 | ISOs | (also lists disk images: .img and .raw, packed or not) rename an ISO in the menu, hide it, choose what starts by itself (one of the ISOs, the PC's own disk or nothing), look inside the ISOs again |
 | PCs | every PC that asked for a menu (name from its firmware, MAC, address, UEFI or BIOS, what it did last) and a rule for each: show the menu, boot from its own disk, or start one ISO without a menu. Rules can also be added by MAC address for a PC that has not started yet |
 | Menu | heading, seconds before the default choice starts, what starts by itself (nothing, the PC's own disk, an ISO), with a preview |
-| Log | the last 2000 lines of the server log, live, with a filter |
+| Log | the last 2000 lines of the server log, live, with a filter, and a button that downloads the whole log (see `-log-file` for a log that survives a restart) |
 | Account | change the password |
 
 Everything applies at the next start of a PC: the menu is made again for each one.
