@@ -294,6 +294,7 @@ if [ -z "${ROOTFS_STORAGE:-}" ]; then
 	ROOTFS_STORAGE=$(pvesm status --content rootdir 2>/dev/null | awk 'NR>1 && $3=="active" {print $1; exit}')
 fi
 [ -n "$ROOTFS_STORAGE" ] || die "no storage can hold containers (set ROOTFS_STORAGE=...)"
+TEMPLATE_STORAGE_GIVEN=${TEMPLATE_STORAGE:-}
 if [ -z "${TEMPLATE_STORAGE:-}" ]; then
 	TEMPLATE_STORAGE=$(pvesm status --content vztmpl 2>/dev/null | awk 'NR>1 && $3=="active" {print $1; exit}')
 fi
@@ -301,12 +302,32 @@ fi
 
 fetch_program
 
-say "Getting a Debian template ..."
-pveam update >/dev/null 2>&1 || true
-# (the template of this host's own architecture: the arm64 one sorts after the amd64 one of the same version)
-template=$(pveam available --section system | awk '{print $2}' | grep -E "^debian-1[23]-standard_.*_${ARCH}\.tar\.(zst|gz|xz)$" | sort -V | tail -n 1 || true)
-[ -n "$template" ] || die "no Debian template for $ARCH is on offer (is this host online?)"
-pveam list "$TEMPLATE_STORAGE" | grep -q "$template" || pveam download "$TEMPLATE_STORAGE" "$template"
+# A Debian 12 or 13 template that is already on this host (on any storage that holds templates) is used as it is: nothing is downloaded. Only when there is none
+# is the newest one on offer downloaded (the template of this host's own architecture: the arm64 one sorts after the amd64 one of the same version).
+say "Looking for a Debian template ..."
+tpl_re="^debian-1[23]-standard_.*_${ARCH}\.tar\.(zst|gz|xz)$"
+if [ -n "${TEMPLATE_STORAGE_GIVEN:-}" ]; then tpl_storages=$TEMPLATE_STORAGE; else tpl_storages=$(pvesm status --content vztmpl 2>/dev/null | awk 'NR>1 && $3=="active" {print $1}'); fi
+local_tpl=""
+for st in $tpl_storages; do
+	for name in $(pveam list "$st" 2>/dev/null | awk 'NR>1 {print $1}'); do
+		file=${name##*/}
+		echo "$file" | grep -qE "$tpl_re" || continue
+		local_tpl="$local_tpl
+$file $st"
+	done
+done
+found=$(echo "$local_tpl" | sed '/^$/d' | sort -V | tail -n 1)
+if [ -n "$found" ]; then
+	template=${found%% *}
+	TEMPLATE_STORAGE=${found##* }
+	say "Using the template $template that is already on $TEMPLATE_STORAGE"
+else
+	say "Getting a Debian template ..."
+	pveam update >/dev/null 2>&1 || true
+	template=$(pveam available --section system | awk '{print $2}' | grep -E "$tpl_re" | sort -V | tail -n 1 || true)
+	[ -n "$template" ] || die "no Debian template for $ARCH is on offer (is this host online?)"
+	pveam download "$TEMPLATE_STORAGE" "$template"
+fi
 
 # ---- a network share on the host: the entry in /etc/fstab, a login file the person fills in, and the folder it is mounted on.
 # The share is an "automount": the host starts without it and mounts it the first time anything uses it, so a NAS that boots later than this host is no problem. A

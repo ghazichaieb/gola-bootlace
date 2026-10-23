@@ -3,6 +3,10 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **Proxmox script: no needless template download.** A Debian 12 or 13 template that is already on the host (on any storage that holds templates) is used as it is; the newest one on offer is downloaded only when there is none. (The script itself is fetched from `main`, so this applies to the next install without a new release.)
+
 ## 0.1.1 - 2026-10-23
 
 - **Security fixes found by `govulncheck`.** The `.xz` reader is updated (v0.5.12 to v0.5.17: a damaged packed file could use up memory), and the build needs Go 1.27.3 (a fix in the certificate checks used when a file is downloaded from a web address).
