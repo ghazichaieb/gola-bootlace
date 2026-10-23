@@ -50,6 +50,7 @@ func Strip(c config.Config, secrets bool) config.Config {
 	c.PasswordChosen, c.FirstStartDone = false, false // (belong to this container)
 	if !secrets {
 		c.AdminHash, c.SMBPassword = "", ""
+		c.BootPasswords = nil // (hashes of the passwords the menu asks for: kept out of the library copy and of a backup without secrets)
 	}
 	return c
 }
@@ -135,6 +136,7 @@ func Merge(current config.Config, in *Contents) config.Config {
 	next.PasswordChosen, next.FirstStartDone = current.PasswordChosen, current.FirstStartDone
 	if !in.Manifest.Secrets {
 		next.AdminHash, next.SMBPassword = current.AdminHash, current.SMBPassword
+		next.BootPasswords = current.BootPasswords
 	}
 	return next
 }

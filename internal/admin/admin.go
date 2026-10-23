@@ -454,10 +454,11 @@ func (a *Admin) isos(w http.ResponseWriter, _ *http.Request) {
 func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var in struct {
-		Hidden *bool             `json:"hidden"`
-		Title  *string           `json:"title"`
-		Args   *string           `json:"args"`
-		Debug  *config.DebugMode `json:"debug"`
+		Hidden       *bool             `json:"hidden"`
+		Title        *string           `json:"title"`
+		Args         *string           `json:"args"`
+		Debug        *config.DebugMode `json:"debug"`
+		BootPassword *string           `json:"bootPassword"` // the password the menu asks for before it starts this ISO; empty takes it away
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -471,7 +472,25 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "no such ISO")
 		return
 	}
+	hash := ""
+	if in.BootPassword != nil && *in.BootPassword != "" {
+		if len(*in.BootPassword) < 4 {
+			fail(w, http.StatusBadRequest, "the password needs at least 4 characters")
+			return
+		}
+		var herr error
+		if hash, herr = HashPassword(*in.BootPassword); herr != nil {
+			fail(w, http.StatusInternalServerError, herr.Error())
+			return
+		}
+	}
 	err = a.o.Store.Update(func(c *config.Config) error {
+		if in.BootPassword != nil {
+			if c.BootPasswords == nil {
+				c.BootPasswords = map[string]string{}
+			}
+			c.BootPasswords[id] = hash // empty: dropped by the check
+		}
 		if in.Hidden != nil {
 			if *in.Hidden {
 				c.Hidden[id] = true

@@ -12,6 +12,9 @@ import (
 type Entry struct {
 	Name     string
 	Commands []string
+	// Guard is run before Commands by the menu (not by a rule, which is a deliberate start): lines that end in `goto denied` when the person may not go on. They are
+	// written as they are, without the "|| goto failed" that Commands get.
+	Guard []string
 
 	// For the text table of a BIOS screen (Options.Ascii): the name, what kind of start it gets and its size, one to a column. Without them the table
 	// shows Name in the first column.
@@ -276,6 +279,9 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	b.WriteString("goto ${selected}\n\n")
 	for i, e := range entries {
 		fmt.Fprintf(&b, ":%s\n", label(e.Name, i))
+		for _, g := range e.Guard {
+			b.WriteString(g + "\n")
+		}
 		for _, c := range e.Commands {
 			fmt.Fprintf(&b, "%s || goto failed\n", c)
 		}
@@ -288,6 +294,7 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 		fmt.Fprintf(&b, ":next\nchain %s || goto shell\n\n", o.Next)
 	}
 	b.WriteString(":failed\necho Booting did not work: read the message above.\nprompt --timeout 20000 " + failedPrompt + " || echo\ngoto again\n\n")
+	b.WriteString(":denied\necho Wrong password, or none given. Back to the menu in 3 seconds.\nsleep 3\ngoto again\n\n")
 	b.WriteString(again(o.Again) + "\n")
 	b.WriteString(":local\necho Leaving the network boot: the PC goes on to its own disk.\nexit\n\n:reboot\nreboot\n\n:shell\nshell\n")
 	return b.String()

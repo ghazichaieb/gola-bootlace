@@ -191,7 +191,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	go indexer.Run(background)
 	go imp.Run(background)
 	dataDir := filepath.Dir(*configPath)
-	web := &httpd.Server{CacheSettings: func() (string, int64) { c := store.Get().Cache; return c.Where, int64(c.LocalLimitMB) << 20 }, Handoff: registry, TFTPAhead: *tftpAhead, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Access: policy, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
+	web := &httpd.Server{CheckPassword: admin.CheckPassword, CacheSettings: func() (string, int64) { c := store.Get().Cache; return c.Where, int64(c.LocalLimitMB) << 20 }, Handoff: registry, TFTPAhead: *tftpAhead, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Access: policy, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
 		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort, ISCSIPort: *iscsiPort}
 	tidier := &tidy.Tidier{Library: lib, Index: indexer.Get, Caches: web.CacheDirs, Logf: logf,
 		ISOIDs: func() (map[string]bool, error) {

@@ -37,13 +37,15 @@ type Server struct {
 	// Active, when set, says whether PCs are served: while it is false everything but the web interface answers "stopped".
 	Active func() bool
 	// Access, when set, decides which addresses are answered (the local network by default).
-	Access      *access.Policy
-	Base        string // how PCs reach this server, for example http://192.168.88.1:8080 (no trailing slash)
-	Logf        func(format string, args ...any)
-	Menu        menu.Options // which entry is chosen when nobody chooses, and after how many seconds
-	SMBPort     int          // the port of the share that shows an ISO to Windows' set-up environment (445 unless something else holds it)
-	SMBPassword string       // what Windows' set-up environment logs in with (made up when the server starts)
-	Pick        string       // when not empty: the first entry whose name contains this text is the one chosen when nobody chooses (a test bench's shortcut)
+	Access *access.Policy
+	// CheckPassword says whether a password matches a stored hash (the web interface's PBKDF2); needed for the passwords that protect single ISOs.
+	CheckPassword func(hash, password string) bool
+	Base          string // how PCs reach this server, for example http://192.168.88.1:8080 (no trailing slash)
+	Logf          func(format string, args ...any)
+	Menu          menu.Options // which entry is chosen when nobody chooses, and after how many seconds
+	SMBPort       int          // the port of the share that shows an ISO to Windows' set-up environment (445 unless something else holds it)
+	SMBPassword   string       // what Windows' set-up environment logs in with (made up when the server starts)
+	Pick          string       // when not empty: the first entry whose name contains this text is the one chosen when nobody chooses (a test bench's shortcut)
 
 	// Config holds the settings made in the web interface; without it the fields above are the settings.
 	Config *config.Store
@@ -67,6 +69,8 @@ type Server struct {
 	started      time.Time
 	useMu        sync.Mutex
 	using        map[string]int // ISOs that PCs are reading, by name in the library
+	authMu       sync.Mutex
+	authFails    map[string]*authFailure // wrong boot passwords by address
 	cacheFullMu  sync.Mutex
 	cacheFull    string // why the cache could not make room, and when
 	cacheFullAt  time.Time
@@ -123,6 +127,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/w/", s.windows)
 	mux.HandleFunc("/next", s.next)
 	mux.HandleFunc("/unpack/", s.unpack)
+	mux.HandleFunc("/auth", s.authBoot)
 	for path, h := range s.Mount {
 		mux.Handle(path, h)
 	}

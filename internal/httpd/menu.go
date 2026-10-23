@@ -19,14 +19,15 @@ import (
 
 // entryInfo is one ISO as the menu and the web interface see it.
 type entryInfo struct {
-	ISO     isos.ISO
-	Boot    family.Boot
-	Known   bool // the ISO is started from its own files; otherwise it is handed to the PC as a disk
-	Title   string
-	Hidden  bool
-	ByRule  bool // hidden by a pattern of the settings, not by the ISO's own switch
-	Entry   menu.Entry
-	Display string // the title and what kind of start it gets, as the menu shows it
+	ISO       isos.ISO
+	Boot      family.Boot
+	Known     bool // the ISO is started from its own files; otherwise it is handed to the PC as a disk
+	Title     string
+	Hidden    bool
+	Protected bool // the menu asks for a password before it starts this ISO
+	ByRule    bool // hidden by a pattern of the settings, not by the ISO's own switch
+	Entry     menu.Entry
+	Display   string // the title and what kind of start it gets, as the menu shows it
 }
 
 // settings are the current settings: from the settings file when there is one, otherwise from the fields the program was started with.
@@ -138,6 +139,12 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 			}}
 		}
 		out = append(out, e)
+	}
+	for i := range out { // an ISO with a password: the menu asks for it first (a rule that starts it does not: Direct leaves the guard out)
+		if cfg.BootPasswords[out[i].ISO.ID] != "" {
+			out[i].Protected = true
+			out[i].Entry.Guard = s.guardLines(out[i].ISO.ID)
+		}
 	}
 	return out, nil
 }

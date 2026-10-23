@@ -32,13 +32,14 @@ type Rule struct {
 
 // Config is the whole file.
 type Config struct {
-	MenuTimeout     int                  `json:"menuTimeout"` // seconds before the default entry starts; 0 waits for a choice
-	PCDays          int                  `json:"pcDays"`      // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
-	Default         string               `json:"default"`     // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
-	Hidden          map[string]bool      `json:"hidden"`      // ISO id -> not in the menu
-	Titles          map[string]string    `json:"titles"`      // ISO id -> the name shown instead of the file name
-	Debug           map[string]DebugMode `json:"debug"`       // ISO id -> how to start it for finding faults (see DebugMode)
-	Args            map[string]string    `json:"args"`        // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
+	MenuTimeout     int                  `json:"menuTimeout"`   // seconds before the default entry starts; 0 waits for a choice
+	PCDays          int                  `json:"pcDays"`        // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
+	Default         string               `json:"default"`       // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
+	Hidden          map[string]bool      `json:"hidden"`        // ISO id -> not in the menu
+	Titles          map[string]string    `json:"titles"`        // ISO id -> the name shown instead of the file name
+	Debug           map[string]DebugMode `json:"debug"`         // ISO id -> how to start it for finding faults (see DebugMode)
+	Args            map[string]string    `json:"args"`          // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
+	BootPasswords   map[string]string    `json:"bootPasswords"` // ISO id -> hash of the password the menu asks for before it starts that ISO (see package admin); a secret, not in backups without secrets
 	Rules           []Rule               `json:"rules"`
 	PCNames         map[string]string    `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
 	AdminHash       string               `json:"adminHash"`       // see package admin
@@ -248,6 +249,11 @@ func (c *Config) Validate() error {
 		}
 		c.Args[id] = a
 	}
+	for id, h := range c.BootPasswords {
+		if !idPattern.MatchString(id) || h == "" {
+			delete(c.BootPasswords, id)
+		}
+	}
 	for id, d := range c.Debug {
 		if !idPattern.MatchString(id) || (!d.Verbose && !d.Serial) {
 			delete(c.Debug, id)
@@ -306,6 +312,10 @@ func (c Config) clone() Config {
 	for k, v := range c.Titles {
 		d.Titles[k] = v
 	}
+	d.BootPasswords = map[string]string{}
+	for k, v := range c.BootPasswords {
+		d.BootPasswords[k] = v
+	}
 	d.Debug = map[string]DebugMode{}
 	for k, v := range c.Debug {
 		d.Debug[k] = v
@@ -363,6 +373,9 @@ func Open(path string, seed Config) (s *Store, created bool, err error) {
 		}
 		if s.cfg.PCNames == nil {
 			s.cfg.PCNames = map[string]string{}
+		}
+		if s.cfg.BootPasswords == nil {
+			s.cfg.BootPasswords = map[string]string{}
 		}
 		if s.cfg.Debug == nil {
 			s.cfg.Debug = map[string]DebugMode{}
