@@ -72,6 +72,9 @@ asking"), and watch what is happening. It is described in [docs/web-interface.md
 - **Which systems work, and how well:** [docs/compatibility.md](docs/compatibility.md) lists every ISO tried and what happened. An ISO is marked as working only after it started in the test lab.
 - **A system that is not on the list may still work.** Bootlace recognises well-known systems by their files, and for others it reads the ISO's own boot menu and looks at its
   start-up disk to see what it is made of. A few seconds after you add an ISO, the menu shows what it found.
+- **The ISO's own boot menu is not shown.** Bootlace starts one way of each ISO (the ordinary one). What the ISO's own menu would offer (safe graphics, an OEM or minimal install, a
+  rescue or text mode, "check the disc", persistence, memtest) is not offered yet; for now you can add extra kernel arguments for an ISO on the management page. Showing those entries
+  is planned ([#35](https://github.com/ghazichaieb/gola-bootlace/issues/35)).
 - **Does it change what is installed or how the system runs?** The installed system is the installer's own, and Bootlace never writes to the ISO or the PC's disks. But a system that runs from
   the network does not start exactly as it would from a disc: the network has to stay up, and a few features that need the boot stick (Tails's persistent storage, for example) are not
   there. Read [docs/what-bootlace-changes.md](docs/what-bootlace-changes.md) before relying on it for something important.

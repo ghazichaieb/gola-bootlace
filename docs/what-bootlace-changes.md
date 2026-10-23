@@ -37,7 +37,7 @@ This page lists what, and says for each point whether it was checked on a real r
    thing it labels otherwise), and Ubuntu desktop ISOs get `cloud-init=disabled`. Neither is a setting of the installed system (**expected**: an installer does not copy
    them; not checked on a complete install of each).
 5. **The distribution's own boot loader and menu are not used.** iPXE loads the kernel, so what that menu would have offered (language and "safe graphics" choices, OEM
-   install, memtest, persistence) is not offered unless it is in Bootlace's menu. Extra arguments can be added per ISO in the web interface. Some systems start
+   install, memtest, persistence) is not offered (planned: [#35](https://github.com/ghazichaieb/gola-bootlace/issues/35)). Extra arguments can be added per ISO in the web interface. Some systems start
    in another video mode than from their own boot loader (**expected**).
 6. **Network card drivers may be loaded earlier than usual.** A few start-up disks (Tails, Alpine, Proxmox VE, ChimeraOS) have no network drivers because they were made for
    a USB stick or disc. Bootlace brings the common ethernet drivers from the ISO's *own* kernel modules (same kernel version) and loads them first (**checked**).
