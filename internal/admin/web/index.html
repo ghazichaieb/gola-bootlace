@@ -281,10 +281,23 @@ function serverBanner(lib, svc) {
 async function pageServer() {
   const page = $("#page");
   page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>
+  <div class="card" id="speedcard" style="margin-top:14px"><h2>Library speed test</h2><p class="hint" style="margin-top:0">Writes and reads a test file (up to 512 MB, at most a tenth of the free room) in the library and in the container's own cache folder, then removes it, and says how many installs the library can carry at once. A library on a slow network mount is the usual reason an install is slow. Takes up to a minute.</p>
+    <div class="row"><button class="btn" id="speedgo">Measure the speed</button></div><div id="speedout" aria-live="polite"></div></div>
   <div class="card" id="pxecard" style="margin-top:14px"><h2>Other servers on the network</h2><p class="hint" style="margin-top:0">Two servers answering the same PC is the most common reason a network boot fails. This sends the question a PC's firmware sends (a PXE DHCP discover) on this server's network, listens for a few seconds and lists every answer. It runs when you press the button and once when the program starts; it sends one broadcast message each time.</p>
     <div class="row"><button class="btn" id="pxego">Look for other servers</button></div><div id="pxeout" aria-live="polite"></div></div>
   <div class="card" id="selfcard" style="margin-top:14px"><h2>Self-test</h2><p class="hint" style="margin-top:0">Asks the server's own address for what a PC asks for, one step at a time: the boot script and the menu, the first bytes of an ISO, the TFTP file, the Windows share's first message, the network disk's greeting and the iSCSI port. It shows which step fails and what to look at. A firewall in front of this computer cannot be seen this way, because the questions come from the computer itself.</p>
     <div class="row"><button class="btn" id="selfgo">Run the self-test</button></div><div id="selfout" aria-live="polite"></div></div>`;
+  const runSpeed = async force => {
+    const b = $("#speedgo"); b.disabled = true; b.textContent = "Measuring ...";
+    try {
+      const r = await api("/api/speedtest", "POST", { force });
+      $("#speedout").innerHTML = `<table class="rt" style="margin-top:10px"><tbody>${r.results.map(x => `<tr><td><strong>${esc(x.name)}</strong><div class="muted small mono">${esc(x.dir || "")}</div></td><td class="small">${x.error ? `<span class="bad">${esc(x.error)}</span>` : `writes <strong>${x.writeMBps.toFixed(0)} MB/s</strong>, reads <strong>${x.readMBps.toFixed(0)} MB/s</strong>${x.cacheDropped ? "" : `<div class="muted">The read may come from the computer's memory (its file cache could not be emptied), so it can be higher than the disk's.</div>`}`}</td><td class="small">${x.error ? "" : `about <strong>${x.installs}</strong> install(s) at once at ${r.installMBps} MB/s each`}</td></tr>`).join("")}</tbody></table>`;
+    } catch (e) {
+      if (e.status === 409 && e.data && e.data.busy) { if (await ask("PCs are using the server", `${e.data.pcs} PC(s) are using the server right now. The test uses the same disk and would slow them down.`, "Measure anyway")) { b.disabled = false; return runSpeed(true); } }
+      else throw e;
+    } finally { b.disabled = false; b.textContent = "Measure the speed"; }
+  };
+  $("#speedgo").onclick = guard(() => runSpeed(false));
   const drawPXE = r => {
     if (!r || !r.result) { $("#pxeout").innerHTML = `<p class="muted small" style="margin-bottom:0">Not looked yet.</p>`; return; }
     const x = r.result;

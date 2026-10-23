@@ -11,8 +11,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,6 +30,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/pxecheck"
 	"github.com/ghazichaieb/gola-bootlace/internal/selftest"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
+	"github.com/ghazichaieb/gola-bootlace/internal/speedtest"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
 )
 
@@ -73,6 +76,7 @@ type Admin struct {
 	sessions map[string]*session
 	fails    map[string]*failure
 	uploads  chan struct{}
+	speed    sync.Mutex // one speed test at a time
 }
 
 type failure struct {
@@ -133,6 +137,7 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("PUT /api/library/upload", a.authed(a.upload))
 	api.HandleFunc("GET /api/log/download", a.authed(a.logDownload))
 	api.HandleFunc("POST /api/selftest", a.authed(a.selfTest))
+	api.HandleFunc("POST /api/speedtest", a.authed(a.speedTest))
 	api.HandleFunc("GET /api/pxecheck", a.authed(a.pxeLast))
 	api.HandleFunc("POST /api/pxecheck", a.authed(a.pxeRun))
 	api.HandleFunc("GET /api/tuning", a.authed(a.tuningGet))
@@ -495,6 +500,56 @@ func (a *Admin) pxeRun(w http.ResponseWriter, r *http.Request) {
 		a.o.Logf("web interface: looked for other PXE or DHCP servers: %d answer(s), %d competing", len(res.Answers), res.Conflicts())
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"available": true, "result": res})
+}
+
+// speedTest writes and reads a test file in the library and in the container's own cache folder and reports the speeds. It is not run while PCs are using the server
+// unless the person says so: it uses the disk and the network share they are reading from.
+func (a *Admin) speedTest(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Force bool `json:"force"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if pcs := a.o.Services.Sessions(); len(pcs) > 0 && !in.Force {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": fmt.Sprintf("%d PC(s) are using the server right now, and the test would slow them down", len(pcs)), "busy": true, "pcs": len(pcs)})
+		return
+	}
+	if !a.speed.TryLock() {
+		fail(w, http.StatusConflict, "a speed test is already running")
+		return
+	}
+	defer a.speed.Unlock()
+	type where struct {
+		Name string `json:"name"`
+		speedtest.Result
+		Summary string `json:"summary"`
+	}
+	var out []where
+	run := func(name, dir string) {
+		res, err := speedtest.Folder(r.Context(), dir)
+		if err != nil {
+			res.Error = err.Error()
+		}
+		out = append(out, where{Name: name, Result: res, Summary: res.Summary()})
+	}
+	if err := a.o.Library.Check(); err != nil {
+		out = append(out, where{Name: "The library", Result: speedtest.Result{Error: err.Error()}, Summary: err.Error()})
+	} else {
+		run("The library", a.o.Library.Path())
+	}
+	cacheDir := a.o.Backend.CacheUsage().LocalDir
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		out = append(out, where{Name: "The container's own cache folder", Result: speedtest.Result{Dir: cacheDir, Error: err.Error()}, Summary: err.Error()})
+	} else {
+		run("The container's own cache folder", cacheDir)
+	}
+	if a.o.Logf != nil {
+		for _, x := range out {
+			a.o.Logf("web interface: speed test of %s (%s): %s", x.Name, x.Dir, x.Summary)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": out, "installMBps": speedtest.InstallMBps})
 }
 
 // selfTest checks the services from the server's own address, the way a PC uses them (see package selftest).

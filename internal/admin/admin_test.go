@@ -22,6 +22,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/pxecheck"
 	"github.com/ghazichaieb/gola-bootlace/internal/selftest"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
+	"github.com/ghazichaieb/gola-bootlace/internal/speedtest"
 )
 
 type fakeBackend struct {
@@ -29,6 +30,7 @@ type fakeBackend struct {
 	clients []httpd.Client
 	rescans int
 	inUse   map[string]bool
+	cache   string // the container's cache folder CacheUsage reports
 }
 
 func (f *fakeBackend) ISOInfos() ([]httpd.ISOInfo, error) { return f.isos, nil }
@@ -58,7 +60,11 @@ func (f *fakeBackend) ForgetPCsNotSeenFor(d time.Duration) int {
 func (f *fakeBackend) StartedAt() time.Time   { return time.Now().Add(-time.Minute) }
 func (f *fakeBackend) InUse(path string) bool { return f.inUse[path] }
 func (f *fakeBackend) CacheUsage() httpd.CacheUsage {
-	return httpd.CacheUsage{Where: "auto", LocalLimit: 2 << 30, LocalDir: "/cache", LocalBytes: 5}
+	dir := f.cache
+	if dir == "" {
+		dir = "/cache"
+	}
+	return httpd.CacheUsage{Where: "auto", LocalLimit: 2 << 30, LocalDir: dir, LocalBytes: 5}
 }
 
 type rig struct {
@@ -498,5 +504,36 @@ func TestLookingForOtherServersKeepsTheLastResult(t *testing.T) {
 	}
 	if _, out = r.do("GET", "/api/pxecheck", nil, nil); out["result"] == nil {
 		t.Fatalf("the last result is kept: %v", out)
+	}
+}
+
+func TestTheSpeedTestWaitsForPCsAndMeasuresTheLibraryAndTheCacheFolder(t *testing.T) {
+	old := speedtest.MaxSize
+	speedtest.MaxSize = 16 << 20
+	defer func() { speedtest.MaxSize = old }()
+	r := newRig(t)
+	r.login()
+	r.backend.cache = t.TempDir()
+	r.do("POST", "/api/services/start", map[string]any{}, nil) // (they want to run and wait for a library)
+	if code, _ := r.do("PUT", "/api/library", map[string]any{"path": t.TempDir(), "create": true}, nil); code != 200 {
+		t.Fatal(code)
+	}
+	r.sup.Reconcile()
+	if r.probe.starts == 0 {
+		t.Fatal("the services did not start")
+	}
+	r.probe.sessions = []string{"10.0.0.5"}
+	code, out := r.do("POST", "/api/speedtest", map[string]any{}, nil)
+	if code != 409 || out["busy"] != true {
+		t.Fatalf("PCs are using the server: %d %v", code, out)
+	}
+	code, out = r.do("POST", "/api/speedtest", map[string]any{"force": true}, nil)
+	results, _ := out["results"].([]any)
+	if code != 200 || len(results) != 2 {
+		t.Fatalf("%d %v", code, out)
+	}
+	lib := results[0].(map[string]any)
+	if lib["name"] != "The library" || lib["error"] != nil || lib["writeMBps"].(float64) <= 0 || lib["readMBps"].(float64) <= 0 {
+		t.Errorf("the library: %v", lib)
 	}
 }
