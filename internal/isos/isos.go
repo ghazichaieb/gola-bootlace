@@ -153,8 +153,7 @@ func Scan(dir string) ([]ISO, error) {
 			}
 		}
 		name := filepath.ToSlash(rel)
-		sum := sha256.Sum256([]byte(name))
-		found = append(found, ISO{Name: name, ID: hex.EncodeToString(sum[:5]), ModTime: info.ModTime(), Title: title, Path: path, Size: info.Size(), Disk: disk, Packed: packed, Inner: inner})
+		found = append(found, ISO{Name: name, ID: IDOf(name), ModTime: info.ModTime(), Title: title, Path: path, Size: info.Size(), Disk: disk, Packed: packed, Inner: inner})
 		return nil
 	})
 	if err != nil {
@@ -176,4 +175,10 @@ func Find(dir, name string) (ISO, bool) {
 		}
 	}
 	return ISO{}, false
+}
+
+// IDOf is the short id of an ISO by its name (its path in the library with "/"): what the settings and the web addresses call it.
+func IDOf(name string) string {
+	sum := sha256.Sum256([]byte(name))
+	return hex.EncodeToString(sum[:5])
 }

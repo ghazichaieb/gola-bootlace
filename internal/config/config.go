@@ -29,18 +29,19 @@ type Rule struct {
 
 // Config is the whole file.
 type Config struct {
-	MenuTimeout int               `json:"menuTimeout"` // seconds before the default entry starts; 0 waits for a choice
-	PCDays      int               `json:"pcDays"`      // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
-	Default     string            `json:"default"`     // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
-	Hidden      map[string]bool   `json:"hidden"`      // ISO id -> not in the menu
-	Titles      map[string]string `json:"titles"`      // ISO id -> the name shown instead of the file name
-	Args        map[string]string `json:"args"`        // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
-	Rules       []Rule            `json:"rules"`
-	AdminHash   string            `json:"adminHash"`   // see package admin
-	SMBPassword string            `json:"smbPassword"` // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
-	Library     Library           `json:"library"`     // the folder with the ISOs; empty until one is chosen
-	NoAutoStart bool              `json:"noAutoStart"` // the services stay stopped when the program starts, until they are started in the web interface
-	Access      Access            `json:"access"`      // which addresses may use the server, besides the local network
+	MenuTimeout     int               `json:"menuTimeout"` // seconds before the default entry starts; 0 waits for a choice
+	PCDays          int               `json:"pcDays"`      // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
+	Default         string            `json:"default"`     // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
+	Hidden          map[string]bool   `json:"hidden"`      // ISO id -> not in the menu
+	Titles          map[string]string `json:"titles"`      // ISO id -> the name shown instead of the file name
+	Args            map[string]string `json:"args"`        // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
+	Rules           []Rule            `json:"rules"`
+	AdminHash       string            `json:"adminHash"`       // see package admin
+	SMBPassword     string            `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
+	Library         Library           `json:"library"`         // the folder with the ISOs; empty until one is chosen
+	NoAutoStart     bool              `json:"noAutoStart"`     // the services stay stopped when the program starts, until they are started in the web interface
+	Access          Access            `json:"access"`          // which addresses may use the server, besides the local network
+	ImportLimitMBps int               `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
 }
 
 // Library is the folder the ISOs are in, as it was added (see package library): its path and the id that was written into its marker.
@@ -89,6 +90,9 @@ func (c *Config) Validate() error {
 	}
 	if !defaultAction.MatchString(c.Default) {
 		return errors.New("the default entry is not valid")
+	}
+	if c.ImportLimitMBps < 0 || c.ImportLimitMBps > 100000 {
+		return errors.New("the limit for imports must be between 0 and 100000 MB a second")
 	}
 	if _, err := access.Parse(c.Access.Networks); err != nil {
 		return err

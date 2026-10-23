@@ -14,6 +14,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
+	"github.com/ghazichaieb/gola-bootlace/internal/importer"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
@@ -23,6 +24,7 @@ type fakeBackend struct {
 	isos    []httpd.ISOInfo
 	clients []httpd.Client
 	rescans int
+	inUse   map[string]bool
 }
 
 func (f *fakeBackend) ISOInfos() ([]httpd.ISOInfo, error) { return f.isos, nil }
@@ -49,7 +51,8 @@ func (f *fakeBackend) ForgetPCsNotSeenFor(d time.Duration) int {
 	f.clients = kept
 	return n
 }
-func (f *fakeBackend) StartedAt() time.Time { return time.Now().Add(-time.Minute) }
+func (f *fakeBackend) StartedAt() time.Time   { return time.Now().Add(-time.Minute) }
+func (f *fakeBackend) InUse(path string) bool { return f.inUse[path] }
 
 type rig struct {
 	t       *testing.T
@@ -58,6 +61,7 @@ type rig struct {
 	backend *fakeBackend
 	log     *logbuf.Buffer
 	cookie  *http.Cookie
+	admin   *Admin
 	lib     *library.Library
 	sup     *service.Supervisor
 	probe   *probeService
@@ -79,17 +83,19 @@ func newRig(t *testing.T) *rig {
 	lg := logbuf.New(100)
 	lg.Add("first line")
 	lib := library.New("", "")
+	indexer := &library.Indexer{Lib: lib}
+	imp := importer.New(lib, indexer.Get, nil)
 	sup := &service.Supervisor{Gate: lib.Check}
 	probe := &probeService{}
 	sup.Add(service.Def{ID: "probe", Title: "Probe", Start: probe.start})
-	a := New(Options{Store: store, Log: lg, Backend: b, Library: lib, Services: sup, Access: access.New(nil), ServerIP: "192.168.1.5", Facts: [][2]string{{"Server address", "10.0.0.1"}}})
+	a := New(Options{Store: store, Log: lg, Backend: b, Library: lib, Services: sup, Access: access.New(nil), ServerIP: "192.168.1.5", Importer: imp, Indexer: indexer, Facts: [][2]string{{"Server address", "10.0.0.1"}}})
 	mux := http.NewServeMux()
 	for p, h := range a.Mount() {
 		mux.Handle(p, h)
 	}
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
-	return &rig{t: t, ts: ts, store: store, backend: b, log: lg, lib: lib, sup: sup, probe: probe}
+	return &rig{t: t, ts: ts, store: store, backend: b, log: lg, lib: lib, sup: sup, probe: probe, admin: a}
 }
 
 // probeService counts its starts and stops, and has the PCs it is told it has.

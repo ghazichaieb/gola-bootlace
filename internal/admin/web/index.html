@@ -100,6 +100,8 @@ input[type=text].inline,input[type=search].inline,select.inline{min-height:38px;
 .dirs button{display:flex;width:100%;gap:8px;align-items:center;justify-content:space-between;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:10px 12px;min-height:44px;cursor:pointer}
 .dirs button:last-child{border-bottom:0}
 .dirs button:hover{background:var(--panel2)}
+.bar2{height:8px;background:var(--panel2);border-radius:4px;margin:6px 0 2px;overflow:hidden}.bar2>i{display:block;height:100%;background:var(--accent);border-radius:4px;transition:width .3s}
+button.link{background:none;border:0;padding:0;color:var(--accent);cursor:pointer;font:inherit;text-decoration:underline}
 .steps{margin:0;padding-left:20px}
 .steps li{margin:4px 0}
 .empty{padding:26px;text-align:center;color:var(--muted)}
@@ -125,11 +127,12 @@ td.k{color:var(--muted);white-space:nowrap}
 "use strict";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const state = { view: "dash", isos: [], defaultAction: "", pcs: [], status: null, settings: null, logLast: 0, logLines: [], timers: [], authed: false, version: "" };
-const views = [["dash", "Dashboard"], ["server", "Server"], ["isos", "ISOs"], ["pcs", "PCs"], ["menu", "Menu"], ["log", "Log"], ["account", "Account"]];
+const state = { libPath: "", polling: false, view: "dash", isos: [], defaultAction: "", pcs: [], status: null, settings: null, logLast: 0, logLines: [], timers: [], authed: false, version: "" };
+const views = [["dash", "Dashboard"], ["server", "Server"], ["library", "Library"], ["isos", "ISOs"], ["pcs", "PCs"], ["menu", "Menu"], ["log", "Log"], ["account", "Account"]];
 
 async function api(path, method = "GET", body) {
   const opt = { method, headers: { "X-Bootlace": "1" }, credentials: "same-origin" };
+  if (state.polling && method === "GET") opt.headers["X-Bootlace-Poll"] = "1"; // the page refreshing itself does not keep the login alive
   if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
   const res = await fetch(path, opt);
   let data = {};
@@ -174,7 +177,7 @@ function actionOptions(sel, withMenu = true) {
 
 // ---- shell
 function clearTimers() { state.timers.forEach(clearInterval); state.timers = []; }
-function every(ms, fn) { state.timers.push(setInterval(() => fn().catch(() => {}), ms)); }
+function every(ms, fn) { state.timers.push(setInterval(() => { state.polling = true; const p = fn().catch(() => {}); state.polling = false; return p; }, ms)); }
 
 function render() {
   clearTimers();
@@ -191,7 +194,7 @@ function render() {
   app.querySelectorAll("nav button").forEach(b => b.onclick = () => { state.view = b.dataset.v; location.hash = state.view; render(); });
   $("#theme").onclick = toggleTheme;
   $("#out").onclick = guard(async () => { await api("/api/logout", "POST", {}); state.authed = false; render(); });
-  ({ dash: pageDash, server: pageServer, isos: pageISOs, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
+  ({ dash: pageDash, server: pageServer, library: pageLibrary, isos: pageISOs, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
 }
 
 function toggleTheme() {
@@ -389,6 +392,188 @@ function pickFolder(startPath, done) {
   q("#cancel").onclick = m.close;
   q("#use").onclick = () => choose(false, false);
   load(startPath || "");
+}
+
+// ---- library: the files, uploads, imports from a web address
+const transfers = { uploads: [], jobs: [], queue: Promise.resolve(), refresh: null };
+
+function when(iso) { if (!iso) return ""; const d = new Date(iso); return isNaN(d) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); }
+function joinPath(a, b) { return a ? a + "/" + b : b; }
+const reasonText = { name: "has the same name", source: "was imported from the same address", size: "has the same name and size", content: "has the same content (checksum)" };
+function matchesHTML(ms) { return `<p>This looks like something that is already in the library:</p><ul>${ms.map(m => `<li><code>${esc(m.path)}</code> ${esc(reasonText[m.reason] || m.reason)}</li>`).join("")}</ul>`; }
+
+async function pageLibrary() {
+  const page = $("#page");
+  page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Library</h1>
+    <div class="row"><button class="btn primary" id="up">Upload files</button><button class="btn" id="imp">Add from a web address</button><button class="btn" id="mk">New folder</button></div></div>
+    <input type="file" id="pick" multiple hidden>
+    <div class="card" id="drop"><div id="crumbs" class="small" style="margin-bottom:8px"></div><div id="ltable" class="tablewrap"></div><div id="lfoot" class="small muted" style="margin-top:10px"></div></div>
+    <div class="card" id="transfers" style="margin-top:14px" hidden></div>
+    <div class="card" id="limitcard" style="margin-top:14px"></div>`;
+  const draw = async () => {
+    const [d, j] = await Promise.all([api("/api/library/files?path=" + encodeURIComponent(state.libPath || "")), api("/api/library/jobs")]);
+    state.lib = d; transfers.jobs = j.jobs || [];
+    drawFiles(d, j.hashing || d.hashing);
+    renderTransfers();
+    if (!$("#limitcard").dataset.done) drawLimit(d.limitMBps);
+  };
+  transfers.refresh = () => guard(draw)();
+  const safeDraw = async () => {
+    try { await draw(); }
+    catch (e) { $("#ltable").innerHTML = `<div class="empty">${esc(e.message)}. <a href="#server" data-go="server">Open the Server page</a> to choose or fix the library.</div>`; $("#crumbs").innerHTML = ""; page.querySelectorAll("[data-go]").forEach(a => a.onclick = ev => { ev.preventDefault(); state.view = a.dataset.go; location.hash = state.view; render(); }); }
+  };
+  $("#up").onclick = () => $("#pick").click();
+  $("#pick").onchange = e => { [...e.target.files].forEach(queueUpload); e.target.value = ""; };
+  $("#imp").onclick = () => importDialog();
+  $("#mk").onclick = () => folderDialog();
+  const drop = $("#drop");
+  ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.outline = "3px dashed var(--accent)"; }));
+  ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.outline = ""; }));
+  drop.addEventListener("drop", e => { [...(e.dataTransfer.files || [])].forEach(queueUpload); });
+  await safeDraw();
+  every(2500, safeDraw);
+}
+
+function drawFiles(d, hashing) {
+  const parts = d.path ? d.path.split("/") : [];
+  let acc = "";
+  $("#crumbs").innerHTML = `<button class="link" data-open="">Library</button>` + parts.map(p => { acc = joinPath(acc, p); return ` / <button class="link" data-open="${esc(acc)}">${esc(p)}</button>`; }).join("");
+  const rows = d.entries.map(e => {
+    const name = e.dir ? `<button class="link" data-open="${esc(e.path)}"><strong>${esc(e.name)}/</strong></button>` : `<span${e.managed ? "" : ' class="muted"'}>${esc(e.name)}</span>`;
+    const sum = e.dir || !e.managed ? "" : e.sha256 ? `<span class="mono small" title="SHA-256 ${esc(e.sha256)}">${esc(e.sha256.slice(0, 12))}</span>` : `<span class="muted small">${hashing && hashing.file === e.path ? "checking " + Math.round(100 * hashing.done / Math.max(1, hashing.total)) + " %" : "to be checked"}</span>`;
+    const src = e.source ? `<div class="muted small" title="${esc(e.source)}">from ${esc(new URL(e.source).host)}</div>` : "";
+    const act = e.dir || e.managed ? `<button class="btn small" data-ren="${esc(e.path)}" data-dir="${e.dir ? 1 : 0}">Rename or move</button> <button class="btn small danger" data-del="${esc(e.path)}" data-dir="${e.dir ? 1 : 0}">Delete</button>` : `<span class="muted small">not an ISO or image</span>`;
+    return `<tr><td data-l="Name">${name}${e.inUse ? ` <span class="badge warn">in use</span>` : ""}${src}</td><td class="hide-s" data-l="Size">${e.dir ? "" : bytes(e.size)}</td><td class="hide-s" data-l="Changed">${when(e.mod)}</td><td class="hide-s" data-l="Checksum">${sum}</td><td data-l="">${act}</td></tr>`;
+  }).join("");
+  $("#ltable").innerHTML = d.entries.length ? `<table class="rt"><thead><tr><th>Name</th><th class="hide-s">Size</th><th class="hide-s">Changed</th><th class="hide-s">SHA-256</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+    : `<div class="empty">${d.path ? "This folder is empty." : "The library is empty. Upload files, add one from a web address, or copy files into its folder."}</div>`;
+  const i = d.info;
+  $("#lfoot").textContent = `${i.path}${i.freeBytes ? " — " + bytes(i.freeBytes) + " free" : ""}${hashing && hashing.waiting ? " — checking " + hashing.waiting + " file" + (hashing.waiting > 1 ? "s" : "") + (hashing.paused ? " (waiting for the PCs to finish)" : "") : ""}. Drop files here to upload them.`;
+  const page = $("#page");
+  page.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { state.libPath = b.dataset.open; transfers.refresh(); });
+  page.querySelectorAll("[data-ren]").forEach(b => b.onclick = () => renameDialog(b.dataset.ren, b.dataset.dir === "1"));
+  page.querySelectorAll("[data-del]").forEach(b => b.onclick = () => deleteDialog(b.dataset.del, b.dataset.dir === "1"));
+}
+
+function drawLimit(mbps) {
+  const c = $("#limitcard"); c.dataset.done = "1";
+  c.innerHTML = `<h2>Speed of imports</h2><p class="small muted">While PCs are installing, an import from a web address uses at most this many MB a second, so that it does not slow the installs down. When nothing is installing it uses all it can.</p>
+    <div class="row"><input class="inline" type="number" id="lim" min="0" max="100000" value="${mbps || 0}" style="width:110px" aria-label="Megabytes a second"> <span>MB/s (0 = no limit)</span><button class="btn small" id="savelim">Save</button></div>`;
+  $("#savelim").onclick = guard(async () => { await api("/api/library/limit", "PUT", { mbps: parseInt($("#lim").value || "0", 10) || 0 }); toast("Saved"); });
+}
+
+// ---- transfers: what is being uploaded or imported
+function renderTransfers() {
+  const box = $("#transfers"); if (!box) return;
+  const ups = transfers.uploads, jobs = transfers.jobs;
+  box.hidden = !ups.length && !jobs.length;
+  if (box.hidden) return;
+  const prog = (done, total) => `<div class="bar2" role="progressbar" aria-valuenow="${total > 0 ? Math.round(100 * done / total) : 0}" aria-valuemin="0" aria-valuemax="100"><i style="width:${total > 0 ? Math.min(100, 100 * done / total) : 0}%"></i></div>`;
+  const stateBadge = s => ({ done: `<span class="badge ok">done</span>`, failed: `<span class="badge red">failed</span>`, canceled: `<span class="badge">canceled</span>`, interrupted: `<span class="badge warn">stopped</span>`, queued: `<span class="badge">waiting</span>`, running: `<span class="badge ok">running</span>`, sending: `<span class="badge ok">sending</span>`, checking: `<span class="badge">checking</span>` })[s] || esc(s);
+  const upRows = ups.map((u, i) => `<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div class="row" style="justify-content:space-between"><div><strong>${esc(u.name)}</strong> <span class="muted small">upload, ${bytes(u.size)}</span></div><div>${stateBadge(u.state)} ${u.state === "sending" ? `<button class="btn small" data-upcancel="${i}">Cancel</button>` : u.state !== "checking" ? `<button class="btn small" data-updismiss="${i}">Dismiss</button>` : ""}</div></div>
+    ${u.state === "sending" ? prog(u.sent, u.size) + `<div class="small muted">${bytes(u.sent)} of ${bytes(u.size)}</div>` : ""}${u.error ? `<div class="small" style="color:var(--bad)">${esc(u.error)}</div>` : ""}${(u.warnings || []).map(w => `<div class="small" style="color:var(--warn)">${esc(w)}</div>`).join("")}</div>`).join("");
+  const jobRows = jobs.slice().reverse().map(j => `<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div class="row" style="justify-content:space-between"><div><strong>${esc(j.dest)}</strong> <span class="muted small">from ${esc((() => { try { return new URL(j.url).host; } catch (e) { return j.url; } })())}</span></div>
+    <div>${stateBadge(j.state)} ${j.state === "running" || j.state === "queued" ? `<button class="btn small" data-jc="${j.id}">Cancel</button>` : ""}${j.state === "interrupted" || j.state === "failed" ? `<button class="btn small" data-jr="${j.id}">Try again</button> <button class="btn small" data-jc="${j.id}">Remove</button>` : ""}${j.state === "done" || j.state === "canceled" ? `<button class="btn small" data-jd="${j.id}">Dismiss</button>` : ""}</div></div>
+    ${j.state === "running" ? prog(j.done, j.size) + `<div class="small muted">${bytes(j.done)}${j.size > 0 ? " of " + bytes(j.size) : ""}${j.speed ? ", " + (j.speed / 1048576).toFixed(1) + " MB/s" : ""}</div>` : ""}${j.error ? `<div class="small" style="color:var(--bad)">${esc(j.error)}</div>` : ""}${(j.warnings || []).map(w => `<div class="small" style="color:var(--warn)">${esc(w)}</div>`).join("")}</div>`).join("");
+  box.innerHTML = `<h2>Transfers</h2>${upRows}${jobRows}`;
+  box.querySelectorAll("[data-upcancel]").forEach(b => b.onclick = () => { const u = transfers.uploads[+b.dataset.upcancel]; if (u && u.xhr) u.xhr.abort(); });
+  box.querySelectorAll("[data-updismiss]").forEach(b => b.onclick = () => { transfers.uploads.splice(+b.dataset.updismiss, 1); renderTransfers(); });
+  const jobCall = (attr, action) => box.querySelectorAll(`[data-${attr}]`).forEach(b => b.onclick = guard(async () => { await api(`/api/library/jobs/${b.dataset[attr]}/${action}`, "POST", {}); transfers.refresh && transfers.refresh(); }));
+  jobCall("jc", "cancel"); jobCall("jr", "resume"); jobCall("jd", "dismiss");
+}
+
+function queueUpload(file) { transfers.queue = transfers.queue.then(() => uploadFile(file, state.libPath || "")); }
+
+async function uploadFile(file, folder) {
+  const item = { name: file.name, size: file.size, sent: 0, state: "checking", error: "", warnings: [] };
+  transfers.uploads.push(item); renderTransfers();
+  try {
+    const chk = await api("/api/library/upload/check", "POST", { name: file.name, folder, size: file.size });
+    if ((chk.problems || []).length) { item.state = "failed"; item.error = (chk.problems || []).join("; "); return; }
+    if ((chk.matches || []).some(m => m.reason === "name")) { item.state = "failed"; item.error = "A file with this name is already in the library: rename or delete it first."; return; }
+    if ((chk.matches || []).length && !await ask("Upload it anyway?", matchesHTML(chk.matches || []), "Upload anyway")) { item.state = "canceled"; return; }
+    await new Promise(resolve => {
+      const xhr = new XMLHttpRequest();
+      item.xhr = xhr; item.state = "sending"; renderTransfers();
+      xhr.open("PUT", "/api/library/upload?name=" + encodeURIComponent(file.name) + "&folder=" + encodeURIComponent(folder) + "&size=" + file.size);
+      xhr.setRequestHeader("X-Bootlace", "1");
+      xhr.upload.onprogress = e => { item.sent = e.loaded; renderTransfers(); };
+      xhr.onload = () => {
+        let r = {}; try { r = JSON.parse(xhr.responseText); } catch (e) { /* no body */ }
+        if (xhr.status === 200) { item.state = "done"; item.warnings = r.warnings || []; } else { item.state = "failed"; item.error = r.error || ("error " + xhr.status); }
+        resolve();
+      };
+      xhr.onerror = () => { item.state = "failed"; item.error = "the connection was lost"; resolve(); };
+      xhr.onabort = () => { item.state = "canceled"; resolve(); };
+      xhr.send(file);
+    });
+  } catch (e) { item.state = "failed"; item.error = e.message; }
+  finally { delete item.xhr; renderTransfers(); if (transfers.refresh) transfers.refresh(); }
+}
+
+// ---- dialogs
+function importDialog() {
+  const m = modal(`<h2>Add from a web address</h2><p class="muted small">The server downloads the file itself, so a big file does not pass through this browser. Only web addresses on the internet work; files on a local network are copied into the library folder instead.</p>
+    <div class="field"><label for="iu">Address of the file</label><input type="text" id="iu" placeholder="https://..." autocomplete="off"></div>
+    <div class="field"><label for="in">Name in the library (optional)</label><input type="text" id="in" placeholder="taken from the address" autocomplete="off"><p class="hint">Saved in: ${esc("/" + (state.libPath || ""))}</p></div>
+    <div class="field"><label for="ic">Checksum, or the address of a checksum file (optional)</label><input type="text" id="ic" placeholder="SHA-256 or SHA-512, or https://.../SHA256SUMS" autocomplete="off"><p class="hint">With a checksum the file is verified, and a file that is already in the library is noticed before the download.</p></div>
+    <p class="err" id="ie" role="alert"></p><div class="row" style="justify-content:flex-end"><button class="btn" id="icancel">Cancel</button><button class="btn primary" id="igo">Download</button></div>`);
+  const q = s => m.el.querySelector(s);
+  q("#icancel").onclick = m.close;
+  const go = async (ack) => {
+    const c = q("#ic").value.trim();
+    const body = { url: q("#iu").value.trim(), name: q("#in").value.trim(), folder: state.libPath || "", acknowledged: !!ack };
+    if (/^https?:\/\//i.test(c)) body.checksumUrl = c; else body.checksum = c;
+    q("#ie").textContent = ""; q("#igo").disabled = true;
+    try { await api("/api/library/import", "POST", body); m.close(); toast("The download has started"); transfers.refresh && transfers.refresh(); }
+    catch (e) {
+      q("#igo").disabled = false;
+      if (e.status === 409 && e.data && e.data.needsAck) { if (await ask("Download it anyway?", matchesHTML(e.data.check.matches), "Download anyway")) go(true); }
+      else q("#ie").textContent = e.message;
+    }
+  };
+  q("#igo").onclick = () => go(false);
+}
+
+function folderDialog() {
+  const m = modal(`<h2>New folder</h2><div class="field"><label for="fn">Name</label><input type="text" id="fn" autocomplete="off"><p class="hint">In: ${esc("/" + (state.libPath || ""))}</p></div><p class="err" id="fe" role="alert"></p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="fc">Cancel</button><button class="btn primary" id="fo">Make it</button></div>`);
+  const q = s => m.el.querySelector(s);
+  q("#fc").onclick = m.close;
+  const go = guard(async () => {
+    try { await api("/api/library/folder", "POST", { path: joinPath(state.libPath || "", q("#fn").value.trim()) }); m.close(); transfers.refresh && transfers.refresh(); }
+    catch (e) { q("#fe").textContent = e.message; }
+  });
+  q("#fo").onclick = go; q("#fn").onkeydown = e => { if (e.key === "Enter") go(); };
+}
+
+function renameDialog(path, isDir) {
+  const m = modal(`<h2>${isDir ? "Rename or move the folder" : "Rename or move the file"}</h2><p class="muted small">The path in the library, folders separated by <code>/</code>. Change the last part to rename, the first parts to move. The menu name, hidden flag and rules of an ISO follow it.</p>
+    <div class="field"><label for="rp">Path</label><input type="text" id="rp" value="${esc(path)}" autocomplete="off"></div><p class="err" id="re" role="alert"></p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="rc">Cancel</button><button class="btn primary" id="rs">Save</button></div>`);
+  const q = s => m.el.querySelector(s);
+  q("#rc").onclick = m.close;
+  const go = async (force) => {
+    try { await api("/api/library/rename", "POST", { from: path, to: q("#rp").value.trim(), force: !!force }); m.close(); toast("Done"); transfers.refresh && transfers.refresh(); }
+    catch (e) {
+      if (e.status === 409 && e.data && e.data.inUse) { if (await ask("A PC is using this", "A PC is reading this file right now. Moving it makes that PC fail.", "Move anyway")) go(true); }
+      else q("#re").textContent = e.message;
+    }
+  };
+  q("#rs").onclick = () => go(false); q("#rp").onkeydown = e => { if (e.key === "Enter") go(false); };
+}
+
+async function deleteDialog(path, isDir) {
+  const what = isDir ? `the folder <code>${esc(path)}</code> (only an empty folder can be deleted)` : `<code>${esc(path)}</code>`;
+  if (!await ask("Delete?", `This deletes ${what} from the library for good. It cannot be undone.`, "Delete")) return;
+  const go = guard(async (force) => {
+    try { await api("/api/library/delete", "POST", { path, force: !!force }); toast("Deleted"); transfers.refresh && transfers.refresh(); }
+    catch (e) {
+      if (e.status === 409 && e.data && e.data.inUse) { if (await ask("A PC is using this", "A PC is reading this file right now. Deleting it makes that PC fail.", "Delete anyway")) go(true); }
+      else throw e;
+    }
+  });
+  go(false);
 }
 
 // ---- ISOs

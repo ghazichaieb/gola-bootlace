@@ -61,10 +61,17 @@ func (a *Admin) librarySelect(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "PCs are using the server", "sessions": sessions})
 		return
 	}
+	if a.o.Importer != nil && a.o.Importer.Active() && !in.Force {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "an import is running: changing the library cancels it", "importing": true})
+		return
+	}
 	id, err := library.Prepare(dir)
 	if err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if a.o.Importer != nil {
+		a.o.Importer.CancelAll() // (what was received belongs to the library that is being left)
 	}
 	wanted := a.o.Services.Report().Wanted
 	a.o.Services.Stop()

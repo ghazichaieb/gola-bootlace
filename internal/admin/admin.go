@@ -21,6 +21,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
+	"github.com/ghazichaieb/gola-bootlace/internal/importer"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
@@ -38,6 +39,7 @@ type Backend interface {
 	ForgetPC(mac string) bool
 	ForgetPCsNotSeenFor(d time.Duration) int
 	StartedAt() time.Time
+	InUse(path string) bool // a PC is using this file (or a file in this folder) right now
 }
 
 // Options for New.
@@ -49,6 +51,8 @@ type Options struct {
 	Library  *library.Library
 	Services *service.Supervisor
 	Access   *access.Policy
+	Importer *importer.Manager
+	Indexer  *library.Indexer
 	ServerIP string // the address PCs are told to use
 	Logf     func(format string, args ...any)
 }
@@ -58,8 +62,9 @@ type Admin struct {
 	o Options
 
 	mu       sync.Mutex
-	sessions map[string]time.Time
+	sessions map[string]*session
 	fails    map[string]*failure
+	uploads  chan struct{}
 }
 
 type failure struct {
@@ -69,7 +74,8 @@ type failure struct {
 
 const (
 	cookieName   = "bootlace_session"
-	sessionFor   = 12 * time.Hour
+	sessionFor   = 12 * time.Hour   // the longest a login lasts, whatever is done
+	idleFor      = 30 * time.Minute // a login ends after this long without anything done in the page
 	maxFailures  = 5
 	lockFor      = 5 * time.Minute
 	maxBodyBytes = 64 << 10
@@ -77,7 +83,7 @@ const (
 
 // New makes the interface. It does not set a password: see EnsurePassword.
 func New(o Options) *Admin {
-	return &Admin{o: o, sessions: map[string]time.Time{}, fails: map[string]*failure{}}
+	return &Admin{o: o, sessions: map[string]*session{}, fails: map[string]*failure{}, uploads: make(chan struct{}, 2)}
 }
 
 // Mount is what to add to the web server: the pages, the API and a redirect from the address of the server itself.
@@ -103,6 +109,19 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("GET /api/library/browse", a.authed(a.libraryBrowse))
 	api.HandleFunc("GET /api/library/inspect", a.authed(a.libraryInspect))
 	api.HandleFunc("PUT /api/library", a.authed(a.librarySelect))
+	api.HandleFunc("GET /api/library/files", a.authed(a.filesList))
+	api.HandleFunc("POST /api/library/folder", a.authed(a.folderMake))
+	api.HandleFunc("POST /api/library/rename", a.authed(a.fileRename))
+	api.HandleFunc("POST /api/library/delete", a.authed(a.fileDelete))
+	api.HandleFunc("POST /api/library/import/check", a.authed(a.importCheck))
+	api.HandleFunc("POST /api/library/import", a.authed(a.importStart))
+	api.HandleFunc("GET /api/library/jobs", a.authed(a.jobsList))
+	api.HandleFunc("POST /api/library/jobs/{id}/cancel", a.authed(a.jobAction((*importer.Manager).Cancel, "running")))
+	api.HandleFunc("POST /api/library/jobs/{id}/resume", a.authed(a.jobAction((*importer.Manager).Resume, "stopped")))
+	api.HandleFunc("POST /api/library/jobs/{id}/dismiss", a.authed(a.jobAction((*importer.Manager).Dismiss, "finished")))
+	api.HandleFunc("PUT /api/library/limit", a.authed(a.limitSet))
+	api.HandleFunc("POST /api/library/upload/check", a.authed(a.uploadCheck))
+	api.HandleFunc("PUT /api/library/upload", a.authed(a.upload))
 	api.HandleFunc("GET /api/access", a.authed(a.accessGet))
 	api.HandleFunc("PUT /api/access", a.authed(a.accessSet))
 	api.HandleFunc("GET /api/services", a.authed(a.servicesReport))
@@ -176,6 +195,17 @@ func token() string {
 	return hex.EncodeToString(b)
 }
 
+// session is one login. It lasts while something is done with it (a page that only refreshes itself does not count, a transfer that is still going does), up
+// to a longest time.
+type session struct {
+	created, last time.Time
+	inflight      int // requests that have started and not ended
+}
+
+func (s *session) alive(now time.Time) bool {
+	return now.Sub(s.created) < sessionFor && (s.inflight > 0 || now.Sub(s.last) < idleFor)
+}
+
 func (a *Admin) valid(r *http.Request) bool {
 	c, err := r.Cookie(cookieName)
 	if err != nil || c.Value == "" {
@@ -183,22 +213,52 @@ func (a *Admin) valid(r *http.Request) bool {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	exp, ok := a.sessions[c.Value]
-	if !ok || time.Now().After(exp) {
+	s, ok := a.sessions[c.Value]
+	if !ok || !s.alive(time.Now()) {
 		delete(a.sessions, c.Value)
 		return false
 	}
 	return true
 }
 
+// begin starts a request on the login of the cookie: it returns false when there is none, and otherwise a function to call when the request ends. A request
+// from the page's own refreshing (poll) neither keeps the login alive nor ends up counted as activity.
+func (a *Admin) begin(r *http.Request) (end func(), ok bool) {
+	c, err := r.Cookie(cookieName)
+	if err != nil || c.Value == "" {
+		return nil, false
+	}
+	poll := r.Method == http.MethodGet && r.Header.Get("X-Bootlace-Poll") == "1"
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	s, found := a.sessions[c.Value]
+	if !found || !s.alive(time.Now()) {
+		delete(a.sessions, c.Value)
+		return nil, false
+	}
+	if poll {
+		return func() {}, true
+	}
+	s.last = time.Now()
+	s.inflight++
+	return func() {
+		a.mu.Lock()
+		s.inflight--
+		s.last = time.Now()
+		a.mu.Unlock()
+	}, true
+}
+
 // authed lets a request through only with a session; a request that changes something must also carry the header that a page of another site
 // cannot add without the browser asking this server's permission first.
 func (a *Admin) authed(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !a.valid(r) {
+		end, ok := a.begin(r)
+		if !ok {
 			fail(w, http.StatusUnauthorized, "log in first")
 			return
 		}
+		defer end()
 		if r.Method != http.MethodGet && r.Header.Get("X-Bootlace") != "1" {
 			fail(w, http.StatusForbidden, "missing header")
 			return
@@ -250,9 +310,9 @@ func (a *Admin) login(w http.ResponseWriter, r *http.Request) {
 	t := token()
 	a.mu.Lock()
 	delete(a.fails, ip)
-	a.sessions[t] = time.Now().Add(sessionFor)
-	for k, exp := range a.sessions { // forget old sessions
-		if time.Now().After(exp) {
+	a.sessions[t] = &session{created: time.Now(), last: time.Now()}
+	for k, s := range a.sessions { // forget old sessions
+		if !s.alive(time.Now()) {
 			delete(a.sessions, k)
 		}
 	}

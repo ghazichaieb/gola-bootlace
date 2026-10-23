@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -154,5 +155,23 @@ func TestBrowseListsFoldersOnly(t *testing.T) {
 	}
 	if _, err := Browse(filepath.Join(dir, "file.iso")); err == nil {
 		t.Fatal("a file was listed as a folder")
+	}
+}
+
+// Many callers at once (the page refreshing, an upload, the hasher) all get the real answer, never a false "does not answer".
+func TestConcurrentChecksAllGetTheRealAnswer(t *testing.T) {
+	l, _ := ready(t)
+	var wg sync.WaitGroup
+	errs := make(chan error, 200)
+	for i := 0; i < 200; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); errs <- l.Check() }()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("a check failed while the library was fine: %v", err)
+		}
 	}
 }

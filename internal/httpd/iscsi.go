@@ -57,7 +57,8 @@ func (s *Server) ISCSIDisc(id string) (iscsi.Disc, bool) {
 		} else {
 			s.logf("iscsi: a PC reads %s as a CD-ROM", iso.Title)
 		}
-		return iscsi.Disc{R: f, Size: size, Done: func() { f.Close() }, Disk: disk}, true
+		release := s.hold(iso.Name)
+		return iscsi.Disc{R: f, Size: size, Done: func() { f.Close(); release() }, Disk: disk}, true
 	}
 	return iscsi.Disc{}, false
 }

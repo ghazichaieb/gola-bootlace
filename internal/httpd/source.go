@@ -65,8 +65,8 @@ func (s *Server) openSource(spec string) (source, error) {
 	return source{}, errNoSuchISO
 }
 
-// open opens an ISO of the list (part 0), or one of the partitions in it.
-func (s *Server) open(iso isos.ISO, part int) (source, error) {
+// openRaw opens an ISO of the list (part 0), or one of the partitions in it.
+func (s *Server) openRaw(iso isos.ISO, part int) (source, error) {
 	if iso.Packed != "" {
 		return source{}, errors.New("the file is not unpacked yet")
 	}

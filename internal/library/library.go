@@ -42,8 +42,8 @@ type Library struct {
 	path string
 	id   string
 
-	checking sync.Mutex // one look at the folder at a time: a hung mount must not pile up goroutines
-	busy     bool
+	checking sync.Mutex // guards call
+	call     *lookup    // the look at the folder that is under way, if any
 }
 
 // New is a library with the saved path and id (both empty: none chosen yet).
@@ -82,29 +82,35 @@ func (l *Library) Check() error {
 	return within(l, func() error { return verify(path, id) })
 }
 
-// within runs fn, but gives up waiting after checkWithin (a mount that hangs). While one such look is still stuck, the next ones say so at once.
+// within runs fn and waits for its answer, but gives up waiting after checkWithin (a mount that hangs). Callers that come while a look is under way share its
+// answer instead of starting another one, so a hung mount does not pile up goroutines and a busy moment is not mistaken for a hung mount.
 func within(l *Library, fn func() error) error {
 	l.checking.Lock()
-	if l.busy {
-		l.checking.Unlock()
-		return errors.New("the library folder does not answer")
+	c := l.call
+	if c == nil {
+		c = &lookup{done: make(chan struct{})}
+		l.call = c
+		go func() {
+			c.err = fn()
+			l.checking.Lock()
+			l.call = nil
+			l.checking.Unlock()
+			close(c.done)
+		}()
 	}
-	l.busy = true
 	l.checking.Unlock()
-	done := make(chan error, 1)
-	go func() {
-		err := fn()
-		l.checking.Lock()
-		l.busy = false
-		l.checking.Unlock()
-		done <- err
-	}()
 	select {
-	case err := <-done:
-		return err
+	case <-c.done:
+		return c.err
 	case <-time.After(checkWithin):
 		return errors.New("the library folder does not answer")
 	}
+}
+
+// lookup is a look at the folder that is under way.
+type lookup struct {
+	done chan struct{}
+	err  error
 }
 
 func verify(path, id string) error {

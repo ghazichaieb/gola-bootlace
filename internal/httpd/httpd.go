@@ -63,6 +63,8 @@ type Server struct {
 	Mount map[string]http.Handler
 
 	started     time.Time
+	useMu       sync.Mutex
+	using       map[string]int // ISOs that PCs are reading, by name in the library
 	busyMu      sync.Mutex
 	busy        map[string]int // PCs with a request in progress, by address
 	clientsMu   sync.Mutex
@@ -207,6 +209,8 @@ func (s *Server) iso(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the file is not unpacked yet", http.StatusConflict)
 		return
 	}
+	release := s.hold(iso.Name) // (a PC is downloading it: it is in use)
+	defer release()
 	f, err := os.Open(iso.Path)
 	if err != nil {
 		http.Error(w, "cannot open the file", http.StatusInternalServerError)

@@ -130,7 +130,7 @@ type Match struct {
 // Duplicates finds the files that a new one would repeat: the same name, the same link, the same size under the same file name, or the same content. Any of the
 // arguments can be empty or zero when it is not known. Only current records count for the content and the link.
 func (x *Index) Duplicates(destRel, source string, size int64, sha string) []Match {
-	var out []Match
+	out := []Match{} // (never nil: the web page reads it as a list)
 	seen := map[string]bool{}
 	add := func(p, why string) {
 		if !seen[p+why] {
@@ -320,6 +320,45 @@ func (x *Index) HashPending(stop <-chan struct{}) {
 				prev.Added = time.Now()
 			}
 			_ = x.Set(rel, prev)
+		}
+	}
+}
+
+// Indexer keeps the index of whichever library is current, and does the hashing in the background.
+type Indexer struct {
+	Lib *Library
+	// Idle says whether the server is quiet enough for files to be read (nothing is installing).
+	Idle func() bool
+
+	mu  sync.Mutex
+	cur *Index
+	id  string
+}
+
+// Get is the index of the current library, or nil when the library is not available.
+func (x *Indexer) Get() *Index {
+	if x.Lib.Check() != nil {
+		return nil
+	}
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	if key := x.Lib.Path() + "|" + x.Lib.ID(); x.cur == nil || x.id != key {
+		x.cur, x.id = OpenIndex(x.Lib), key
+		x.cur.Idle = x.Idle
+	}
+	return x.cur
+}
+
+// Run hashes the files that have no record, now and every little while, until stop is closed.
+func (x *Indexer) Run(stop <-chan struct{}) {
+	for {
+		if idx := x.Get(); idx != nil {
+			idx.HashPending(stop)
+		}
+		select {
+		case <-stop:
+			return
+		case <-time.After(20 * time.Second):
 		}
 	}
 }

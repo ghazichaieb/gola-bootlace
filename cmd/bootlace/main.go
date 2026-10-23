@@ -22,6 +22,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/dhcp"
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
+	"github.com/ghazichaieb/gola-bootlace/internal/importer"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
@@ -152,6 +153,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}
 	lib := openLibrary(store, *isoDir, logf)
 	sup := &service.Supervisor{Gate: lib.Check, Grace: 30 * time.Second, Logf: logf}
+	indexer := &library.Indexer{Lib: lib, Idle: func() bool { return len(sup.Sessions()) == 0 }}
+	imp := importer.New(lib, indexer.Get, logf)
+	imp.Installing = func() bool { return len(sup.Sessions()) > 0 }
+	imp.Limit = func() int64 { return int64(store.Get().ImportLimitMBps) << 20 }
+	background := make(chan struct{}) // ends the hashing and the imports when the program stops
+	go indexer.Run(background)
+	go imp.Run(background)
 	dataDir := filepath.Dir(*configPath)
 	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Access: policy, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
 		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort, ISCSIPort: *iscsiPort}
@@ -172,7 +180,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		}
 		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
 			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}
-		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Access: policy, ServerIP: ip.String(), Logf: logf}).Mount()
+		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Access: policy, ServerIP: ip.String(), Importer: imp, Indexer: indexer, Logf: logf}).Mount()
 		logf("web interface: %s/admin/", base)
 	}
 	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
@@ -206,11 +214,14 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	select {
 	case err := <-webErr:
+		close(background)
 		sup.Stop()
 		fmt.Fprintf(stderr, "bootlace: %v\n", err)
 		return 1
 	case <-stop:
 		logf("stopping")
+		close(background)
+		time.Sleep(time.Second) // (an import that was running notes that it was interrupted, so that it can go on at the next start)
 		sup.Stop()
 		return 0
 	}
