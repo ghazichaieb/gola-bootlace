@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/access"
+	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 )
 
@@ -194,5 +195,33 @@ func TestTheCacheSpillsFromTheContainerToTheLibrary(t *testing.T) {
 	where = "library"
 	if got := s.cachePlace(1); got != local {
 		t.Fatalf("the library is gone: %s", got)
+	}
+}
+
+func TestTheNameAPCOffersIsKeptAndANamedPCIsNamedInTheLog(t *testing.T) {
+	s := &Server{}
+	req := httptest.NewRequest("GET", "/menu?mac=AA-BB-CC-DD-EE-0F&ip=10.0.0.9&host=desk-12&asset=A%0A1", nil)
+	req.RemoteAddr = "10.0.0.9:5555"
+	c := s.noteClient(req)
+	if c.MAC != "aa:bb:cc:dd:ee:0f" || c.Hostname != "desk-12" || strings.ContainsAny(c.Asset, "\r\n") {
+		t.Fatalf("%+v", c)
+	}
+	// a later request that does not say it must not wipe what an earlier one told
+	req = httptest.NewRequest("GET", "/menu?mac=aa:bb:cc:dd:ee:0f", nil)
+	req.RemoteAddr = "10.0.0.9:5555"
+	if c = s.noteClient(req); c.Hostname != "desk-12" {
+		t.Fatalf("%+v", c)
+	}
+	if got := s.who(c); got != "aa:bb:cc:dd:ee:0f (10.0.0.9)" {
+		t.Fatal(got)
+	}
+	store, _, err := config.Open(filepath.Join(t.TempDir(), "c.json"), config.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Config = store
+	_ = store.Update(func(cfg *config.Config) error { cfg.PCNames = map[string]string{c.MAC: "Reception"}; return nil })
+	if got := s.who(c); got != "Reception (aa:bb:cc:dd:ee:0f, 10.0.0.9)" {
+		t.Fatal(got)
 	}
 }

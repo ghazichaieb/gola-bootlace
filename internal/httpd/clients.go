@@ -5,6 +5,7 @@ package httpd
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -23,6 +24,8 @@ type Client struct {
 	Manufacturer string    `json:"manufacturer"`
 	Product      string    `json:"product"`
 	Serial       string    `json:"serial"`
+	Hostname     string    `json:"hostname,omitempty"` // the host name the PC gave in its DHCP request (option 12), if it gave one: not trusted, only offered as a name
+	Asset        string    `json:"asset,omitempty"`    // the asset tag of its SMBIOS, if it has one
 	FirstSeen    time.Time `json:"firstSeen"`
 	LastSeen     time.Time `json:"lastSeen"`
 	Count        int       `json:"count"` // how many times it asked for a menu
@@ -67,12 +70,28 @@ func (s *Server) noteClient(r *http.Request) Client {
 	c.Count++
 	s.changed()
 	// a request without these (an old script, a test) must not wipe what an earlier one told
-	for key, dst := range map[string]*string{"plat": &c.Platform, "man": &c.Manufacturer, "prod": &c.Product, "serial": &c.Serial} {
+	for key, dst := range map[string]*string{"plat": &c.Platform, "man": &c.Manufacturer, "prod": &c.Product, "serial": &c.Serial, "host": &c.Hostname, "asset": &c.Asset} {
 		if v := queryValue(q, key, 60); v != "" {
 			*dst = v
 		}
 	}
 	return *c
+}
+
+// PCName is the name a person gave the PC with this MAC address, or "".
+func (s *Server) PCName(mac string) string {
+	if s.Config == nil {
+		return ""
+	}
+	return s.Config.Get().PCNames[mac]
+}
+
+// who is how a PC is named in the log: its name first when it has one.
+func (s *Server) who(c Client) string {
+	if name := s.PCName(c.MAC); name != "" {
+		return fmt.Sprintf("%s (%s, %s)", name, c.MAC, c.IP)
+	}
+	return fmt.Sprintf("%s (%s)", c.MAC, c.IP)
 }
 
 // setAction notes what the PC was last sent to.

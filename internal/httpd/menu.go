@@ -159,7 +159,7 @@ func (s *Server) bootScript(w http.ResponseWriter, r *http.Request) {
 
 // menuURL is the address of a menu as iPXE asks for it: its identity filled in by iPXE itself, and a page when there is more than one.
 func (s *Server) menuURL(page int) string {
-	u := s.Base + "/menu?mac=${mac}&ip=${ip}&plat=${platform}&man=${manufacturer:uristring}&prod=${product:uristring}&serial=${serial:uristring}"
+	u := s.Base + "/menu?mac=${mac}&ip=${ip}&plat=${platform}&man=${manufacturer:uristring}&prod=${product:uristring}&serial=${serial:uristring}&host=${hostname:uristring}&asset=${asset:uristring}"
 	if page > 0 {
 		u += "&page=" + strconv.Itoa(page)
 	}
@@ -205,20 +205,20 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			why += " (" + rule.Note + ")"
 		}
 		if rule.Action == "local" {
-			s.logf("%s (%s): its rule sends it to its own disk", client.MAC, client.IP)
+			s.logf("%s: its rule sends it to its own disk", s.who(client))
 			s.setAction(client.MAC, "rule: own disk")
 			fmt.Fprint(w, menu.Local(why+": starting from this PC's own disk."))
 			return
 		}
 		for _, e := range infos {
 			if "iso:"+e.ISO.ID == rule.Action || "native:"+e.ISO.ID == rule.Action { // (a native rule that reaches iPXE: Secure Boot is off, the usual way does)
-				s.logf("%s (%s): its rule starts %s", client.MAC, client.IP, e.Title)
+				s.logf("%s: its rule starts %s", s.who(client), e.Title)
 				s.setAction(client.MAC, "rule: "+e.Title)
 				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", e.Entry, s.menuURL(1)))
 				return
 			}
 		}
-		s.logf("%s: its rule names an ISO that is not there any more: showing the menu", client.MAC)
+		s.logf("%s: its rule names an ISO that is not there any more: showing the menu", s.who(client))
 	}
 
 	var visible []entryInfo
@@ -275,7 +275,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 		opts.Focus = "next"
 	}
 	if !paged {
-		s.logf("menu for %s (%s): %d ISO file(s)", client.IP, client.MAC, len(entries))
+		s.logf("menu for %s: %d ISO file(s)", s.who(client), len(entries))
 	}
 	fmt.Fprint(w, menu.ScriptWith("Gola Bootlace", entries[first:last], opts))
 }

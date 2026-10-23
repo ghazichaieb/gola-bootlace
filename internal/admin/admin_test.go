@@ -389,3 +389,34 @@ func TestTheLogCanBeDownloadedOnlyAfterALogin(t *testing.T) {
 		t.Fatalf("%d %q %q", res.StatusCode, res.Header.Get("Content-Disposition"), body.String())
 	}
 }
+
+func TestAPCCanBeNamedAndTheNameIsSearchedAndKeptWhenForgotten(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	if code, _ := r.do("PUT", "/api/pcs/not-a-mac/name", map[string]string{"name": "x"}, nil); code != 400 {
+		t.Fatalf("a bad MAC: %d", code)
+	}
+	if code, _ := r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/name", map[string]string{"name": "  Reception  "}, nil); code != 200 {
+		t.Fatal(code)
+	}
+	_, out := r.do("GET", "/api/pcs?q=recep", nil, nil)
+	pcs := out["pcs"].([]any)
+	if len(pcs) != 1 || pcs[0].(map[string]any)["name"] != "Reception" {
+		t.Fatalf("%v", out)
+	}
+	if code, _ := r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/name", map[string]string{"name": "two\nlines"}, nil); code != 400 {
+		t.Fatalf("a name with a line break: %d", code)
+	}
+	// forgotten from the list, the PC is still listed by its name
+	r.do("DELETE", "/api/pcs/aa:bb:cc:dd:ee:01", nil, nil)
+	_, out = r.do("GET", "/api/pcs", nil, nil)
+	pcs = out["pcs"].([]any)
+	if len(pcs) != 1 || pcs[0].(map[string]any)["name"] != "Reception" || pcs[0].(map[string]any)["mac"] != "aa:bb:cc:dd:ee:01" {
+		t.Fatalf("%v", out)
+	}
+	// an empty name takes it away
+	r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/name", map[string]string{"name": ""}, nil)
+	if _, out = r.do("GET", "/api/pcs", nil, nil); out["total"].(float64) != 0 {
+		t.Fatalf("%v", out)
+	}
+}

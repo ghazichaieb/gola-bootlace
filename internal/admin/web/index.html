@@ -649,7 +649,7 @@ async function pagePCs() {
   const view = { size: pcPageSize(), offset: 0, q: "", total: 0 };
   page.innerHTML = `<h1>PCs</h1><p class="muted small">PCs that started from the network and asked for a menu. A rule sends one PC somewhere without showing it the menu: for example always to its own disk, or straight into an installer.</p>
   <div class="card tablewrap"><div class="row" style="padding:12px 14px;justify-content:space-between">
-    <input id="pq" class="inline" type="search" placeholder="Search by name, address or note" style="max-width:320px" aria-label="Search the PCs">
+    <input id="pq" class="inline" type="search" placeholder="Search by name, address, model or note" style="max-width:320px" aria-label="Search the PCs">
     <label class="row small" style="margin:0;font-weight:500">Per page <select id="psize" class="inline" style="width:auto"><option>10</option><option>25</option><option>50</option><option>100</option></select></label></div>
     <div id="pctable"></div><div class="row" id="pager" style="padding:10px 14px;justify-content:space-between"></div></div>
   <div class="grid two" style="margin-top:14px">
@@ -668,12 +668,12 @@ async function pagePCs() {
     if (document.activeElement !== $("#adays")) $("#adays").value = set.pcDays;
     $("#ract").innerHTML = actionOptions("local", false);
     $("#pctable").innerHTML = state.pcs.length ? `<table class="rt"><thead><tr><th>PC</th><th class="hide-s">Address</th><th class="hide-s">Last seen</th><th class="hide-s">Doing</th><th>What it does at start</th><th></th></tr></thead><tbody>${state.pcs.map(p => `<tr>
-      <td><strong>${esc([p.manufacturer, p.product].filter(Boolean).join(" ") || "Unknown PC")}</strong><div class="muted small mono">${esc(p.mac)}</div>${p.rule && p.rule.note ? `<div class="small">${esc(p.rule.note)}</div>` : ""}</td>
+      <td><strong>${esc(p.name || [p.manufacturer, p.product].filter(Boolean).join(" ") || "Unknown PC")}</strong>${p.name && (p.manufacturer || p.product) ? `<div class="small muted">${esc([p.manufacturer, p.product].filter(Boolean).join(" "))}</div>` : ""}<div class="muted small mono">${esc(p.mac)}</div>${!p.name && (p.hostname || p.asset) ? `<div class="small muted">Offers the name <button class="btn small" data-take="${esc(p.mac)}" data-offer="${esc(p.hostname || p.asset)}" aria-label="Use the name ${esc(p.hostname || p.asset)} for ${esc(p.mac)}">${esc(p.hostname || p.asset)}</button></div>` : ""}${p.rule && p.rule.note ? `<div class="small">${esc(p.rule.note)}</div>` : ""}</td>
       <td class="hide-s mono small" data-l="Address">${esc(p.ip || "")}<div>${p.platform === "efi" ? "UEFI" : p.platform === "pcbios" ? "BIOS" : ""}</div></td>
       <td class="hide-s small" data-l="Last seen">${p.lastSeen && !p.lastSeen.startsWith("0001") ? ago(p.lastSeen) : "not seen yet"}${p.count ? `<div class="muted">${p.count}× menu</div>` : ""}</td>
       <td class="hide-s small" data-l="Doing">${esc(p.lastAction || "")}</td>
       <td data-l="What it does at start"><select class="inline" data-mac="${esc(p.mac)}" aria-label="What ${esc(p.mac)} does at start">${actionOptions(p.rule ? p.rule.action : "menu")}</select></td>
-      <td><div class="row" style="gap:6px;flex-wrap:nowrap">${p.rule ? `<button class="btn small danger" data-del="${esc(p.mac)}" aria-label="Remove the rule of ${esc(p.mac)}">Remove rule</button>` : ""}${p.count ? `<button class="btn small" data-forget="${esc(p.mac)}" aria-label="Forget ${esc(p.mac)}">Forget</button>` : ""}</div></td></tr>`).join("")}</tbody></table>` : `<div class="empty">${view.q ? "No PC matches the search." : "No PC has asked for a menu yet."}</div>`;
+      <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-name="${esc(p.mac)}" aria-label="Name ${esc(p.mac)}">${p.name ? "Rename" : "Name"}</button>${p.rule ? `<button class="btn small danger" data-del="${esc(p.mac)}" aria-label="Remove the rule of ${esc(p.mac)}">Remove rule</button>` : ""}${p.count ? `<button class="btn small" data-forget="${esc(p.mac)}" aria-label="Forget ${esc(p.mac)}">Forget</button>` : ""}</div></td></tr>`).join("")}</tbody></table>` : `<div class="empty">${view.q ? "No PC matches the search." : "No PC has asked for a menu yet."}</div>`;
     const pages = Math.max(1, Math.ceil(view.total / view.size)), cur = Math.floor(view.offset / view.size) + 1;
     $("#pager").innerHTML = `<span class="muted small">${view.total ? `${view.offset + 1}–${view.offset + state.pcs.length} of ${view.total}` : "0 PCs"}</span><span class="row" style="gap:6px"><button class="btn small" id="pprev" ${cur <= 1 ? "disabled" : ""}>Previous</button><span class="small">Page ${cur} of ${pages}</span><button class="btn small" id="pnext" ${cur >= pages ? "disabled" : ""}>Next</button></span>`;
     $("#pprev").onclick = () => { view.offset = Math.max(0, view.offset - view.size); guard(draw)(); };
@@ -684,6 +684,17 @@ async function pagePCs() {
       else await api("/api/rules", "POST", { mac: sel.dataset.mac, action: sel.value, note: p && p.rule ? p.rule.note : "" });
       toast("Saved"); await draw();
     }));
+    page.querySelectorAll("button[data-take]").forEach(b => b.onclick = guard(async () => { await api("/api/pcs/" + encodeURIComponent(b.dataset.take) + "/name", "PUT", { name: b.dataset.offer }); toast("Named"); await draw(); }));
+    page.querySelectorAll("button[data-name]").forEach(b => b.onclick = () => {
+      const p = state.pcs.find(x => x.mac === b.dataset.name) || {};
+      const m = modal(`<h2>Name this PC</h2><p class="muted small">A name for the PC with the address <code>${esc(b.dataset.name)}</code>, shown first in this list and in the log. It stays when the PC is forgotten. Leave it empty to remove the name.</p>
+        <div class="field"><label for="pn">Name</label><input type="text" id="pn" maxlength="60" value="${esc(p.name || "")}" autocomplete="off"></div><p class="err" id="pe" role="alert"></p>
+        <div class="row" style="justify-content:flex-end"><button class="btn" id="pc">Cancel</button><button class="btn primary" id="ps">Save</button></div>`);
+      const q = s => m.el.querySelector(s);
+      q("#pc").onclick = m.close;
+      const save = async () => { try { await api("/api/pcs/" + encodeURIComponent(b.dataset.name) + "/name", "PUT", { name: q("#pn").value }); m.close(); toast("Saved"); await draw(); } catch (e) { q("#pe").textContent = e.message; } };
+      q("#ps").onclick = save; q("#pn").onkeydown = e => { if (e.key === "Enter") save(); };
+    });
     page.querySelectorAll("button[data-del]").forEach(b => b.onclick = guard(async () => { await api("/api/rules/" + encodeURIComponent(b.dataset.del), "DELETE"); toast("Rule removed"); await draw(); }));
     page.querySelectorAll("button[data-forget]").forEach(b => b.onclick = guard(async () => { await api("/api/pcs/" + encodeURIComponent(b.dataset.forget), "DELETE"); toast("Forgotten"); await draw(); }));
   };

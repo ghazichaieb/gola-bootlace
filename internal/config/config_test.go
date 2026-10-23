@@ -85,3 +85,25 @@ func TestGetReturnsACopy(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestPCNamesAreKeyedByNormalisedMACAndCleaned(t *testing.T) {
+	s, _ := open(t)
+	err := s.Update(func(c *Config) error {
+		c.PCNames = map[string]string{"AA-BB-CC-DD-EE-0F": "  Front desk  ", "aa:bb:cc:dd:ee:10": "   ", "not a mac": "x"}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Get().PCNames; len(got) != 1 || got["aa:bb:cc:dd:ee:0f"] != "Front desk" {
+		t.Fatalf("%v", got)
+	}
+	for _, bad := range []string{"two\nlines", strings.Repeat("x", MaxPCName+1)} {
+		if err := s.Update(func(c *Config) error { c.PCNames["aa:bb:cc:dd:ee:0f"] = bad; return nil }); err == nil {
+			t.Errorf("%q should be refused", bad)
+		}
+	}
+	if s.Get().PCNames["aa:bb:cc:dd:ee:0f"] != "Front desk" {
+		t.Fatal("a refused change must leave the name as it was")
+	}
+}

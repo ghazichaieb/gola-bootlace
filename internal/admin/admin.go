@@ -13,6 +13,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -103,6 +104,7 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("GET /api/pcs", a.authed(a.pcs))
 	api.HandleFunc("DELETE /api/pcs/{mac}", a.authed(a.pcForget))
 	api.HandleFunc("POST /api/pcs/clean", a.authed(a.pcClean))
+	api.HandleFunc("PUT /api/pcs/{mac}/name", a.authed(a.pcRename))
 	api.HandleFunc("POST /api/rules", a.authed(a.ruleSet))
 	api.HandleFunc("DELETE /api/rules/{mac}", a.authed(a.ruleDelete))
 	api.HandleFunc("GET /api/log", a.authed(a.logLines))
@@ -502,12 +504,13 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	}
 	type pc struct {
 		httpd.Client
+		Name string       `json:"name,omitempty"` // the name a person gave the PC
 		Rule *config.Rule `json:"rule,omitempty"`
 	}
 	out := []pc{}
 	seen := map[string]bool{}
 	for _, cl := range a.o.Backend.Clients() {
-		p := pc{Client: cl}
+		p := pc{Client: cl, Name: c.PCNames[cl.MAC]}
 		if r, ok := rules[cl.MAC]; ok {
 			r := r
 			p.Rule = &r
@@ -518,13 +521,26 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	for _, r := range c.Rules { // a rule for a PC that has not asked since the server started
 		if !seen[r.MAC] {
 			r := r
-			out = append(out, pc{Client: httpd.Client{MAC: r.MAC}, Rule: &r})
+			seen[r.MAC] = true
+			out = append(out, pc{Client: httpd.Client{MAC: r.MAC}, Name: c.PCNames[r.MAC], Rule: &r})
 		}
 	}
+	for mac, name := range c.PCNames { // a named PC that is not in the list (forgotten, or not seen since the server started)
+		if !seen[mac] {
+			out = append(out, pc{Client: httpd.Client{MAC: mac}, Name: name})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { // (the order of a map is not one: the PCs not seen go last, by name)
+		seenI, seenJ := !out[i].LastSeen.IsZero(), !out[j].LastSeen.IsZero()
+		if seenI != seenJ {
+			return seenI
+		}
+		return !seenI && out[i].MAC < out[j].MAC
+	})
 	if q := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))); q != "" {
 		kept := out[:0]
 		for _, p := range out {
-			hay := strings.ToLower(strings.Join([]string{p.MAC, p.IP, p.Manufacturer, p.Product, p.Serial, p.LastAction, noteOf(p.Rule)}, "\n"))
+			hay := strings.ToLower(strings.Join([]string{p.Name, p.MAC, p.IP, p.Manufacturer, p.Product, p.Serial, p.Hostname, p.Asset, p.LastAction, noteOf(p.Rule)}, "\n"))
 			if strings.Contains(hay, q) {
 				kept = append(kept, p)
 			}
@@ -573,6 +589,36 @@ func (a *Admin) pcForget(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.o.Logf != nil {
 		a.o.Logf("web interface: %s removed from the list of PCs", mac)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// pcRename gives a PC a name of the person's choice, or takes it away (an empty name). The name is kept with the MAC address, also when the PC is forgotten.
+func (a *Admin) pcRename(w http.ResponseWriter, r *http.Request) {
+	mac, ok := config.NormalizeMAC(r.PathValue("mac"))
+	if !ok {
+		fail(w, http.StatusBadRequest, "that is not a MAC address (like aa:bb:cc:dd:ee:ff)")
+		return
+	}
+	var in struct {
+		Name string `json:"name"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	err := a.o.Store.Update(func(c *config.Config) error {
+		if c.PCNames == nil {
+			c.PCNames = map[string]string{}
+		}
+		c.PCNames[mac] = in.Name // (Validate trims it and drops an empty one)
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: %s is called %q now", mac, strings.TrimSpace(in.Name))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

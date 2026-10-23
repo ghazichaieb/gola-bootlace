@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/access"
 )
@@ -36,6 +38,7 @@ type Config struct {
 	Titles          map[string]string `json:"titles"`      // ISO id -> the name shown instead of the file name
 	Args            map[string]string `json:"args"`        // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
 	Rules           []Rule            `json:"rules"`
+	PCNames         map[string]string `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
 	AdminHash       string            `json:"adminHash"`       // see package admin
 	SMBPassword     string            `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
 	Library         Library           `json:"library"`         // the folder with the ISOs; empty until one is chosen
@@ -162,8 +165,26 @@ func (c *Config) Validate() error {
 		rules = append(rules, r)
 	}
 	c.Rules = rules
+	for mac, name := range c.PCNames {
+		key, ok := NormalizeMAC(mac)
+		name = strings.TrimSpace(name)
+		if !ok || name == "" {
+			delete(c.PCNames, mac)
+			continue
+		}
+		if strings.IndexFunc(name, unicode.IsControl) >= 0 || utf8.RuneCountInString(name) > MaxPCName {
+			return fmt.Errorf("a PC's name must be one line of at most %d characters", MaxPCName)
+		}
+		if key != mac {
+			delete(c.PCNames, mac)
+		}
+		c.PCNames[key] = name
+	}
 	return nil
 }
+
+// MaxPCName is the longest name a PC may be given, in characters.
+const MaxPCName = 60
 
 func (c Config) clone() Config {
 	d := c
@@ -178,6 +199,10 @@ func (c Config) clone() Config {
 	d.Args = map[string]string{}
 	for k, v := range c.Args {
 		d.Args[k] = v
+	}
+	d.PCNames = map[string]string{}
+	for k, v := range c.PCNames {
+		d.PCNames[k] = v
 	}
 	d.Rules = append([]Rule(nil), c.Rules...)
 	d.Access.Networks = append([]string(nil), c.Access.Networks...)
@@ -210,6 +235,9 @@ func Open(path string, seed Config) (s *Store, created bool, err error) {
 		}
 		if s.cfg.Titles == nil {
 			s.cfg.Titles = map[string]string{}
+		}
+		if s.cfg.PCNames == nil {
+			s.cfg.PCNames = map[string]string{}
 		}
 	case errors.Is(err, os.ErrNotExist):
 		s.cfg = seed.clone()
