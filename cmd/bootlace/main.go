@@ -20,6 +20,7 @@ import (
 
 	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/admin"
+	"github.com/ghazichaieb/gola-bootlace/internal/backup"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/dhcp"
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
@@ -216,6 +217,18 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	if err := web.LoadClients(); err != nil {
 		logf("cannot read the saved list of PCs (%v): starting with an empty list", err)
 	}
+	settingsCopy := &backup.Sync{Store: store, Lib: lib, Version: version.Version, Logf: logf} // the copy of the settings in the library
+	store.OnChange(settingsCopy.Changed)
+	go func() {
+		for { // now and every little while: the library may be chosen later, or come back
+			settingsCopy.Check()
+			select {
+			case <-background:
+				return
+			case <-time.After(30 * time.Second):
+			}
+		}
+	}()
 	pxeChecker := &pxecheck.Checker{Logf: logf, Options: func() pxecheck.Options {
 		return pxecheck.Options{Local: ip, Mask: maskOf(ip), Full: *mode == "full"}
 	}}
@@ -244,7 +257,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
 			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}
 		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Access: policy, ServerIP: ip.String(), Importer: imp, Indexer: indexer, Logf: logf,
-			PXE: pxeChecker, SelfTest: func() selftest.Target {
+			PXE: pxeChecker, Sync: settingsCopy, Version: version.Version, SelfTest: func() selftest.Target {
 				t := selftest.Target{IP: ip.String(), HTTP: *httpPort, SMB: *smbPort, NBD: *nbdPort, ISCSI: *iscsiPort}
 				if infos, err := web.ISOInfos(); err == nil && len(infos) > 0 {
 					t.ISOPath = httpd.ISOPath(infos[0].Name)

@@ -36,6 +36,7 @@ type fakeBackend struct {
 func (f *fakeBackend) ISOInfos() ([]httpd.ISOInfo, error) { return f.isos, nil }
 func (f *fakeBackend) Clients() []httpd.Client            { return f.clients }
 func (f *fakeBackend) Rescan()                            { f.rescans++ }
+func (f *fakeBackend) ReplaceClients(list []httpd.Client) { f.clients = list }
 func (f *fakeBackend) ForgetPC(mac string) bool {
 	for i, c := range f.clients {
 		if c.MAC == mac {

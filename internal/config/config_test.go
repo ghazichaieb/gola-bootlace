@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func open(t *testing.T) (*Store, string) {
@@ -159,5 +160,43 @@ func TestOnlyKnownAccentColoursAreAccepted(t *testing.T) {
 		if err := s.Update(func(c *Config) error { c.MenuAccent = name; return nil }); err != nil {
 			t.Errorf("%q: %v", name, err)
 		}
+	}
+}
+
+func TestOnChangeHearsEveryKeptChangeInOrderAndNotTheQuietOnes(t *testing.T) {
+	s, _ := open(t)
+	got := make(chan int, 10)
+	s.OnChange(func(c Config) {
+		_ = s.Get() // a function may use the store
+		got <- c.MenuTimeout
+	})
+	for _, n := range []int{11, 12, 13} {
+		if err := s.Update(func(c *Config) error { c.MenuTimeout = n; return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.UpdateQuiet(func(c *Config) error { c.MenuTimeout = 99; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(func(c *Config) error { c.MenuTimeout = -5; return nil }); err == nil {
+		t.Fatal("an invalid change must be refused")
+	}
+	for _, want := range []int{11, 12, 13} {
+		select {
+		case v := <-got:
+			if v != want {
+				t.Fatalf("got %d, want %d", v, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("no call for %d", want)
+		}
+	}
+	select {
+	case v := <-got:
+		t.Fatalf("an unexpected call: %d", v)
+	case <-time.After(200 * time.Millisecond):
+	}
+	if s.Get().MenuTimeout != 99 {
+		t.Fatal("the quiet change was kept")
 	}
 }

@@ -48,6 +48,7 @@ type Config struct {
 	ImportLimitMBps int               `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
 	Cache           CacheSettings     `json:"cache"`
 	Tuning          Tuning            `json:"tuning"`
+	LibrarySync     string            `json:"librarySync"`  // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
 	MenuAccent      string            `json:"menuAccent"`   // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
 	HidePatterns    []string          `json:"hidePatterns"` // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
 }
@@ -310,6 +311,10 @@ type Store struct {
 
 	mu  sync.RWMutex
 	cfg Config
+
+	hooks    []func(Config)
+	queue    []Config // changes the OnChange functions have not heard yet
+	draining bool
 }
 
 // Open reads the file; when there is none yet the seed (the command-line values) is used and written. created tells which of the two happened.
@@ -359,8 +364,21 @@ func (s *Store) Get() Config {
 // Path is where the settings are kept.
 func (s *Store) Path() string { return s.path }
 
+// OnChange registers a function that is called, with a copy of the new settings, after every Update that was kept (not after UpdateQuiet). It runs on its own goroutine, one
+// call at a time in the order of the changes.
+func (s *Store) OnChange(f func(Config)) {
+	s.mu.Lock()
+	s.hooks = append(s.hooks, f)
+	s.mu.Unlock()
+}
+
 // Update lets fn change a copy of the settings, checks it and, when all is well, keeps it and writes the file.
-func (s *Store) Update(fn func(*Config) error) error {
+func (s *Store) Update(fn func(*Config) error) error { return s.update(fn, true) }
+
+// UpdateQuiet is Update for a change that the OnChange functions must not hear about (they would only write it down again).
+func (s *Store) UpdateQuiet(fn func(*Config) error) error { return s.update(fn, false) }
+
+func (s *Store) update(fn func(*Config) error, notify bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	next := s.cfg.clone()
@@ -376,7 +394,32 @@ func (s *Store) Update(fn func(*Config) error) error {
 		s.cfg = prev
 		return err
 	}
+	if notify && len(s.hooks) > 0 {
+		s.queue = append(s.queue, next.clone())
+		if !s.draining {
+			s.draining = true
+			go s.drain()
+		}
+	}
 	return nil
+}
+
+// drain calls the OnChange functions for the changes in the queue, in order, on one goroutine at a time. A function may use the store.
+func (s *Store) drain() {
+	for {
+		s.mu.Lock()
+		if len(s.queue) == 0 {
+			s.draining = false
+			s.mu.Unlock()
+			return
+		}
+		c, hooks := s.queue[0], s.hooks
+		s.queue = s.queue[1:]
+		s.mu.Unlock()
+		for _, h := range hooks {
+			h(c)
+		}
+	}
 }
 
 func (s *Store) save() error {

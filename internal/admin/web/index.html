@@ -280,13 +280,46 @@ function serverBanner(lib, svc) {
 
 async function pageServer() {
   const page = $("#page");
-  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>
+  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div id="copybanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>
+  <div class="card" id="backupcard" style="margin-top:14px"><h2>Backup of the settings</h2><p class="hint" style="margin-top:0">The rules, PC names, ISO titles, hidden ISOs, arguments and menu settings are the only things that cannot be rebuilt from the library. A copy without secrets is also kept in the library folder (<code>.bootlace/settings.json</code>), and a new container given the same library offers to restore it.</p>
+    <div class="row"><a class="btn" href="/api/backup/download" download>Download a backup</a><a class="btn" href="/api/backup/download?secrets=1" download id="bk-secrets">Download with the passwords</a><button class="btn" id="bk-restore">Restore from a backup file ...</button><input type="file" id="bk-file" accept=".zip,application/zip" hidden></div>
+    <p class="hint">The backup with the passwords holds the web interface's password and the Windows share's password: keep it like a password, and use it to move the settings to another machine.</p></div>
   <div class="card" id="speedcard" style="margin-top:14px"><h2>Library speed test</h2><p class="hint" style="margin-top:0">Writes and reads a test file (up to 512 MB, at most a tenth of the free room) in the library and in the container's own cache folder, then removes it, and says how many installs the library can carry at once. A library on a slow network mount is the usual reason an install is slow. Takes up to a minute.</p>
     <div class="row"><button class="btn" id="speedgo">Measure the speed</button></div><div id="speedout" aria-live="polite"></div></div>
   <div class="card" id="pxecard" style="margin-top:14px"><h2>Other servers on the network</h2><p class="hint" style="margin-top:0">Two servers answering the same PC is the most common reason a network boot fails. This sends the question a PC's firmware sends (a PXE DHCP discover) on this server's network, listens for a few seconds and lists every answer. It runs when you press the button and once when the program starts; it sends one broadcast message each time.</p>
     <div class="row"><button class="btn" id="pxego">Look for other servers</button></div><div id="pxeout" aria-live="polite"></div></div>
   <div class="card" id="selfcard" style="margin-top:14px"><h2>Self-test</h2><p class="hint" style="margin-top:0">Asks the server's own address for what a PC asks for, one step at a time: the boot script and the menu, the first bytes of an ISO, the TFTP file, the Windows share's first message, the network disk's greeting and the iSCSI port. It shows which step fails and what to look at. A firewall in front of this computer cannot be seen this way, because the questions come from the computer itself.</p>
     <div class="row"><button class="btn" id="selfgo">Run the self-test</button></div><div id="selfout" aria-live="polite"></div></div>`;
+  const drawCopy = async () => {
+    let s; try { s = await api("/api/backup/library"); } catch (e) { return; }
+    if (!s.pending) { $("#copybanner").innerHTML = ""; return; }
+    const c = s.library, k = s.current, when = s.saved ? new Date(s.saved).toLocaleString() : "";
+    $("#copybanner").innerHTML = `<div class="banner" role="status"><strong>This library holds a copy of the settings</strong> (saved ${esc(when)}${s.version ? ", version " + esc(s.version) : ""}): ${c.rules} rule(s), ${c.pcNames} PC name(s), ${c.titles} ISO title(s), ${c.hidden} hidden. This container has ${k.rules} rule(s), ${k.pcNames} PC name(s), ${k.titles} ISO title(s), ${k.hidden} hidden.
+      <div class="row" style="margin-top:8px"><button class="btn small primary" id="cp-restore">Restore the library's settings</button><button class="btn small" id="cp-keep">Keep these settings and replace the library's copy</button></div></div>`;
+    $("#cp-restore").onclick = guard(async () => { if (!await ask("Restore the settings of this library?", "The rules, PC names, ISO titles and menu settings of this container are replaced by the ones saved in the library. The passwords and the library choice of this container stay.", "Restore")) return; await api("/api/backup/library", "POST", { action: "restore" }); toast("Restored"); await drawCopy(); });
+    $("#cp-keep").onclick = guard(async () => { if (!await ask("Replace the library's copy?", "The copy saved in the library is replaced by the settings of this container.", "Replace it")) return; await api("/api/backup/library", "POST", { action: "keep" }); toast("Done"); await drawCopy(); });
+  };
+  guard(drawCopy)();
+  $("#bk-secrets").onclick = e => { if (!confirm("This file holds the passwords of the web interface and of the Windows share. Keep it like a password. Download it?")) e.preventDefault(); };
+  $("#bk-restore").onclick = () => $("#bk-file").click();
+  $("#bk-file").onchange = guard(async () => {
+    const f = $("#bk-file").files[0]; $("#bk-file").value = "";
+    if (!f) return;
+    const send = async (path) => {
+      const res = await fetch(path, { method: "POST", headers: { "X-Bootlace": "1", "Content-Type": "application/zip" }, credentials: "same-origin", body: f });
+      let data = {}; try { data = await res.json(); } catch (e) { /* no body */ }
+      if (!res.ok) throw new Error(data.error || ("error " + res.status));
+      return data;
+    };
+    const r = await send("/api/backup/inspect");
+    const row = (name, a, b) => `<tr><td>${name}</td><td>${a}</td><td>${b}</td></tr>`;
+    const i = r.incoming, c = r.current;
+    if (!await ask("Restore from this backup?", `Made by version ${esc(r.manifest.version)} on ${esc(new Date(r.manifest.created).toLocaleString())}${r.manifest.secrets ? ", with the passwords" : ""}. It replaces the settings of this container:
+      <table class="rt" style="margin:8px 0"><thead><tr><th></th><th>Now</th><th>After</th></tr></thead><tbody>${row("Rules", c.rules, i.rules)}${row("PC names", c.pcNames, i.pcNames)}${row("ISO titles", c.titles, i.titles)}${row("Hidden ISOs", c.hidden, i.hidden)}${row("Extra arguments", c.args, i.args)}${row("Hide patterns", c.hidePatterns, i.hidePatterns)}${row("PCs in the list", c.pcs, i.pcs)}</tbody></table>The library choice stays${r.manifest.secrets ? "; the passwords are replaced (restart the program for the share's password to apply)" : ", and so do the passwords"}.`, "Restore")) return;
+    const done = await send("/api/backup/restore");
+    toast(done.restart ? "Restored: restart the program for the share's password" : "Restored");
+    await drawCopy();
+  });
   const runSpeed = async force => {
     const b = $("#speedgo"); b.disabled = true; b.textContent = "Measuring ...";
     try {

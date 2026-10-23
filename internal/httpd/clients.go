@@ -179,6 +179,20 @@ func (s *Server) Rescan() {
 // Started is when the server started.
 func (s *Server) StartedAt() time.Time { return s.started }
 
+// ReplaceClients replaces the list of PCs (a restored backup).
+func (s *Server) ReplaceClients(list []Client) {
+	s.clientsMu.Lock()
+	s.clients = map[string]*Client{}
+	for i := range list {
+		if mac, ok := config.NormalizeMAC(list[i].MAC); ok && len(s.clients) < maxClients {
+			list[i].MAC = mac
+			s.clients[mac] = &list[i]
+		}
+	}
+	s.changed()
+	s.clientsMu.Unlock()
+}
+
 // ForgetPC drops one PC from the list; it is listed again when it asks for a menu.
 func (s *Server) ForgetPC(mac string) bool {
 	s.clientsMu.Lock()

@@ -5,6 +5,7 @@
 package admin
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/subtle"
 	"embed"
@@ -12,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -22,6 +24,7 @@ import (
 	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/access"
+	"github.com/ghazichaieb/gola-bootlace/internal/backup"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
 	"github.com/ghazichaieb/gola-bootlace/internal/importer"
@@ -42,6 +45,7 @@ type Backend interface {
 	ISOInfos() ([]httpd.ISOInfo, error)
 	Clients() []httpd.Client
 	Rescan()
+	ReplaceClients(list []httpd.Client) // the list of PCs from a backup
 	ForgetPC(mac string) bool
 	ForgetPCsNotSeenFor(d time.Duration) int
 	StartedAt() time.Time
@@ -64,8 +68,12 @@ type Options struct {
 	// SelfTest says where the services are for the self-test (see package selftest); without it the page has no self-test.
 	SelfTest func() selftest.Target
 	// PXE looks for other servers that answer network boots (see package pxecheck); without it the page has no such check.
-	PXE  *pxecheck.Checker
-	Logf func(format string, args ...any)
+	PXE *pxecheck.Checker
+	// Sync keeps a copy of the settings in the library (see package backup); without it that part of the backup card is not offered.
+	Sync *backup.Sync
+	// Version is the program's version, written into the backups.
+	Version string
+	Logf    func(format string, args ...any)
 }
 
 // Admin serves the pages and the API.
@@ -138,6 +146,11 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("GET /api/log/download", a.authed(a.logDownload))
 	api.HandleFunc("POST /api/selftest", a.authed(a.selfTest))
 	api.HandleFunc("POST /api/speedtest", a.authed(a.speedTest))
+	api.HandleFunc("GET /api/backup/download", a.authed(a.backupDownload))
+	api.HandleFunc("POST /api/backup/inspect", a.authed(a.backupInspect))
+	api.HandleFunc("POST /api/backup/restore", a.authed(a.backupRestore))
+	api.HandleFunc("GET /api/backup/library", a.authed(a.backupLibrary))
+	api.HandleFunc("POST /api/backup/library", a.authed(a.backupLibraryAct))
 	api.HandleFunc("GET /api/pxecheck", a.authed(a.pxeLast))
 	api.HandleFunc("POST /api/pxecheck", a.authed(a.pxeRun))
 	api.HandleFunc("GET /api/tuning", a.authed(a.tuningGet))
@@ -500,6 +513,137 @@ func (a *Admin) pxeRun(w http.ResponseWriter, r *http.Request) {
 		a.o.Logf("web interface: looked for other PXE or DHCP servers: %d answer(s), %d competing", len(res.Answers), res.Conflicts())
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"available": true, "result": res})
+}
+
+// ---- backup of the settings
+
+const maxBackupBytes = 16 << 20
+
+func (a *Admin) backupDownload(w http.ResponseWriter, r *http.Request) {
+	secrets := r.URL.Query().Get("secrets") == "1"
+	pcs, _ := json.Marshal(a.o.Backend.Clients())
+	var buf bytes.Buffer
+	if err := backup.WriteZip(&buf, a.o.Store.Get(), pcs, secrets, a.o.Version, time.Now()); err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	name := "bootlace-settings-" + time.Now().Format("20060102-150405")
+	if secrets {
+		name += "-with-secrets"
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.zip"`)
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(buf.Bytes())
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: a backup of the settings was downloaded (secrets included: %v)", secrets)
+	}
+}
+
+// readBackup reads the zip file sent as the body of a request.
+func (a *Admin) readBackup(w http.ResponseWriter, r *http.Request) (*backup.Contents, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBackupBytes)
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		fail(w, http.StatusRequestEntityTooLarge, "the file is too big for a backup")
+		return nil, false
+	}
+	c, err := backup.ReadZip(data)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
+	return c, true
+}
+
+func pcCount(raw json.RawMessage) int {
+	var list []json.RawMessage
+	if json.Unmarshal(raw, &list) != nil {
+		return 0
+	}
+	return len(list)
+}
+
+// backupInspect says what restoring a backup file would replace, without doing anything.
+func (a *Admin) backupInspect(w http.ResponseWriter, r *http.Request) {
+	c, ok := a.readBackup(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"manifest": c.Manifest, "incoming": backup.CountsOf(c.Config, pcCount(c.PCs)),
+		"current": backup.CountsOf(a.o.Store.Get(), len(a.o.Backend.Clients()))})
+}
+
+// backupRestore replaces the settings (and the list of PCs) with those of a backup file. Nothing is changed when the file is not valid.
+func (a *Admin) backupRestore(w http.ResponseWriter, r *http.Request) {
+	c, ok := a.readBackup(w, r)
+	if !ok {
+		return
+	}
+	var pcs []httpd.Client
+	if len(c.PCs) > 0 {
+		if err := json.Unmarshal(c.PCs, &pcs); err != nil {
+			fail(w, http.StatusBadRequest, "the list of PCs in the backup cannot be read")
+			return
+		}
+	}
+	err := a.o.Store.Update(func(cur *config.Config) error {
+		*cur = backup.Merge(*cur, c)
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(c.PCs) > 0 {
+		a.o.Backend.ReplaceClients(pcs)
+	}
+	a.o.Backend.Rescan()
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: the settings were restored from a backup made by version %s on %s", c.Manifest.Version, c.Manifest.Created.Local().Format("2006-01-02 15:04"))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "restart": c.Manifest.Secrets})
+}
+
+func (a *Admin) backupLibrary(w http.ResponseWriter, _ *http.Request) {
+	if a.o.Sync == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, a.o.Sync.State(len(a.o.Backend.Clients())))
+}
+
+func (a *Admin) backupLibraryAct(w http.ResponseWriter, r *http.Request) {
+	if a.o.Sync == nil {
+		fail(w, http.StatusNotFound, "not available")
+		return
+	}
+	var in struct {
+		Action string `json:"action"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	var err error
+	switch in.Action {
+	case "restore":
+		if err = a.o.Sync.Restore(); err == nil {
+			a.o.Backend.Rescan()
+		}
+	case "keep":
+		err = a.o.Sync.Keep()
+	default:
+		fail(w, http.StatusBadRequest, "the action must be restore or keep")
+		return
+	}
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: the settings copy in the library: %s", in.Action)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // speedTest writes and reads a test file in the library and in the container's own cache folder and reports the speeds. It is not run while PCs are using the server
