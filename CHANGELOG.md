@@ -3,7 +3,7 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Unreleased
+## 0.1.2 - 2026-10-23
 
 - **FreeBSD, pfSense and OPNsense on a PC with more than one network card.** The hand-off told the server the address and MAC of the *first* card (`net0`), not of the card that got the address, so the server answered "HTTP 4xx" and the PC went on to its disk. It now uses the card that is in use. Found on the first real UEFI PC (two network cards).
 - **Proxmox script: no needless template download.** A Debian 12 or 13 template that is already on the host (on any storage that holds templates) is used as it is; the newest one on offer is downloaded only when there is none. (The script itself is fetched from `main`, so this applies to the next install without a new release.)
