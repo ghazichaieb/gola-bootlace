@@ -281,8 +281,23 @@ function serverBanner(lib, svc) {
 async function pageServer() {
   const page = $("#page");
   page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>
+  <div class="card" id="pxecard" style="margin-top:14px"><h2>Other servers on the network</h2><p class="hint" style="margin-top:0">Two servers answering the same PC is the most common reason a network boot fails. This sends the question a PC's firmware sends (a PXE DHCP discover) on this server's network, listens for a few seconds and lists every answer. It runs when you press the button and once when the program starts; it sends one broadcast message each time.</p>
+    <div class="row"><button class="btn" id="pxego">Look for other servers</button></div><div id="pxeout" aria-live="polite"></div></div>
   <div class="card" id="selfcard" style="margin-top:14px"><h2>Self-test</h2><p class="hint" style="margin-top:0">Asks the server's own address for what a PC asks for, one step at a time: the boot script and the menu, the first bytes of an ISO, the TFTP file, the Windows share's first message, the network disk's greeting and the iSCSI port. It shows which step fails and what to look at. A firewall in front of this computer cannot be seen this way, because the questions come from the computer itself.</p>
     <div class="row"><button class="btn" id="selfgo">Run the self-test</button></div><div id="selfout" aria-live="polite"></div></div>`;
+  const drawPXE = r => {
+    if (!r || !r.result) { $("#pxeout").innerHTML = `<p class="muted small" style="margin-bottom:0">Not looked yet.</p>`; return; }
+    const x = r.result;
+    if (x.error) { $("#pxeout").innerHTML = `<p class="bad">${esc(x.error)}</p>`; return; }
+    const n = x.answers.filter(a => a.conflict).length;
+    $("#pxeout").innerHTML = (x.answers.length ? `<table class="rt" style="margin-top:10px"><tbody>${x.answers.map(a => `<tr><td><strong class="mono">${esc(a.from)}</strong>${a.self ? " (this server)" : ""}</td><td class="${a.conflict ? "bad" : "muted"}">${a.conflict ? "COMPETES" : a.self ? "OK" : "normal"}</td><td class="small">${esc(a.note)}${a.bootFile ? `<div class="muted">boot file ${esc(a.bootFile)}${a.nextServer ? " from " + esc(a.nextServer) : ""}</div>` : ""}${a.offered ? `<div class="muted">offers the address ${esc(a.offered)}</div>` : ""}</td></tr>`).join("")}</tbody></table>` : "")
+      + `<p class="${n ? "bad" : "muted"} small" style="margin-bottom:0">${n ? n + " other server(s) will compete with this one for the PCs. Switch the other one's network boot off, or run only one of them." : x.answers.length ? "No other server competes with this one." : "Nothing answered, not even this server (is the PXE service started? A server in a container needs the host network to hear the answers)."} Looked ${ago(x.time)}.</p>`;
+  };
+  guard(async () => { drawPXE(await api("/api/pxecheck")); })();
+  $("#pxego").onclick = guard(async () => {
+    const b = $("#pxego"); b.disabled = true; b.textContent = "Listening ...";
+    try { drawPXE(await api("/api/pxecheck", "POST", {})); } finally { b.disabled = false; b.textContent = "Look for other servers"; }
+  });
   $("#selfgo").onclick = guard(async () => {
     const b = $("#selfgo"); b.disabled = true; b.textContent = "Testing ...";
     try {

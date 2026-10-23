@@ -19,6 +19,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/importer"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
+	"github.com/ghazichaieb/gola-bootlace/internal/pxecheck"
 	"github.com/ghazichaieb/gola-bootlace/internal/selftest"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
 )
@@ -470,5 +471,32 @@ func TestSelfTestRunsTheStepsAndReportsFailures(t *testing.T) {
 	}
 	if out["failed"].(float64) != 1 {
 		t.Fatalf("only the TFTP step (nothing on port 69) fails: %v", out)
+	}
+}
+
+func TestLookingForOtherServersKeepsTheLastResult(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	if _, out := r.do("GET", "/api/pxecheck", nil, nil); out["available"] != false {
+		t.Fatalf("without a checker: %v", out)
+	}
+	silent, _ := net.ListenPacket("udp4", "127.0.0.1:0")
+	defer silent.Close()
+	free, _ := net.ListenPacket("udp4", "127.0.0.1:0")
+	listen := free.LocalAddr().String()
+	free.Close()
+	r.admin.o.PXE = &pxecheck.Checker{Options: func() pxecheck.Options {
+		return pxecheck.Options{Local: net.ParseIP("127.0.0.1"), ListenAddr: listen, SendTo: silent.LocalAddr().String(), Wait: 300 * time.Millisecond}
+	}}
+	if _, out := r.do("GET", "/api/pxecheck", nil, nil); out["available"] != true || out["result"] != nil {
+		t.Fatalf("before the first look: %v", out)
+	}
+	code, out := r.do("POST", "/api/pxecheck", map[string]any{}, nil)
+	res, _ := out["result"].(map[string]any)
+	if code != 200 || res == nil || len(res["answers"].([]any)) != 0 {
+		t.Fatalf("%d %v", code, out)
+	}
+	if _, out = r.do("GET", "/api/pxecheck", nil, nil); out["result"] == nil {
+		t.Fatalf("the last result is kept: %v", out)
 	}
 }

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"flag"
@@ -27,6 +28,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
+	"github.com/ghazichaieb/gola-bootlace/internal/pxecheck"
 	"github.com/ghazichaieb/gola-bootlace/internal/selftest"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
 	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
@@ -214,6 +216,19 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	if err := web.LoadClients(); err != nil {
 		logf("cannot read the saved list of PCs (%v): starting with an empty list", err)
 	}
+	pxeChecker := &pxecheck.Checker{Logf: logf, Options: func() pxecheck.Options {
+		return pxecheck.Options{Local: ip, Mask: maskOf(ip), Full: *mode == "full"}
+	}}
+	if *mode != "off" { // once at start, when the services have had time to come up
+		go func() {
+			select {
+			case <-background:
+				return
+			case <-time.After(10 * time.Second):
+			}
+			_, _ = pxeChecker.Run(context.Background())
+		}()
+	}
 	if !*noAdmin {
 		generated, err := admin.EnsurePassword(store, *adminPassword)
 		if err != nil {
@@ -229,7 +244,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
 			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}
 		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Access: policy, ServerIP: ip.String(), Importer: imp, Indexer: indexer, Logf: logf,
-			SelfTest: func() selftest.Target {
+			PXE: pxeChecker, SelfTest: func() selftest.Target {
 				t := selftest.Target{IP: ip.String(), HTTP: *httpPort, SMB: *smbPort, NBD: *nbdPort, ISCSI: *iscsiPort}
 				if infos, err := web.ISOInfos(); err == nil && len(infos) > 0 {
 					t.ISOPath = httpd.ISOPath(infos[0].Name)

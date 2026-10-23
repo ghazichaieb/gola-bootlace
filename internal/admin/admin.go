@@ -25,6 +25,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/importer"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
+	"github.com/ghazichaieb/gola-bootlace/internal/pxecheck"
 	"github.com/ghazichaieb/gola-bootlace/internal/selftest"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
@@ -59,7 +60,9 @@ type Options struct {
 	ServerIP string // the address PCs are told to use
 	// SelfTest says where the services are for the self-test (see package selftest); without it the page has no self-test.
 	SelfTest func() selftest.Target
-	Logf     func(format string, args ...any)
+	// PXE looks for other servers that answer network boots (see package pxecheck); without it the page has no such check.
+	PXE  *pxecheck.Checker
+	Logf func(format string, args ...any)
 }
 
 // Admin serves the pages and the API.
@@ -130,6 +133,8 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("PUT /api/library/upload", a.authed(a.upload))
 	api.HandleFunc("GET /api/log/download", a.authed(a.logDownload))
 	api.HandleFunc("POST /api/selftest", a.authed(a.selfTest))
+	api.HandleFunc("GET /api/pxecheck", a.authed(a.pxeLast))
+	api.HandleFunc("POST /api/pxecheck", a.authed(a.pxeRun))
 	api.HandleFunc("GET /api/tuning", a.authed(a.tuningGet))
 	api.HandleFunc("PUT /api/tuning", a.authed(a.tuningSet))
 	api.HandleFunc("GET /api/cache", a.authed(a.cacheGet))
@@ -464,6 +469,32 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// pxeLast is the result of the last look for other PXE or DHCP servers (the one made at start, or the last button press).
+func (a *Admin) pxeLast(w http.ResponseWriter, _ *http.Request) {
+	if a.o.PXE == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"available": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"available": true, "result": a.o.PXE.Last()})
+}
+
+// pxeRun looks now. It sends a broadcast question on the server's network and listens for a few seconds.
+func (a *Admin) pxeRun(w http.ResponseWriter, r *http.Request) {
+	if a.o.PXE == nil {
+		fail(w, http.StatusNotFound, "the check is not available")
+		return
+	}
+	res, err := a.o.PXE.Run(r.Context())
+	if errors.Is(err, pxecheck.ErrBusy) {
+		fail(w, http.StatusConflict, err.Error())
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: looked for other PXE or DHCP servers: %d answer(s), %d competing", len(res.Answers), res.Conflicts())
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"available": true, "result": res})
 }
 
 // selfTest checks the services from the server's own address, the way a PC uses them (see package selftest).
