@@ -82,6 +82,8 @@ input[type=text].inline,input[type=search].inline,select.inline{min-height:38px;
 .login{max-width:380px;margin:12vh auto 0}
 .login .brand{justify-content:center;margin-bottom:16px;font-size:20px}
 .err{color:var(--bad);min-height:22px;margin:8px 0 0}
+.bad{color:var(--bad)}
+.ok{color:var(--ok)}
 .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 18px;border-radius:10px;max-width:90vw;z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.3)}
 .toast.bad{background:var(--bad);color:#fff}
 .log{background:#0e1012;color:#d5d9de;border-radius:10px;padding:10px 12px;height:60vh;min-height:280px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
@@ -127,7 +129,7 @@ td.k{color:var(--muted);white-space:nowrap}
 "use strict";
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const state = { libPath: "", polling: false, view: "dash", isos: [], defaultAction: "", pcs: [], status: null, settings: null, logLast: 0, logLines: [], timers: [], authed: false, version: "" };
+const state = { setupDone: undefined, libPath: "", polling: false, view: "dash", isos: [], defaultAction: "", pcs: [], status: null, settings: null, logLast: 0, logLines: [], timers: [], authed: false, version: "" };
 const views = [["dash", "Dashboard"], ["server", "Server"], ["library", "Library"], ["isos", "ISOs"], ["pcs", "PCs"], ["menu", "Menu"], ["log", "Log"], ["account", "Account"]];
 
 async function api(path, method = "GET", body) {
@@ -194,7 +196,13 @@ function render() {
   app.querySelectorAll("nav button").forEach(b => b.onclick = () => { state.view = b.dataset.v; location.hash = state.view; render(); });
   $("#theme").onclick = toggleTheme;
   $("#out").onclick = guard(async () => { await api("/api/logout", "POST", {}); state.authed = false; render(); });
-  ({ dash: pageDash, server: pageServer, library: pageLibrary, isos: pageISOs, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
+  if (state.setupDone === undefined) { // the first-start guide is offered first, until it is finished or skipped
+    state.setupDone = null;
+    api("/api/setup").then(s => { state.setupDone = !!s.done; if (!s.done && !location.hash) state.view = "start"; render(); }).catch(() => { state.setupDone = true; });
+  }
+  if (state.setupDone === false && !views.some(v => v[0] === "start")) views.unshift(["start", "Start here"]);
+  if (state.setupDone === true) { const i = views.findIndex(v => v[0] === "start"); if (i >= 0) views.splice(i, 1); }
+  ({ start: pageStart, dash: pageDash, server: pageServer, library: pageLibrary, isos: pageISOs, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
 }
 
 function toggleTheme() {
@@ -793,6 +801,45 @@ async function pagePCs() {
   });
   await guard(draw)();
   every(5000, async () => { if (!page.contains(document.activeElement) || document.activeElement === document.body) await draw(); });
+}
+
+// ---- first-start guide
+async function pageStart() {
+  const page = $("#page");
+  const [setup, st, acc] = await Promise.all([api("/api/setup"), api("/api/status"), api("/api/access")]);
+  const fact = n => ((st.facts || []).find(f => f.name === n) || {}).value || "";
+  const mark = ok => ok ? `<span class="ok" aria-label="done">&#10003;</span>` : `<span class="muted" aria-label="to do">&#9675;</span>`;
+  const dhcp = fact("DHCP");
+  page.innerHTML = `<h1>Welcome to Gola Bootlace</h1><p class="muted">Four short steps, and a PC that starts from the network gets your menu. Everything here is also on the normal pages; this list only goes through it once.</p>
+  <div class="card" id="g1"><h2>${mark(setup.passwordChosen)} 1. Your own password</h2>
+    ${setup.passwordChosen ? `<p class="small muted" style="margin:0">You set your own password.</p>` : `<p class="small muted">The password you logged in with was made up by the server at its first start and written in its log. Replace it with one you will remember.</p>
+    <form id="gpf" class="grid two"><div class="field"><label for="gpc">The password you logged in with</label><input id="gpc" type="password" autocomplete="current-password" required></div>
+    <div class="field"><label for="gpn">Your new password (8 characters or more)</label><input id="gpn" type="password" autocomplete="new-password" minlength="8" required></div>
+    <div><button class="btn primary">Set my password</button></div></form>`}</div>
+  <div class="card" id="g2" style="margin-top:14px"><h2>${mark(setup.library)} 2. The library</h2>
+    <p class="small muted">The folder with your ISO files, on this computer or on a network drive that is mounted here. Bootlace adds a hidden <code>.bootlace</code> folder to it and nothing else.</p>
+    ${setup.library ? `<p class="small" style="margin:0">The library is <code>${esc(setup.libraryPath)}</code>.</p>` : `<button class="btn primary" data-go="server">Choose the library</button>`}</div>
+  <div class="card" id="g3" style="margin-top:14px"><h2>${mark(true)} 3. Who may use the server</h2>
+    <p class="small muted">Addresses of the local network are always answered; every other address is refused${(acc.stats && acc.stats.networks.length) ? `, except ${acc.stats.networks.length} network(s) you added` : ""}${acc.stats && acc.stats.allowPublic ? ". <strong>Right now every address is answered.</strong>" : "."} The network disk and iSCSI have no login, so keep the server off the internet.</p>
+    <button class="btn" data-go="server">Review it on the Server page</button></div>
+  <div class="card" id="g4" style="margin-top:14px"><h2>${mark(false)} 4. Check that a PC will see the menu</h2>
+    <p class="small muted">DHCP mode: <strong>${esc(dhcp || "?")}</strong>. ${dhcp === "proxy" ? "In proxy mode your network's own DHCP server gives addresses and Bootlace only answers PCs that start a network boot, so the router needs no change." : dhcp === "full" ? "In full mode Bootlace hands out addresses itself: only use it on a network without a DHCP server." : "Without DHCP the PCs have to be pointed at the server by hand."} The boot menu is at <code>${esc(fact("Boot menu"))}</code>.</p>
+    <div class="row"><button class="btn" id="gcheck">Run the checks</button></div><div id="gout" aria-live="polite"></div></div>
+  <div class="row" style="margin-top:14px"><button class="btn primary" id="gdone">Finish</button><button class="btn" id="gskip">Skip this guide</button></div>`;
+  page.querySelectorAll("[data-go]").forEach(b => b.onclick = () => { state.view = b.dataset.go; location.hash = state.view; render(); });
+  const f = $("#gpf");
+  if (f) f.onsubmit = guard(async e => { e.preventDefault(); await api("/api/password", "POST", { current: $("#gpc").value, new: $("#gpn").value }); toast("Password changed"); await pageStart(); });
+  $("#gcheck").onclick = guard(async () => {
+    const b = $("#gcheck"); b.disabled = true; b.textContent = "Checking ...";
+    try {
+      const [r, p] = await Promise.all([api("/api/selftest", "POST", {}).catch(e => ({ results: [], failed: 0, error: e.message })), api("/api/pxecheck", "POST", {}).catch(e => ({ result: { answers: [], error: e.message } }))]);
+      const conflicts = ((p.result && p.result.answers) || []).filter(a => a.conflict).length;
+      $("#gout").innerHTML = `<ul class="small" style="margin:10px 0 0;padding-left:18px">${(r.results || []).map(x => `<li>${x.status === "ok" ? "&#10003;" : x.status === "fail" ? "<strong class=\"bad\">&#10007;</strong>" : "&#8211;"} ${esc(x.title)}${x.status === "fail" ? ": " + esc(x.detail) + " <span class=\"muted\">" + esc(x.hint || "") + "</span>" : ""}</li>`).join("")}</ul>
+        <p class="small ${r.failed || conflicts ? "bad" : "muted"}">${r.failed ? r.failed + " check(s) failed. " : ""}${conflicts ? conflicts + " other server(s) answer network boots too (Server page). " : ""}${!r.failed && !conflicts ? "All good. Start a PC from the network: it should show the Gola Bootlace menu." : ""}</p>`;
+    } finally { b.disabled = false; b.textContent = "Run the checks"; }
+  });
+  const finish = guard(async () => { await api("/api/setup/finish", "POST", {}); state.setupDone = true; state.view = "dash"; location.hash = "dash"; render(); });
+  $("#gdone").onclick = finish; $("#gskip").onclick = finish;
 }
 
 // ---- menu

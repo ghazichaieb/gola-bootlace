@@ -538,3 +538,24 @@ func TestTheSpeedTestWaitsForPCsAndMeasuresTheLibraryAndTheCacheFolder(t *testin
 		t.Errorf("the library: %v", lib)
 	}
 }
+
+func TestTheFirstStartGuideIsOfferedUntilFinished(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	_ = r.store.Update(func(c *config.Config) error { c.PasswordChosen = false; return nil }) // (as after a password made up by the server)
+	if _, out := r.do("GET", "/api/setup", nil, nil); out["done"] != false || out["passwordChosen"] != false {
+		t.Fatalf("a new installation: %v", out)
+	}
+	if code, _ := r.do("POST", "/api/password", map[string]string{"current": "correct horse", "new": "a better password"}, nil); code != 200 {
+		t.Fatal(code)
+	}
+	if _, out := r.do("GET", "/api/setup", nil, nil); out["passwordChosen"] != true {
+		t.Fatalf("choosing a password is noted: %v", out)
+	}
+	if code, _ := r.do("POST", "/api/setup/finish", map[string]any{}, nil); code != 200 {
+		t.Fatal(code)
+	}
+	if _, out := r.do("GET", "/api/setup", nil, nil); out["done"] != true {
+		t.Fatalf("%v", out)
+	}
+}

@@ -47,6 +47,7 @@ type Contents struct {
 func Strip(c config.Config, secrets bool) config.Config {
 	c.Library = config.Library{}
 	c.LibrarySync = ""
+	c.PasswordChosen, c.FirstStartDone = false, false // (belong to this container)
 	if !secrets {
 		c.AdminHash, c.SMBPassword = "", ""
 	}
@@ -131,6 +132,7 @@ func ReadZip(data []byte) (*Contents, error) {
 func Merge(current config.Config, in *Contents) config.Config {
 	next := in.Config
 	next.Library, next.LibrarySync = current.Library, current.LibrarySync
+	next.PasswordChosen, next.FirstStartDone = current.PasswordChosen, current.FirstStartDone
 	if !in.Manifest.Secrets {
 		next.AdminHash, next.SMBPassword = current.AdminHash, current.SMBPassword
 	}

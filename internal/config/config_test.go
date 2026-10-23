@@ -200,3 +200,19 @@ func TestOnChangeHearsEveryKeptChangeInOrderAndNotTheQuietOnes(t *testing.T) {
 		t.Fatal("the quiet change was kept")
 	}
 }
+
+func TestAnInstallationFromBeforeTheGuideHasDoneItsFirstStart(t *testing.T) {
+	dir := t.TempDir()
+	old := filepath.Join(dir, "old.json")
+	if err := os.WriteFile(old, []byte(`{"menuTimeout": 5, "adminHash": "x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, created, err := Open(old, Config{})
+	if err != nil || created || !s.Get().FirstStartDone {
+		t.Fatalf("%v %v %+v", err, created, s.Get())
+	}
+	fresh, created, err := Open(filepath.Join(dir, "new.json"), Config{})
+	if err != nil || !created || fresh.Get().FirstStartDone {
+		t.Fatalf("a new installation has not: %v %v %+v", err, created, fresh.Get())
+	}
+}

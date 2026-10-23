@@ -147,6 +147,8 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("POST /api/library/upload/check", a.authed(a.uploadCheck))
 	api.HandleFunc("PUT /api/library/upload", a.authed(a.upload))
 	api.HandleFunc("GET /api/log/download", a.authed(a.logDownload))
+	api.HandleFunc("GET /api/setup", a.authed(a.setupGet))
+	api.HandleFunc("POST /api/setup/finish", a.authed(a.setupFinish))
 	api.HandleFunc("POST /api/selftest", a.authed(a.selfTest))
 	api.HandleFunc("POST /api/speedtest", a.authed(a.speedTest))
 	api.HandleFunc("GET /api/backup/download", a.authed(a.backupDownload))
@@ -390,7 +392,7 @@ func (a *Admin) password(w http.ResponseWriter, r *http.Request) {
 	}
 	h, err := HashPassword(in.New)
 	if err == nil {
-		err = a.o.Store.Update(func(c *config.Config) error { c.AdminHash = h; return nil })
+		err = a.o.Store.Update(func(c *config.Config) error { c.AdminHash = h; c.PasswordChosen = true; return nil })
 	}
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
@@ -516,6 +518,23 @@ func (a *Admin) pxeRun(w http.ResponseWriter, r *http.Request) {
 		a.o.Logf("web interface: looked for other PXE or DHCP servers: %d answer(s), %d competing", len(res.Answers), res.Conflicts())
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"available": true, "result": res})
+}
+
+// ---- the first-start guide
+
+// setupGet says whether the first-start guide is still to be done and what it needs to show.
+func (a *Admin) setupGet(w http.ResponseWriter, _ *http.Request) {
+	c := a.o.Store.Get()
+	writeJSON(w, http.StatusOK, map[string]any{"done": c.FirstStartDone, "passwordChosen": c.PasswordChosen, "library": a.o.Library.Check() == nil, "libraryPath": a.o.Library.Path()})
+}
+
+// setupFinish ends the guide (also when it is skipped): it is not offered again.
+func (a *Admin) setupFinish(w http.ResponseWriter, _ *http.Request) {
+	if err := a.o.Store.Update(func(c *config.Config) error { c.FirstStartDone = true; return nil }); err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // ---- backup of the settings

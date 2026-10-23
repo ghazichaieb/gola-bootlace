@@ -48,9 +48,11 @@ type Config struct {
 	ImportLimitMBps int               `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
 	Cache           CacheSettings     `json:"cache"`
 	Tuning          Tuning            `json:"tuning"`
-	LibrarySync     string            `json:"librarySync"`  // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
-	MenuAccent      string            `json:"menuAccent"`   // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
-	HidePatterns    []string          `json:"hidePatterns"` // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
+	PasswordChosen  bool              `json:"passwordChosen"` // the person set the web interface's password (it was not only made up at the first start)
+	FirstStartDone  bool              `json:"firstStartDone"` // the first-start guide was finished or skipped
+	LibrarySync     string            `json:"librarySync"`    // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
+	MenuAccent      string            `json:"menuAccent"`     // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
+	HidePatterns    []string          `json:"hidePatterns"`   // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
 }
 
 // AccentNames are the colours the menu's highlighted line may have (see package menu).
@@ -326,9 +328,15 @@ func Open(path string, seed Config) (s *Store, created bool, err error) {
 		if err := json.Unmarshal(data, &s.cfg); err != nil {
 			return nil, false, fmt.Errorf("%s: %w", path, err)
 		}
-		var probe struct{ PCDays *int }
+		var probe struct {
+			PCDays         *int
+			FirstStartDone *bool
+		}
 		if json.Unmarshal(data, &probe) == nil && probe.PCDays == nil {
 			s.cfg.PCDays = DefaultPCDays // a file from before the setting existed
+		}
+		if json.Unmarshal(data, &probe) == nil && probe.FirstStartDone == nil && s.cfg.AdminHash != "" {
+			s.cfg.FirstStartDone = true // an installation from before the guide existed has been through its first start
 		}
 		if s.cfg.Hidden == nil {
 			s.cfg.Hidden = map[string]bool{}

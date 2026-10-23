@@ -77,7 +77,7 @@ func EnsurePassword(store *config.Store, given string) (generated string, err er
 		if err != nil {
 			return "", err
 		}
-		return "", store.Update(func(c *config.Config) error { c.AdminHash = h; return nil })
+		return "", store.Update(func(c *config.Config) error { c.AdminHash = h; c.PasswordChosen = true; return nil })
 	case c.AdminHash == "":
 		pw := RandomPassword()
 		h, err := HashPassword(pw)
