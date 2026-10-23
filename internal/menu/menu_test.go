@@ -1,6 +1,7 @@
 package menu
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -90,5 +91,31 @@ func TestAFailedStartWaitsThenReturnsToTheMenuNotToTheDisk(t *testing.T) {
 	}
 	if s := Direct("Rule", Entry{Name: "A", Commands: []string{"boot"}}, ""); !strings.Contains(s, ":again\nshell\n") {
 		t.Errorf("without an address the shell is the way out:\n%s", s)
+	}
+}
+
+func TestTheAccentColourIsTheChosenLineAndTheHeadings(t *testing.T) {
+	def := ScriptWith("x", nil, Options{})
+	if !strings.Contains(def, "cpair --foreground 7 --background 1 2 ") || !strings.Contains(def, "cpair --foreground 1 --background 0 3 ") {
+		t.Fatalf("Gola's red is the default:\n%s", def)
+	}
+	// (the picture menu keeps iPXE's own colours until an accent is chosen: the only cpair lines are the ones after :plain)
+	if pic := ScriptWith("x", nil, Options{Picture: "http://s/bg.png", Width: 1024, Height: 768}); strings.Index(pic, "--background 1 2") < strings.Index(pic, ":plain") {
+		t.Fatal("without an accent only the text fallback has colours")
+	}
+	for _, name := range AccentNames {
+		s := ScriptWith("x", nil, Options{Accent: name})
+		a := accents[name]
+		want := fmt.Sprintf("cpair --foreground %d --background %d 2 ", a.text, a.colour)
+		if !strings.Contains(s, want) || !strings.Contains(s, fmt.Sprintf("cpair --foreground %d --background 0 3 ", a.colour)) {
+			t.Errorf("%s: want %q in\n%s", name, want, s)
+		}
+	}
+	blue := ScriptWith("x", nil, Options{Accent: "blue", Picture: "http://s/bg.png", Width: 1024, Height: 768})
+	if strings.Index(blue, "--background 4 2") > strings.Index(blue, "console --x") {
+		t.Errorf("a chosen accent also colours the picture menu, so it is set before the picture:\n%s", blue)
+	}
+	if got := ScriptWith("x", nil, Options{Accent: "nonsense"}); !strings.Contains(got, "--background 1 2 ") {
+		t.Error("an unknown name falls back to red")
 	}
 }

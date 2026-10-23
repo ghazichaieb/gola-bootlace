@@ -231,7 +231,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			entries = append(entries, e.Entry)
 		}
 	}
-	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout, Again: s.menuURL(1)}
+	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout, Again: s.menuURL(1), Accent: cfg.MenuAccent}
 	if client.Platform == "efi" {
 		opts.Picture, opts.Width, opts.Height, opts.Top = s.Base+"/bg.png", gfx.Width, gfx.Height, gfx.LogoBottom+16
 	} else if client.Platform == "pcbios" {

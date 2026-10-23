@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,8 +48,12 @@ type Config struct {
 	ImportLimitMBps int               `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
 	Cache           CacheSettings     `json:"cache"`
 	Tuning          Tuning            `json:"tuning"`
+	MenuAccent      string            `json:"menuAccent"`   // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
 	HidePatterns    []string          `json:"hidePatterns"` // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
 }
+
+// AccentNames are the colours the menu's highlighted line may have (see package menu).
+var AccentNames = []string{"red", "green", "yellow", "blue", "magenta", "cyan", "white"}
 
 // Tuning are the knobs of the network boot itself, for firmware and switches that do not cope with the defaults.
 type Tuning struct {
@@ -191,6 +196,9 @@ func (c *Config) Validate() error {
 			return errors.New("a name must be one line of at most 120 characters")
 		}
 		c.Titles[id] = t
+	}
+	if c.MenuAccent != "" && !slices.Contains(AccentNames, c.MenuAccent) {
+		return errors.New("the accent colour must be one of: " + strings.Join(AccentNames, ", "))
 	}
 	if c.Tuning.TFTPBlockSize != 0 && (c.Tuning.TFTPBlockSize < 512 || c.Tuning.TFTPBlockSize > 65464) {
 		return errors.New("the TFTP block size must be 0 (follow the PC) or between 512 and 65464")

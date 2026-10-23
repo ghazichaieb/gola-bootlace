@@ -149,3 +149,15 @@ func TestTuningAndPatternsAreChecked(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestOnlyKnownAccentColoursAreAccepted(t *testing.T) {
+	s, _ := open(t)
+	if err := s.Update(func(c *Config) error { c.MenuAccent = "purple-ish"; return nil }); err == nil {
+		t.Error("an unknown colour must be refused")
+	}
+	for _, name := range append([]string{""}, AccentNames...) {
+		if err := s.Update(func(c *Config) error { c.MenuAccent = name; return nil }); err != nil {
+			t.Errorf("%q: %v", name, err)
+		}
+	}
+}

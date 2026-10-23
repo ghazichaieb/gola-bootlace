@@ -749,10 +749,11 @@ async function pageMenu() {
       <p class="hint">One pattern a line, compared with the path of the file in the library, without regard to case. <code>*</code> is any text and <code>?</code> one character: <code>old/</code> or <code>old/*</code> is everything in the folder old, <code>*beta*</code> any path with beta in it, <code>win11.iso</code> that one file. An ISO kept out this way is still listed on the ISOs page, marked "by a pattern".</p></div>
     <div class="grid two"><div class="field"><label for="tb">Largest TFTP block (bytes)</label><input id="tb" type="number" min="0" max="65464" value="${tuning.tftpBlockSize}"><p class="hint">0 follows what each PC asks for. Some switches and firmware only work with small blocks: try 1024 or 512 (at least 512) when a PC stops at the start of a download.</p></div>
     <div class="field"><label for="tw">TFTP blocks sent ahead (FreeBSD loader)</label><input id="tw" type="number" min="0" max="16" value="${tuning.tftpWindow}"><p class="hint">0 keeps the program's own number (4). 1 sends one block and waits, as the protocol says.</p></div></div>
+    <div class="field"><label for="ta">Colour of the highlighted line</label><select id="ta"><option value="">Gola red (default)</option>${(tuning.accents || []).filter(c => c !== "red").map(c => `<option value="${c}"${tuning.menuAccent === c ? " selected" : ""}>${c[0].toUpperCase() + c.slice(1)}</option>`).join("")}</select><p class="hint">The chosen line and the section headings of the menu on a PC. A PC in UEFI mode shows the Gola Bootlace logo picture behind the menu; the colour of the line follows this choice when one other than the default is set.</p></div>
     <button class="btn primary">Save</button></form>`);
   $("#tf").onsubmit = guard(async e => {
     e.preventDefault();
-    await api("/api/tuning", "PUT", { hidePatterns: $("#hp").value.split("\n"), tftpBlockSize: parseInt($("#tb").value || "0", 10), tftpWindow: parseInt($("#tw").value || "0", 10) });
+    await api("/api/tuning", "PUT", { hidePatterns: $("#hp").value.split("\n"), tftpBlockSize: parseInt($("#tb").value || "0", 10), tftpWindow: parseInt($("#tw").value || "0", 10), menuAccent: $("#ta").value });
     toast("Saved");
   });
   $("#mf").onsubmit = guard(async e => {

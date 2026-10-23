@@ -65,6 +65,27 @@ type Options struct {
 	// Again is the address of the menu to go back to when something did not work (and for the entries that say "try again in a minute"): empty goes to
 	// the iPXE shell. It is a page of the menu that is shown without the PC's rule and without a timeout, so that a failure never ends at the PC's disk.
 	Again string
+
+	// Accent is the colour of the highlighted line and of the section headings, one of AccentNames; empty is Gola's red.
+	Accent string
+}
+
+// accents are the colours of iPXE's palette that read well as the highlighted line: the background of the chosen line and the text colour on it.
+var accents = map[string]struct{ colour, text int }{
+	"red": {1, 7}, "green": {2, 0}, "yellow": {3, 0}, "blue": {4, 7}, "magenta": {5, 7}, "cyan": {6, 0}, "white": {7, 0},
+}
+
+// AccentNames are the colours that can be chosen as Accent.
+var AccentNames = []string{"red", "green", "yellow", "blue", "magenta", "cyan", "white"}
+
+// cpairs sets iPXE's colour pairs: white on black, the chosen line in the accent colour and the section headings in it on black. (The BIOS build of iPXE has
+// no colour command: the guard keeps the script going.)
+func cpairs(accent string) string {
+	a, ok := accents[accent]
+	if !ok {
+		a = accents["red"]
+	}
+	return fmt.Sprintf("cpair --foreground 7 --background 0 0 || set colours default\ncpair --foreground 7 --background 0 1 || set colours default\ncpair --foreground %d --background %d 2 || set colours default\ncpair --foreground %d --background 0 3 || set colours default\n", a.text, a.colour, a.colour)
 }
 
 // failedPrompt is what a failed start says: the message stays on screen for 20 seconds (a key press ends the wait), then the menu is shown again.
@@ -228,6 +249,9 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 		line("reboot", "Restart this PC")
 	}
 	if o.Picture != "" {
+		if o.Accent != "" { // (a chosen accent colour also colours the picture menu; without one it keeps iPXE's own colours)
+			b.WriteString(cpairs(o.Accent))
+		}
 		// the picture carries the logo, so the menu's own heading only says what to do; a PC that cannot show it falls back to the text menu with the name
 		fmt.Fprintf(&b, "console --x %d --y %d --picture %s --left 64 --right 64 --top %d --bottom 40 && goto gfx || goto plain\n", o.Width, o.Height, o.Picture, o.Top)
 		fmt.Fprintf(&b, ":gfx\nmenu Choose what to start%s\n", pageNote(o, " - "))
@@ -237,7 +261,7 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	}
 	// the text screen: Gola's red for the chosen line, on black
 	// (the BIOS build of iPXE has no colour command: the guard keeps the script going)
-	b.WriteString("cpair --foreground 7 --background 0 0 || set colours default\ncpair --foreground 7 --background 0 1 || set colours default\ncpair --foreground 7 --background 1 2 || set colours default\ncpair --foreground 1 --background 0 3 || set colours default\n")
+	b.WriteString(cpairs(o.Accent))
 	fmt.Fprintf(&b, "menu %s%s\n", clean(title), pageNote(o, " - "))
 	if !o.Ascii {
 		gap("")
