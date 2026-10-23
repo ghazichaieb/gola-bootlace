@@ -30,6 +30,39 @@ type Rule struct {
 	Added  time.Time `json:"added"`
 }
 
+// GroupRule says where every PC of a kind goes when it starts from the network: by the manufacturer or model its firmware reports, or by its platform. A rule for one PC (by
+// MAC address) wins over a group rule; group rules apply in the order they are listed, the first that matches decides.
+type GroupRule struct {
+	Kind   string    `json:"kind"`   // "model" (the manufacturer and model text contains Match), "manufacturer" (the manufacturer text contains it) or "platform" ("efi" or "pcbios")
+	Match  string    `json:"match"`  // compared without regard to case
+	Action string    `json:"action"` // like Rule.Action; "menu" shows the menu and stops looking at later group rules
+	Note   string    `json:"note"`
+	Added  time.Time `json:"added"`
+}
+
+// GroupKinds are the kinds a GroupRule may have.
+var GroupKinds = []string{"model", "manufacturer", "platform"}
+
+// Matches says whether a PC with these facts (from its firmware) is in the group.
+func (g GroupRule) Matches(manufacturer, product, platform string) bool {
+	m := strings.ToLower(strings.TrimSpace(g.Match))
+	if m == "" {
+		return false
+	}
+	switch g.Kind {
+	case "model":
+		return strings.Contains(strings.ToLower(manufacturer+" "+product), m)
+	case "manufacturer":
+		return strings.Contains(strings.ToLower(manufacturer), m)
+	case "platform":
+		return strings.ToLower(platform) == m
+	}
+	return false
+}
+
+// Describe is the group in words, for the log and the menu script: `model "ThinkCentre"`.
+func (g GroupRule) Describe() string { return g.Kind + ` "` + g.Match + `"` }
+
 // Config is the whole file.
 type Config struct {
 	MenuTimeout     int                  `json:"menuTimeout"`   // seconds before the default entry starts; 0 waits for a choice
@@ -41,6 +74,7 @@ type Config struct {
 	Args            map[string]string    `json:"args"`          // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
 	BootPasswords   map[string]string    `json:"bootPasswords"` // ISO id -> hash of the password the menu asks for before it starts that ISO (see package admin); a secret, not in backups without secrets
 	Rules           []Rule               `json:"rules"`
+	GroupRules      []GroupRule          `json:"groupRules"`      // rules for every PC of a kind (model, manufacturer, platform); a rule for one PC wins
 	PCNames         map[string]string    `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
 	AdminHash       string               `json:"adminHash"`       // see package admin
 	SMBPassword     string               `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
@@ -281,6 +315,37 @@ func (c *Config) Validate() error {
 		rules = append(rules, r)
 	}
 	c.Rules = rules
+	groups := []GroupRule{}
+	seenGroup := map[string]bool{}
+	for _, g := range c.GroupRules {
+		g.Match = strings.TrimSpace(g.Match)
+		g.Note = strings.TrimSpace(g.Note)
+		if !slices.Contains(GroupKinds, g.Kind) {
+			return fmt.Errorf("a group rule is for a model, a manufacturer or a platform, not %q", g.Kind)
+		}
+		if g.Match == "" || utf8.RuneCountInString(g.Match) > 60 || strings.IndexFunc(g.Match, unicode.IsControl) >= 0 {
+			return errors.New("what a group rule matches must be one line of 1 to 60 characters")
+		}
+		if g.Kind == "platform" {
+			g.Match = strings.ToLower(g.Match)
+			if g.Match != "efi" && g.Match != "pcbios" {
+				return errors.New("a platform is efi (UEFI) or pcbios (BIOS)")
+			}
+		}
+		if !ValidAction(g.Action) {
+			return fmt.Errorf("the action %q is not valid", g.Action)
+		}
+		if strings.ContainsAny(g.Note, "\r\n") || len(g.Note) > 120 {
+			return errors.New("a note must be one line of at most 120 characters")
+		}
+		key := g.Kind + "|" + strings.ToLower(g.Match)
+		if seenGroup[key] {
+			return fmt.Errorf("two group rules for %s", g.Describe())
+		}
+		seenGroup[key] = true
+		groups = append(groups, g)
+	}
+	c.GroupRules = groups
 	for mac, name := range c.PCNames {
 		key, ok := NormalizeMAC(mac)
 		name = strings.TrimSpace(name)
@@ -329,6 +394,7 @@ func (c Config) clone() Config {
 		d.PCNames[k] = v
 	}
 	d.Rules = append([]Rule(nil), c.Rules...)
+	d.GroupRules = append([]GroupRule(nil), c.GroupRules...)
 	d.Access.Networks = append([]string(nil), c.Access.Networks...)
 	d.HidePatterns = append([]string(nil), c.HidePatterns...)
 	return d

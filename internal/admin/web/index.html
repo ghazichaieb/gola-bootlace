@@ -752,6 +752,7 @@ async function pagePCs() {
     <input id="pq" class="inline" type="search" placeholder="Search by name, address, model or note" style="max-width:320px" aria-label="Search the PCs">
     <label class="row small" style="margin:0;font-weight:500">Per page <select id="psize" class="inline" style="width:auto"><option>10</option><option>25</option><option>50</option><option>100</option></select></label></div>
     <div id="pctable"></div><div class="row" id="pager" style="padding:10px 14px;justify-content:space-between"></div></div>
+  <div class="card" id="groupcard" style="margin-top:14px"></div>
   <div class="grid two" style="margin-top:14px">
   <div class="card"><h2>Add a rule for a PC that is not listed</h2><form id="rf">
     <div class="field"><label for="rmac">MAC address</label><input id="rmac" type="text" placeholder="aa:bb:cc:dd:ee:ff" required pattern="[0-9A-Fa-f]{2}([:\\-][0-9A-Fa-f]{2}){5}"></div>
@@ -761,6 +762,29 @@ async function pagePCs() {
     <div class="field"><label for="cdays">Forget the PCs not seen for this many days</label><div class="row"><input id="cdays" type="number" min="0" max="3650" value="30" style="max-width:120px"><button class="btn">Forget them now</button></div><p class="hint">Rules are kept: a forgotten PC is listed again, with its rule, the next time it asks for a menu.</p></div></form>
     <form id="af"><div class="field"><label for="adays">Forget a PC by itself after this many days without a start</label><div class="row"><input id="adays" type="number" min="0" max="3650" style="max-width:120px"><button class="btn">Save</button></div><p class="hint">0 keeps every PC for ever.</p></div></form></div></div>`;
   $("#psize").value = String(view.size);
+  const drawGroups = async () => {
+    const [g, isos] = await Promise.all([api("/api/grouprules"), api("/api/isos")]);
+    state.isos = isos.isos || [];
+    const kindText = k => ({ model: "model contains", manufacturer: "manufacturer contains", platform: "starts in" })[k] || k;
+    $("#groupcard").innerHTML = `<h2>Rules for a kind of PC</h2><p class="hint" style="margin-top:0">Every PC whose firmware reports a model, a manufacturer or a platform that fits goes to the same place, without a menu. A rule for one PC (above) wins; these are tried in the order of the list, the first that fits decides. "Show the menu" ends the search for PCs that fit.</p>
+      ${g.rules.length ? `<table class="rt"><tbody>${g.rules.map(r => `<tr><td><strong>${esc(kindText(r.kind))}</strong> <code>${esc(r.kind === "platform" ? (r.match === "efi" ? "UEFI" : "BIOS") : r.match)}</code>${r.note ? `<div class="small muted">${esc(r.note)}</div>` : ""}</td><td class="small">${esc(actionLabel(r.action))}</td><td><button class="btn small danger" data-gdel="${esc(r.kind)}" data-gmatch="${esc(r.match)}">Remove</button></td></tr>`).join("")}</tbody></table>` : `<p class="muted small">No rule for a kind of PC yet.</p>`}
+      <form id="gf" class="row" style="margin-top:10px;align-items:end;flex-wrap:wrap">
+        <div class="field" style="margin:0"><label for="gk">PCs whose</label><select id="gk"><option value="model">model contains</option><option value="manufacturer">manufacturer contains</option><option value="platform">platform is</option></select></div>
+        <div class="field" style="margin:0"><label for="gm">Text</label><input id="gm" type="text" maxlength="60" required placeholder="for example ThinkCentre"><select id="gp" hidden><option value="efi">UEFI</option><option value="pcbios">BIOS</option></select></div>
+        <div class="field" style="margin:0"><label for="ga">Go to</label><select id="ga"></select></div>
+        <div class="field" style="margin:0"><label for="gn">Note</label><input id="gn" type="text" maxlength="120" placeholder="optional"></div>
+        <button class="btn primary">Add the rule</button></form>`;
+    $("#ga").innerHTML = actionOptions("local", false);
+    const sync = () => { const p = $("#gk").value === "platform"; $("#gm").hidden = p; $("#gm").required = !p; $("#gp").hidden = !p; };
+    $("#gk").onchange = sync; sync();
+    $("#gf").onsubmit = guard(async e => {
+      e.preventDefault();
+      const kind = $("#gk").value;
+      await api("/api/grouprules", "POST", { kind, match: kind === "platform" ? $("#gp").value : $("#gm").value, action: $("#ga").value, note: $("#gn").value });
+      toast("Rule added"); await drawGroups();
+    });
+    $("#groupcard").querySelectorAll("button[data-gdel]").forEach(b => b.onclick = guard(async () => { await api("/api/grouprules?kind=" + encodeURIComponent(b.dataset.gdel) + "&match=" + encodeURIComponent(b.dataset.gmatch), "DELETE"); toast("Rule removed"); await drawGroups(); }));
+  };
   const draw = async () => {
     const [isos, pcs, set] = await Promise.all([api("/api/isos"), api(`/api/pcs?limit=${view.size}&offset=${view.offset}&q=${encodeURIComponent(view.q)}`), api("/api/settings")]);
     state.isos = isos.isos || []; state.defaultAction = isos.default || ""; state.pcs = pcs.pcs || []; view.total = pcs.total || 0;
@@ -825,6 +849,7 @@ async function pagePCs() {
     const s = await api("/api/settings"); await api("/api/settings", "PUT", { menuTimeout: s.menuTimeout, default: s.default, pcDays: parseInt($("#adays").value || "0", 10) }); toast("Saved"); await draw();
   });
   await guard(draw)();
+  await guard(drawGroups)();
   every(5000, async () => { if (!page.contains(document.activeElement) || document.activeElement === document.body) await draw(); });
 }
 

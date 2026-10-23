@@ -128,6 +128,9 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("POST /api/pcs/clean", a.authed(a.pcClean))
 	api.HandleFunc("PUT /api/pcs/{mac}/name", a.authed(a.pcRename))
 	api.HandleFunc("POST /api/pcs/{mac}/wake", a.authed(a.pcWake))
+	api.HandleFunc("GET /api/grouprules", a.authed(a.groupRules))
+	api.HandleFunc("POST /api/grouprules", a.authed(a.groupRuleSet))
+	api.HandleFunc("DELETE /api/grouprules", a.authed(a.groupRuleDelete))
 	api.HandleFunc("POST /api/rules", a.authed(a.ruleSet))
 	api.HandleFunc("DELETE /api/rules/{mac}", a.authed(a.ruleDelete))
 	api.HandleFunc("GET /api/log", a.authed(a.logLines))
@@ -1064,6 +1067,69 @@ func (a *Admin) ruleSet(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.o.Logf != nil {
 		a.o.Logf("web interface: rule for %s set to %s", mac, in.Action)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ---- rules for a kind of PC (model, manufacturer, platform)
+
+func (a *Admin) groupRules(w http.ResponseWriter, _ *http.Request) {
+	rules := a.o.Store.Get().GroupRules
+	if rules == nil {
+		rules = []config.GroupRule{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"rules": rules, "kinds": config.GroupKinds})
+}
+
+func (a *Admin) groupRuleSet(w http.ResponseWriter, r *http.Request) {
+	var in config.GroupRule
+	if !readJSON(w, r, &in) {
+		return
+	}
+	err := a.o.Store.Update(func(c *config.Config) error {
+		in.Added = time.Now()
+		for i, g := range c.GroupRules {
+			if g.Kind == in.Kind && strings.EqualFold(g.Match, strings.TrimSpace(in.Match)) {
+				in.Added = g.Added
+				c.GroupRules[i] = in
+				return nil
+			}
+		}
+		c.GroupRules = append(c.GroupRules, in)
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: rule for %s set to %s", config.GroupRule{Kind: in.Kind, Match: strings.TrimSpace(in.Match)}.Describe(), in.Action)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (a *Admin) groupRuleDelete(w http.ResponseWriter, r *http.Request) {
+	kind, match := r.URL.Query().Get("kind"), r.URL.Query().Get("match")
+	removed := false
+	err := a.o.Store.Update(func(c *config.Config) error {
+		out := c.GroupRules[:0]
+		for _, g := range c.GroupRules {
+			if g.Kind == kind && strings.EqualFold(g.Match, match) {
+				removed = true
+				continue
+			}
+			out = append(out, g)
+		}
+		c.GroupRules = out
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !removed {
+		fail(w, http.StatusNotFound, "there is no such rule")
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

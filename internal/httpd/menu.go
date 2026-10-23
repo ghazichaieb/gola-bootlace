@@ -244,11 +244,25 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
-	for _, rule := range cfg.Rules {
-		if paged || rule.MAC != client.MAC || rule.Action == "menu" {
-			continue
+	type applied struct{ Action, Note, Who string }
+	var rules []applied // the rules that apply to this PC, in the order they are tried: its own first, then its groups
+	if !paged {
+		for _, rule := range cfg.Rules {
+			if rule.MAC == client.MAC {
+				rules = append(rules, applied{rule.Action, rule.Note, "Rule for this PC"})
+			}
 		}
-		why := "Rule for this PC"
+		for _, g := range cfg.GroupRules {
+			if g.Matches(client.Manufacturer, client.Product, client.Platform) {
+				rules = append(rules, applied{g.Action, g.Note, "Rule for " + g.Describe()})
+			}
+		}
+	}
+	for _, rule := range rules {
+		if rule.Action == "menu" {
+			break // the menu is what this PC (or its group) is to get: no later rule decides
+		}
+		why := rule.Who
 		if rule.Note != "" {
 			why += " (" + rule.Note + ")"
 		}
