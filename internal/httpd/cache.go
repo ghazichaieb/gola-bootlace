@@ -53,6 +53,9 @@ func (s *Server) cacheDirs() []string {
 	return dirs
 }
 
+// CacheDirs are the cache folders: the container's own and, while the library is available, the one inside it.
+func (s *Server) CacheDirs() []string { return s.cacheDirs() }
+
 // cacheSettings are where new entries go ("auto", "local" or "library") and how much the container's own folder may hold.
 func (s *Server) cacheSettings() (where string, limit int64) {
 	where, limit = "auto", DefaultLocalCache

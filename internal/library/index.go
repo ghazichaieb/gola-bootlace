@@ -121,6 +121,24 @@ func (x *Index) Forget(rel string) {
 	_ = x.save()
 }
 
+// Prune drops the records of files that are not there any more and says how many. A record is only dropped when the file is certainly missing: a folder that
+// cannot be read (a network drive that went away) keeps its records.
+func (x *Index) Prune() int {
+	x.mu.Lock()
+	n := 0
+	for rel := range x.recs {
+		if _, err := os.Lstat(filepath.Join(x.root, filepath.FromSlash(rel))); errors.Is(err, fs.ErrNotExist) {
+			delete(x.recs, rel)
+			n++
+		}
+	}
+	x.mu.Unlock()
+	if n > 0 {
+		_ = x.save()
+	}
+	return n
+}
+
 // Match is a file that looks like one that is being added.
 type Match struct {
 	Path   string `json:"path"`

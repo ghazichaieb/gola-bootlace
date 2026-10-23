@@ -24,10 +24,12 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
 	"github.com/ghazichaieb/gola-bootlace/internal/importer"
+	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
 	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
+	"github.com/ghazichaieb/gola-bootlace/internal/tidy"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
 	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
 )
@@ -186,6 +188,25 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	dataDir := filepath.Dir(*configPath)
 	web := &httpd.Server{CacheSettings: func() (string, int64) { c := store.Get().Cache; return c.Where, int64(c.LocalLimitMB) << 20 }, Handoff: registry, TFTPAhead: *tftpAhead, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Access: policy, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
 		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort, ISCSIPort: *iscsiPort}
+	tidier := &tidy.Tidier{Library: lib, Index: indexer.Get, Caches: web.CacheDirs, Logf: logf,
+		ISOIDs: func() (map[string]bool, error) {
+			list, err := isos.Scan(lib.Path())
+			ids := map[string]bool{}
+			for _, i := range list {
+				ids[i.ID] = true
+			}
+			return ids, err
+		},
+		Owned: func() map[string]bool {
+			owned := map[string]bool{}
+			for _, j := range imp.Jobs() {
+				if j.Part != "" {
+					owned[filepath.Base(j.Part)] = true
+				}
+			}
+			return owned
+		}}
+	go tidier.Loop(background)
 	if winpe.Wimlib(*wimlibFlag) == "" {
 		logf("wimlib-imagex was not found: Windows cannot be started with UEFI Secure Boot on (install wimtools)")
 	}
