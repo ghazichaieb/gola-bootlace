@@ -189,6 +189,9 @@ func TestTheLoaderGetsItsAddressAndThisServerInOneAnswer(t *testing.T) {
 		if reply.MessageType() != tc.want || !reply.YIAddr.Equal(net.IPv4(192, 168, 8, 2)) || !reply.SIAddr.Equal(net.IPv4(192, 168, 1, 10)) {
 			t.Errorf("message %d: type %d yiaddr %v siaddr %v", tc.msg, reply.MessageType(), reply.YIAddr, reply.SIAddr)
 		}
+		if got := string(reply.Opts[OptRootPath]); got != "tftp://192.168.1.10/" {
+			t.Errorf("message %d: root path %q, FreeBSD's loader needs tftp://<server>/ or it uses NFS", tc.msg, got)
+		}
 		if string(reply.Opts[OptSubnetMask]) != string(net.CIDRMask(24, 32)) || len(reply.Opts[OptLeaseTime]) != 4 {
 			t.Errorf("message %d: mask %v lease %v", tc.msg, reply.Opts[OptSubnetMask], reply.Opts[OptLeaseTime])
 		}

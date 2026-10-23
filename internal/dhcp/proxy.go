@@ -171,6 +171,8 @@ func (b Boot) loaderReply(req *Packet, ip net.IP) (*Packet, bool) {
 			OptServerID:    v4(b.ServerIP),
 			OptSubnetMask:  []byte(mask),
 			OptLeaseTime:   {0, 0, 0x0e, 0x10}, // an hour: the PC only needs it until it has started FreeBSD
+			// Without a root path that starts with tftp:// FreeBSD's loader reads its files by NFS (it asks this server's port 111 and waits for ever).
+			OptRootPath: []byte("tftp://" + b.ServerIP.String() + "/"),
 		},
 	}, true
 }
