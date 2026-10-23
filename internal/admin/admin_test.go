@@ -53,6 +53,9 @@ func (f *fakeBackend) ForgetPCsNotSeenFor(d time.Duration) int {
 }
 func (f *fakeBackend) StartedAt() time.Time   { return time.Now().Add(-time.Minute) }
 func (f *fakeBackend) InUse(path string) bool { return f.inUse[path] }
+func (f *fakeBackend) CacheUsage() httpd.CacheUsage {
+	return httpd.CacheUsage{Where: "auto", LocalLimit: 2 << 30, LocalDir: "/cache", LocalBytes: 5}
+}
 
 type rig struct {
 	t       *testing.T

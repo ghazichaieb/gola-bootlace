@@ -5,10 +5,12 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **Library page.** Upload files, add a file from a web address, rename, move, make folders and delete, all in the web interface. A file is written to disk as it arrives and only put in place when it is whole; its first bytes are checked against its name; an optional SHA-256 or SHA-512 is verified; the same name, address, size or content is noticed before and after; nothing is ever replaced. Downloads are fetched by the server with a client that refuses local addresses at the moment it connects, resume after an interruption or a restart, and slow down while PCs are installing (a setting). Deleting is never recursive. The settings of an ISO follow it when it is renamed or moved. (#20)
+- **Cache in two places.** Unpacked images and the copies of boot.wim go to the container's own small cache folder while it has room and then to `<library>/.bootlace/cache`; the size and the choice are settings on the Server page. (#20)
+- **The login slides.** It lasts while something is done in the page (a transfer in progress counts, the page refreshing itself does not), ends after 30 quiet minutes, and never lasts longer than 12 hours.
 - **Local network only.** Every service (web page and menu, Windows share, iSCSI, network disk, TFTP, DHCP) now refuses addresses that are not local (private ranges, loopback, link-local). More networks, or "from anywhere" with a confirmation, are set under Server in the web interface; refusals are counted there, and a public server address gives a warning. (#38)
-
-- The ISO folder is now a **library**, chosen in the web interface (Server page, with a folder picker). It must be readable and writable and is recognised by a marker in its `.bootlace` folder: a missing network drive is never mistaken for it, and nothing is served or written then. `-iso-dir` only adds the library on the first start.
-- The services PCs talk to can be started and stopped in the web interface, with a warning when PCs are connected; a port that is already taken is reported there instead of ending the program. The server stops after 30 seconds without the library and starts again by itself when it is back.
+- The ISO folder is now a **library**, chosen in the web interface (Server page, with a folder picker). It must be readable and writable and is recognised by a marker in its `.bootlace` folder: a missing network drive is never mistaken for it, and nothing is served or written then. `-iso-dir` only adds the library on the first start. (#36)
+- The services PCs talk to can be started and stopped in the web interface, with a warning when PCs are connected; a port that is already taken is reported there instead of ending the program. The server stops after 30 seconds without the library and starts again by itself when it is back. (#36)
 - Hidden folders and files (`.bootlace`, `._name.iso`) are never offered as ISOs.
 - The Proxmox script now mounts the ISO folder read and write, and says what to do when the container cannot write to it.
 

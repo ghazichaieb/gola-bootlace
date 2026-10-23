@@ -52,6 +52,8 @@ type Server struct {
 	// Wimlib is wimlib-imagex (empty: looked for on the PATH) and CacheDir where the copies of boot.wim with Bootlace's files in them are kept: both are for starting
 	// Windows with the firmware's own boot manager (UEFI Secure Boot on).
 	Wimlib, CacheDir string
+	// CacheSettings, when set, says where new cache entries go ("auto", "local", "library") and how much the container's own cache folder may hold (see cache.go).
+	CacheSettings func() (where string, limit int64)
 	// NBDPort is the port of the network block disk server (0: none, a live Linux then downloads its ISO into memory).
 	NBDPort int
 	// ISCSIPort is the port of the iSCSI target that shows an ISO as a CD-ROM (0: none, the ISO is then downloaded whole by iPXE).
@@ -62,21 +64,25 @@ type Server struct {
 	// Mount adds handlers (the web interface) to the paths of the server.
 	Mount map[string]http.Handler
 
-	started     time.Time
-	useMu       sync.Mutex
-	using       map[string]int // ISOs that PCs are reading, by name in the library
-	busyMu      sync.Mutex
-	busy        map[string]int // PCs with a request in progress, by address
-	clientsMu   sync.Mutex
-	clients     map[string]*Client
-	saveMu      sync.Mutex
-	savePending bool
-	mu          sync.Mutex
-	extras      []extraCache          // the last few extra initramfs archives that take long to make (see extraArchive)
-	known       map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
-	looking     map[string]bool       // the ISOs that are being looked into for what no family is known by (see recogniseGeneric)
-	lookMu      sync.Mutex            // one such look at a time: it reads the whole start-up disk
-	findings    family.Findings       // what those looks found
+	started      time.Time
+	useMu        sync.Mutex
+	using        map[string]int // ISOs that PCs are reading, by name in the library
+	libCacheMu   sync.Mutex
+	libCacheDir  string
+	libCachePath string
+	libCacheAt   time.Time
+	busyMu       sync.Mutex
+	busy         map[string]int // PCs with a request in progress, by address
+	clientsMu    sync.Mutex
+	clients      map[string]*Client
+	saveMu       sync.Mutex
+	savePending  bool
+	mu           sync.Mutex
+	extras       []extraCache          // the last few extra initramfs archives that take long to make (see extraArchive)
+	known        map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
+	looking      map[string]bool       // the ISOs that are being looked into for what no family is known by (see recogniseGeneric)
+	lookMu       sync.Mutex            // one such look at a time: it reads the whole start-up disk
+	findings     family.Findings       // what those looks found
 	// Handoff holds the PCs that iPXE sent to FreeBSD's loader; their TFTP requests are answered from the ISO they chose.
 	Handoff *handoff.Registry
 }

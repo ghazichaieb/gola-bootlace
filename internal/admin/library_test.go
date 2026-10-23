@@ -153,3 +153,25 @@ func TestAccessSettings(t *testing.T) {
 		t.Fatalf("confirmed: %d", code)
 	}
 }
+
+func TestCacheSettings(t *testing.T) {
+	r := newRig(t)
+	if code, _ := r.do("GET", "/api/cache", nil, nil); code != 401 {
+		t.Fatalf("without a login: %d", code)
+	}
+	r.login()
+	if code, out := r.do("GET", "/api/cache", nil, nil); code != 200 || out["usage"] == nil {
+		t.Fatalf("%d %v", code, out)
+	}
+	if code, _ := r.do("PUT", "/api/cache", map[string]any{"where": "library", "localLimitMB": 512}, nil); code != 200 {
+		t.Fatal(code)
+	}
+	if c := r.store.Get().Cache; c.Where != "library" || c.LocalLimitMB != 512 {
+		t.Fatalf("not kept: %+v", c)
+	}
+	for _, bad := range []map[string]any{{"where": "elsewhere"}, {"localLimitMB": -5}} {
+		if code, _ := r.do("PUT", "/api/cache", bad, nil); code != 400 {
+			t.Errorf("%v: %d", bad, code)
+		}
+	}
+}

@@ -130,3 +130,40 @@ func TestAFileInsideAZipArchiveIsUnpacked(t *testing.T) {
 		t.Fatal("the unpacked file differs")
 	}
 }
+
+// A copy goes where Place says, and one made earlier in another folder is found and used.
+func TestCopiesSpillToAnotherFolderAndAreFoundInBoth(t *testing.T) {
+	data := bytes.Repeat([]byte("spill"), 50000)
+	dir := t.TempDir()
+	var b bytes.Buffer
+	w := gzip.NewWriter(&b)
+	w.Write(data)
+	w.Close()
+	path := filepath.Join(dir, "a.img.gz")
+	os.WriteFile(path, b.Bytes(), 0o644)
+	iso := isos.ISO{ID: "s", Name: "a.img.gz", Path: path, Size: int64(b.Len()), Packed: "gz", ModTime: time.Unix(1, 0), Disk: true}
+	small, big := filepath.Join(dir, "small"), filepath.Join(dir, "big")
+	var asked int64
+	m := &Manager{Dir: small, Place: func(need int64) string { asked = need; return big }, Also: func() []string { return []string{big} }}
+	var st State
+	for i := 0; i < 200; i++ {
+		if st = m.Start(iso); st.Ready || st.Err != nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if st.Err != nil || !st.Ready || filepath.Dir(st.Path) != big {
+		t.Fatalf("the copy was not made in the place that was chosen: %+v", st)
+	}
+	if asked < int64(b.Len()) {
+		t.Errorf("Place was asked for %d bytes, less than the packed file", asked)
+	}
+	// a second manager that only knows the folders finds the same copy and makes no new one
+	m2 := &Manager{Dir: small, Place: func(int64) string { t.Error("a second copy was started"); return small }, Also: func() []string { return []string{big} }}
+	if st2 := m2.Start(iso); !st2.Ready || st2.Path != st.Path {
+		t.Fatalf("the copy in the other folder was not found: %+v", st2)
+	}
+	if _, err := os.Stat(small); err == nil {
+		t.Error("the first folder was made although nothing was put in it")
+	}
+}

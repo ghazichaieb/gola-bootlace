@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
@@ -139,5 +140,59 @@ func TestAddressesOutsideTheLocalNetworkAreRefused(t *testing.T) {
 	}
 	if st := policy.Stats(); st.Refused != 4 {
 		t.Errorf("refusals counted: %d", st.Refused)
+	}
+}
+
+// New cache entries go to the container's own folder while it has room, then to the library's; an entry is found in either.
+func TestTheCacheSpillsFromTheContainerToTheLibrary(t *testing.T) {
+	lib := t.TempDir()
+	id, err := library.Prepare(lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	local := t.TempDir()
+	where, limit := "auto", int64(1000)
+	s := &Server{Library: library.New(lib, id), CacheDir: local, CacheSettings: func() (string, int64) { return where, limit }}
+	libCache := filepath.Join(lib, library.MetaDir, "cache")
+	if got := s.cachePlace(500); got != local {
+		t.Fatalf("with room: %s", got)
+	}
+	if err := os.WriteFile(filepath.Join(local, "boot-a.wim"), make([]byte, 800), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.cachePlace(500); got != libCache {
+		t.Fatalf("without room it must spill to the library: %s", got)
+	}
+	if got := s.cachePlace(100); got != local {
+		t.Fatalf("a small entry still fits: %s", got)
+	}
+	where = "library"
+	if got := s.cachePlace(1); got != libCache {
+		t.Fatalf("library only: %s", got)
+	}
+	where = "local"
+	if got := s.cachePlace(1 << 40); got != local {
+		t.Fatalf("local only: %s", got)
+	}
+	if err := os.MkdirAll(libCache, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(libCache, "boot-b.wim"), make([]byte, 50), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"boot-a.wim": local, "boot-b.wim": libCache} {
+		if p, ok := s.cacheFind(name); !ok || filepath.Dir(p) != want {
+			t.Errorf("%s: %s %v", name, p, ok)
+		}
+	}
+	if u := s.CacheUsage(); u.LocalBytes != 800 || u.LibraryBytes != 50 || u.LibraryDir != libCache {
+		t.Errorf("usage: %+v", u)
+	}
+	// a library that is not there is never written to, whatever the setting says
+	os.RemoveAll(filepath.Join(lib, library.MetaDir))
+	s.libCacheAt = s.libCacheAt.Add(-time.Hour) // (the answer is kept for a couple of seconds)
+	where = "library"
+	if got := s.cachePlace(1); got != local {
+		t.Fatalf("the library is gone: %s", got)
 	}
 }

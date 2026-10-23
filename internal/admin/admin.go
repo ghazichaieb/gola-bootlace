@@ -40,6 +40,7 @@ type Backend interface {
 	ForgetPCsNotSeenFor(d time.Duration) int
 	StartedAt() time.Time
 	InUse(path string) bool // a PC is using this file (or a file in this folder) right now
+	CacheUsage() httpd.CacheUsage
 }
 
 // Options for New.
@@ -122,6 +123,8 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("PUT /api/library/limit", a.authed(a.limitSet))
 	api.HandleFunc("POST /api/library/upload/check", a.authed(a.uploadCheck))
 	api.HandleFunc("PUT /api/library/upload", a.authed(a.upload))
+	api.HandleFunc("GET /api/cache", a.authed(a.cacheGet))
+	api.HandleFunc("PUT /api/cache", a.authed(a.cacheSet))
 	api.HandleFunc("GET /api/access", a.authed(a.accessGet))
 	api.HandleFunc("PUT /api/access", a.authed(a.accessSet))
 	api.HandleFunc("GET /api/services", a.authed(a.servicesReport))

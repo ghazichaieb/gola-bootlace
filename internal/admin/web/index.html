@@ -280,20 +280,34 @@ function serverBanner(lib, svc) {
 
 async function pageServer() {
   const page = $("#page");
-  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="accesscard" style="margin-top:14px"></div>`;
+  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>`;
   let last = "";
   const draw = async (force) => {
-    const [lib, svc, acc] = await Promise.all([api("/api/library"), api("/api/services"), api("/api/access")]);
-    const key = JSON.stringify([lib, svc, acc]);
+    const [lib, svc, acc, cch] = await Promise.all([api("/api/library"), api("/api/services"), api("/api/access"), api("/api/cache")]);
+    const key = JSON.stringify([lib, svc, acc, cch]);
     if (key === last && !force) return;
     last = key;
     $("#sbanner").innerHTML = serverBanner(lib.library, svc);
     drawLibrary(lib.library, () => draw(true));
     drawServices(svc, () => draw(true));
+    if (force || !$("#cachecard").contains(document.activeElement)) drawCache(cch, () => draw(true));
     if (force || !$("#accesscard").contains(document.activeElement)) drawAccess(acc, () => draw(true)); // (not while the person is typing in it)
   };
   await guard(draw)(true);
   every(4000, () => draw(false));
+}
+
+function drawCache(c, refresh) {
+  const u = c.usage, where = c.where || "auto", mb = c.localLimitMB || 2048;
+  $("#cachecard").innerHTML = `<h2>Cache</h2>
+    <p class="small muted">What the server makes once and keeps: unpacked copies of packed disk images, and copies of Windows' <code>boot.wim</code>. The container's own folder is small and fast and is used while it has room; after that new entries go to the library's own cache folder, so the container's disk can stay small. <strong>The size of the container's folder decides how many different installs can be prepared at once</strong>: a bigger folder is faster, the library is slower but roomy. (A copy of <code>boot.wim</code> holds the share's password: anyone who can read the library's folder can read it.)</p>
+    <table><tr><td class="k">Container</td><td class="mono small">${esc(u.localDir)}</td><td>${bytes(u.localBytes)} of ${bytes(u.localLimit)}</td></tr>
+    <tr><td class="k">Library</td><td class="mono small">${esc(u.libraryDir || "(not available)")}</td><td>${bytes(u.libraryBytes)}</td></tr></table>
+    <div class="row" style="margin-top:12px"><label for="cw" style="margin:0">New entries go to</label>
+      <select id="cw" class="inline" style="width:auto"><option value="auto"${where === "auto" ? " selected" : ""}>the container, then the library</option><option value="local"${where === "local" ? " selected" : ""}>the container only</option><option value="library"${where === "library" ? " selected" : ""}>the library only</option></select>
+      <label for="cl" style="margin:0">Container folder, up to</label><input class="inline" type="number" id="cl" min="0" value="${mb}" style="width:100px" aria-label="Megabytes"> <span>MB</span>
+      <button class="btn small" id="cs">Save</button></div>`;
+  $("#cs").onclick = guard(async () => { await api("/api/cache", "PUT", { where: $("#cw").value, localLimitMB: parseInt($("#cl").value || "0", 10) || 0 }); toast("Saved"); refresh(); });
 }
 
 function drawAccess(acc, refresh) {
@@ -422,7 +436,7 @@ async function pageLibrary() {
     try { await draw(); }
     catch (e) { $("#ltable").innerHTML = `<div class="empty">${esc(e.message)}. <a href="#server" data-go="server">Open the Server page</a> to choose or fix the library.</div>`; $("#crumbs").innerHTML = ""; page.querySelectorAll("[data-go]").forEach(a => a.onclick = ev => { ev.preventDefault(); state.view = a.dataset.go; location.hash = state.view; render(); }); }
   };
-  $("#up").onclick = () => $("#pick").click();
+  $("#up").onclick = () => uploadDialog();
   $("#pick").onchange = e => { [...e.target.files].forEach(queueUpload); e.target.value = ""; };
   $("#imp").onclick = () => importDialog();
   $("#mk").onclick = () => folderDialog();
@@ -482,20 +496,20 @@ function renderTransfers() {
   jobCall("jc", "cancel"); jobCall("jr", "resume"); jobCall("jd", "dismiss");
 }
 
-function queueUpload(file) { transfers.queue = transfers.queue.then(() => uploadFile(file, state.libPath || "")); }
+function queueUpload(file, sha) { transfers.queue = transfers.queue.then(() => uploadFile(file, state.libPath || "", sha)); }
 
-async function uploadFile(file, folder) {
+async function uploadFile(file, folder, sha) {
   const item = { name: file.name, size: file.size, sent: 0, state: "checking", error: "", warnings: [] };
   transfers.uploads.push(item); renderTransfers();
   try {
-    const chk = await api("/api/library/upload/check", "POST", { name: file.name, folder, size: file.size });
+    const chk = await api("/api/library/upload/check", "POST", { name: file.name, folder, size: file.size, sha256: sha || "" });
     if ((chk.problems || []).length) { item.state = "failed"; item.error = (chk.problems || []).join("; "); return; }
     if ((chk.matches || []).some(m => m.reason === "name")) { item.state = "failed"; item.error = "A file with this name is already in the library: rename or delete it first."; return; }
     if ((chk.matches || []).length && !await ask("Upload it anyway?", matchesHTML(chk.matches || []), "Upload anyway")) { item.state = "canceled"; return; }
     await new Promise(resolve => {
       const xhr = new XMLHttpRequest();
       item.xhr = xhr; item.state = "sending"; renderTransfers();
-      xhr.open("PUT", "/api/library/upload?name=" + encodeURIComponent(file.name) + "&folder=" + encodeURIComponent(folder) + "&size=" + file.size);
+      xhr.open("PUT", "/api/library/upload?name=" + encodeURIComponent(file.name) + "&folder=" + encodeURIComponent(folder) + "&size=" + file.size + (sha ? "&sha256=" + encodeURIComponent(sha) : ""));
       xhr.setRequestHeader("X-Bootlace", "1");
       xhr.upload.onprogress = e => { item.sent = e.loaded; renderTransfers(); };
       xhr.onload = () => {
@@ -512,6 +526,21 @@ async function uploadFile(file, folder) {
 }
 
 // ---- dialogs
+function uploadDialog() {
+  const m = modal(`<h2>Upload files</h2><p class="muted small">They are saved in ${esc("/" + (state.libPath || ""))}. A big file is fine: it is written to disk as it arrives. You can also drop files on the list.</p>
+    <div class="field"><label for="uf">Files</label><input type="file" id="uf" multiple></div>
+    <div class="field"><label for="us">SHA-256 of the file (optional, for one file)</label><input type="text" id="us" placeholder="64 characters" autocomplete="off"><p class="hint">With it the upload is checked, and a file that is already in the library is noticed before anything is sent.</p></div>
+    <p class="err" id="ue" role="alert"></p><div class="row" style="justify-content:flex-end"><button class="btn" id="uc">Cancel</button><button class="btn primary" id="ug">Upload</button></div>`);
+  const q = s => m.el.querySelector(s);
+  q("#uc").onclick = m.close;
+  q("#ug").onclick = () => {
+    const files = [...q("#uf").files], sum = q("#us").value.trim().toLowerCase();
+    if (!files.length) { q("#ue").textContent = "Choose a file."; return; }
+    if (sum && (files.length !== 1 || !/^[0-9a-f]{64}$/.test(sum))) { q("#ue").textContent = "A checksum is for one file, and is 64 characters (SHA-256)."; return; }
+    m.close(); files.forEach(f => queueUpload(f, sum));
+  };
+}
+
 function importDialog() {
   const m = modal(`<h2>Add from a web address</h2><p class="muted small">The server downloads the file itself, so a big file does not pass through this browser. Only web addresses on the internet work; files on a local network are copied into the library folder instead.</p>
     <div class="field"><label for="iu">Address of the file</label><input type="text" id="iu" placeholder="https://..." autocomplete="off"></div>

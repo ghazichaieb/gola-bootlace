@@ -5,7 +5,6 @@ package httpd
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -40,11 +39,16 @@ func (s *Server) scan() ([]isos.ISO, error) {
 func (s *Server) diskManager() *diskimg.Manager {
 	s.mu.Lock()
 	if s.disks == nil {
-		dir := s.CacheDir
-		if dir == "" {
-			dir = filepath.Join(os.TempDir(), "bootlace-cache")
-		}
-		s.disks = &diskimg.Manager{Dir: filepath.Join(dir, "images"), Logf: s.logf}
+		dir := s.localCache()
+		s.disks = &diskimg.Manager{Dir: filepath.Join(dir, "images"), Logf: s.logf,
+			Place: func(need int64) string { return filepath.Join(s.cachePlace(need), "images") },
+			Also: func() []string {
+				var d []string
+				if lib := s.libraryCache(); lib != "" {
+					d = append(d, filepath.Join(lib, "images"))
+				}
+				return d
+			}}
 	}
 	m := s.disks
 	s.mu.Unlock()

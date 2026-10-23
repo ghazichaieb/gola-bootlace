@@ -21,6 +21,7 @@ minutes. Anyone on the network can reach the login page, so use a password you w
 |---|---|
 | Dashboard | ISOs, PCs seen, how long the server has run, the addresses PCs use, recent activity |
 | Server | the library (the folder with the ISOs): choose it with a folder picker, see its state and free space; the services PCs talk to (boot menu, Windows file share, iSCSI, network disk, TFTP, PXE) with their state and any error, start and stop them (with a warning when PCs are using the server), and whether they start by themselves when the program starts |
+| Library | the files of the library: upload, add from a web address (with a checksum), copy-in detection, rename, move, new folder, delete, who is using what, the checksums |
 | ISOs | (also lists disk images: .img and .raw, packed or not) rename an ISO in the menu, hide it, choose what starts by itself (one of the ISOs, the PC's own disk or nothing), look inside the ISOs again |
 | PCs | every PC that asked for a menu (name from its firmware, MAC, address, UEFI or BIOS, what it did last) and a rule for each: show the menu, boot from its own disk, or start one ISO without a menu. Rules can also be added by MAC address for a PC that has not started yet |
 | Menu | heading, seconds before the default choice starts, what starts by itself (nothing, the PC's own disk, an ISO), with a preview |
@@ -81,3 +82,22 @@ warning when its own address is a public one.
 
 This is a guard against a port forwarded by mistake, not a security boundary: inside the local network there is no login on the network disk and iSCSI, and
 the web page is plain HTTP. Do not expose the server to the internet; use a VPN to reach the local network instead.
+
+## The Library page
+
+The files of the library, managed from the web page. Everything here works on the library folder only.
+
+- **Look and move around.** Folders and files, with size, date, the SHA-256 and, for a file that was imported, where it came from. A file a PC is using right now is marked "in use".
+- **Add files.** *Upload files* (or drop files on the list) sends them from the browser; a file is written to disk as it arrives, whatever its size. *Add from a web address* makes the server download the file itself, with progress, a speed limit while PCs are installing, and a retry from where it stopped when the connection breaks. Both can be given a checksum (SHA-256, or SHA-512 for an address; for an address also the link to a `SHA256SUMS` file), which is checked at the end.
+- **Copy files in by hand.** Files put in the library's folder with any other tool appear by themselves; a file that is still being copied (changed in the last 15 seconds) is left alone until it is finished, and its checksum is worked out in the background while no PC is installing.
+- **Rename, move, new folder, delete.** Renaming or moving an ISO keeps its name in the menu, its hidden flag, its extra arguments, the rules that start it and the default. A file that a PC is using asks first. Delete is never recursive: it removes a file that is an ISO or a disk image, or an empty folder, and nothing else (a file such as `notes.txt` is shown but not offered for deletion).
+
+**What is refused.** A file name that does not end in `.iso .img .raw .xz .gz .zst .bz2 .zip`; a file whose first bytes are not what its name says (a web page saved as `x.iso` is refused as soon as its start has arrived, not after the whole download); a name that is already taken (nothing is ever replaced); a file that would leave less than a reserve of free space (1 % of the disk, between 512 MB and 5 GB); a path that leaves the library or reaches its hidden `.bootlace` folder, or goes through a link.
+
+**Repeats.** Before a download or an upload, and again when it ends, the library says when the file looks like one that is there: the same name, the same address, the same size under the same name, or the same content (checksum). The person decides; a file with the same *name* is never replaced.
+
+**Web addresses.** Only `http` and `https`, without a user name or password in them. The server never connects to an address on a local network (private ranges, loopback, link-local such as the cloud metadata address, carrier-grade NAT, multicast and the IPv6 equivalents): the check is made when the connection is made, on the address actually used, so a redirect or a name with several addresses cannot get around it. Files on a local network are copied into the library's folder instead.
+
+## The cache
+
+What the server makes once and keeps: the unpacked copies of packed disk images, and the copies of Windows' `boot.wim` with Bootlace's files in them. Under **Server > Cache**, the container's own folder is used while it has room (2 GB by default); after that new entries go to `<library>/.bootlace/cache`. An entry is looked for in both places. The size of the container's folder bounds how many different installs can be prepared at once; the library is slower (it may be a network drive) but roomy. A copy of `boot.wim` contains the share's password, so anyone who can read the library's folder can read it.

@@ -197,3 +197,26 @@ func (a *Admin) accessSet(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, a.accessData())
 }
+
+// ---- the cache
+
+func (a *Admin) cacheGet(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, a.cacheData())
+}
+
+func (a *Admin) cacheData() map[string]any {
+	c := a.o.Store.Get().Cache
+	return map[string]any{"usage": a.o.Backend.CacheUsage(), "where": c.Where, "localLimitMB": c.LocalLimitMB}
+}
+
+func (a *Admin) cacheSet(w http.ResponseWriter, r *http.Request) {
+	var in config.CacheSettings
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if err := a.o.Store.Update(func(c *config.Config) error { c.Cache = in; return nil }); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, a.cacheData())
+}

@@ -65,15 +65,11 @@ func (s *Server) patchedBootWIM(iso isos.ISO) (string, error) {
 	cmd := winpe.Cmd(set)
 	ini := winpe.ShellIni()
 	sum := sha1.Sum([]byte(strings.Join([]string{iso.Path, fmt.Sprint(iso.Size), iso.ModTime.String(), cmd, ini}, "\x00")))
-	cache := s.CacheDir
-	if cache == "" {
-		cache = filepath.Join(os.TempDir(), "bootlace-cache")
-	}
-	dst := filepath.Join(cache, fmt.Sprintf("boot-%s-%s.wim", iso.ID, hex.EncodeToString(sum[:])[:10]))
+	name := fmt.Sprintf("boot-%s-%s.wim", iso.ID, hex.EncodeToString(sum[:])[:10])
 	s.patchMu.Lock()
 	defer s.patchMu.Unlock()
-	if _, err := os.Stat(dst); err == nil {
-		return dst, nil
+	if p, ok := s.cacheFind(name); ok { // (in the container's own cache folder or in the library's)
+		return p, nil
 	}
 	lib := winpe.Wimlib(s.Wimlib)
 	if lib == "" {
@@ -93,12 +89,14 @@ func (s *Server) patchedBootWIM(iso isos.ISO) (string, error) {
 		return "", fmt.Errorf("%s has no sources/boot.wim", iso.Title)
 	}
 	start := time.Now()
-	s.logf("making the boot.wim of %s with Bootlace's files in it (once) ...", iso.Title)
+	dst := filepath.Join(s.cachePlace(wim.Size()+64<<20), name) // (the copy is about as big as the original)
+	s.logf("making the boot.wim of %s with Bootlace's files in it (once), in %s ...", iso.Title, filepath.Dir(dst))
 	files := map[string][]byte{"/Windows/System32/winpeshl.ini": []byte(ini), "/Windows/System32/bootlace.cmd": []byte(cmd)}
 	if err := winpe.PatchBootWIM(lib, wim.Reader(), dst, files); err != nil {
 		return "", err
 	}
-	if old, _ := filepath.Glob(filepath.Join(cache, "boot-"+iso.ID+"-*.wim")); len(old) > 1 { // the copies made for earlier settings
+	for _, dir := range s.cacheDirs() { // the copies made for earlier settings
+		old, _ := filepath.Glob(filepath.Join(dir, "boot-"+iso.ID+"-*.wim"))
 		for _, o := range old {
 			if o != dst {
 				os.Remove(o)

@@ -42,6 +42,7 @@ type Config struct {
 	NoAutoStart     bool              `json:"noAutoStart"`     // the services stay stopped when the program starts, until they are started in the web interface
 	Access          Access            `json:"access"`          // which addresses may use the server, besides the local network
 	ImportLimitMBps int               `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
+	Cache           CacheSettings     `json:"cache"`
 }
 
 // Library is the folder the ISOs are in, as it was added (see package library): its path and the id that was written into its marker.
@@ -90,6 +91,14 @@ func (c *Config) Validate() error {
 	}
 	if !defaultAction.MatchString(c.Default) {
 		return errors.New("the default entry is not valid")
+	}
+	switch c.Cache.Where {
+	case "", "auto", "local", "library":
+	default:
+		return errors.New("the cache place must be auto, local or library")
+	}
+	if c.Cache.LocalLimitMB < 0 || c.Cache.LocalLimitMB > 100000000 {
+		return errors.New("the size of the cache must be between 0 and 100000000 MB")
 	}
 	if c.ImportLimitMBps < 0 || c.ImportLimitMBps > 100000 {
 		return errors.New("the limit for imports must be between 0 and 100000 MB a second")
@@ -278,4 +287,10 @@ func (s *Store) save() error {
 type Access struct {
 	Networks    []string `json:"networks"`    // more networks, for example 100.64.0.0/10 for a VPN
 	AllowPublic bool     `json:"allowPublic"` // answer any address (the server is then reachable from the internet if its ports are)
+}
+
+// CacheSettings say where the server keeps what it makes once and reuses (unpacked images, copies of boot.wim).
+type CacheSettings struct {
+	Where        string `json:"where"`        // "" or "auto" (the container's own folder while it has room, then the library), "local", "library"
+	LocalLimitMB int    `json:"localLimitMB"` // how much the container's own folder may hold in "auto" mode; 0 is the default (2048)
 }

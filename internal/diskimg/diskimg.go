@@ -39,26 +39,61 @@ type State struct {
 type Manager struct {
 	Dir  string
 	Logf func(format string, args ...any)
+	// Place, when set, says which folder a copy that is about to be made goes to (it is given a guess of the copy's size), and Also lists the other folders where
+	// copies made earlier may be. Without them everything is in Dir. They let the cache spill over from a small disk to a bigger one.
+	Place func(need int64) string
+	Also  func() []string
 
 	mu   sync.Mutex
-	jobs map[string]*job
-	turn chan struct{} // one unpacking at a time
+	jobs map[string]*job // by the name of the cache file
+	turn chan struct{}   // one unpacking at a time
 }
 
 type job struct {
 	read, total atomic.Int64
 	err         error
 	done        bool
+	dst         string // where the copy is being made
 }
 
-// target is the cache file of an image: named by the image's id and by the file's size and time, so that a replaced file is unpacked again.
-func (m *Manager) target(iso isos.ISO) string {
+// fileName is the name of the cache file of an image: from the image's id and the file's size and time, so that a replaced file is unpacked again.
+func fileName(iso isos.ISO) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s|%d|%d", iso.Path, iso.Size, iso.ModTime.UnixNano())))
 	ext := ".img"
 	if !iso.Disk {
 		ext = ".iso"
 	}
-	return filepath.Join(m.Dir, fmt.Sprintf("disk-%s-%s%s", iso.ID, hex.EncodeToString(sum[:])[:10], ext))
+	return fmt.Sprintf("disk-%s-%s%s", iso.ID, hex.EncodeToString(sum[:])[:10], ext)
+}
+
+// dirs are all the folders a copy may be in.
+func (m *Manager) dirs() []string {
+	d := []string{m.Dir}
+	if m.Also != nil {
+		d = append(d, m.Also()...)
+	}
+	return d
+}
+
+// existing finds a finished copy of the image, in whichever folder it was put.
+func (m *Manager) existing(iso isos.ISO) (path string, size int64, ok bool) {
+	name := fileName(iso)
+	for _, dir := range m.dirs() {
+		p := filepath.Join(dir, name)
+		if st, err := os.Stat(p); err == nil {
+			return p, st.Size(), true
+		}
+	}
+	return "", 0, false
+}
+
+// target is where a new copy of the image goes. An unpacked image is not smaller than its packed file, and is often a few times bigger.
+func (m *Manager) target(iso isos.ISO) string {
+	dir := m.Dir
+	if m.Place != nil {
+		dir = m.Place(iso.Size * 3)
+	}
+	return filepath.Join(dir, fileName(iso))
 }
 
 // Status says whether the image can be read now and how far unpacking is; it never starts it.
@@ -71,9 +106,8 @@ func (m *Manager) status(iso isos.ISO, start bool) State {
 	if iso.Packed == "" {
 		return State{Ready: true, Path: iso.Path, Size: iso.Size}
 	}
-	dst := m.target(iso)
-	if st, err := os.Stat(dst); err == nil {
-		return State{Ready: true, Path: dst, Size: st.Size()}
+	if p, size, ok := m.existing(iso); ok {
+		return State{Ready: true, Path: p, Size: size}
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -81,12 +115,13 @@ func (m *Manager) status(iso isos.ISO, start bool) State {
 		m.jobs = map[string]*job{}
 		m.turn = make(chan struct{}, 1)
 	}
-	j := m.jobs[dst]
+	name := fileName(iso)
+	j := m.jobs[name]
 	if j == nil && start {
-		j = &job{}
+		j = &job{dst: m.target(iso)}
 		j.total.Store(iso.Size)
-		m.jobs[dst] = j
-		go m.unpack(iso, dst, j)
+		m.jobs[name] = j
+		go m.unpack(iso, j.dst, j)
 	}
 	if j == nil {
 		return State{}
@@ -126,7 +161,7 @@ func (m *Manager) unpack(iso isos.ISO, dst string, j *job) {
 	}
 	m.turn <- struct{}{} // wait for the image that is being unpacked
 	defer func() { <-m.turn }()
-	if err := os.MkdirAll(m.Dir, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		fail(err)
 		return
 	}
@@ -255,7 +290,11 @@ func copySynced(out *os.File, r io.Reader) error {
 
 // removeOld deletes the unpacked copies of earlier versions of the same image.
 func (m *Manager) removeOld(iso isos.ISO, keep string) {
-	old, _ := filepath.Glob(filepath.Join(m.Dir, fmt.Sprintf("disk-%s-*", iso.ID)))
+	var old []string
+	for _, dir := range m.dirs() {
+		found, _ := filepath.Glob(filepath.Join(dir, fmt.Sprintf("disk-%s-*", iso.ID)))
+		old = append(old, found...)
+	}
 	for _, f := range old {
 		if f != keep && !strings.HasSuffix(f, ".part") {
 			os.Remove(f)
