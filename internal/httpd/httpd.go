@@ -85,6 +85,8 @@ type Server struct {
 	findings     family.Findings       // what those looks found
 	// Handoff holds the PCs that iPXE sent to FreeBSD's loader; their TFTP requests are answered from the ISO they chose.
 	Handoff *handoff.Registry
+	// TFTPAhead is how many blocks to send ahead of the acknowledgements to FreeBSD's loader, which reads its kernel and the whole ISO by TFTP (1 or less: none).
+	TFTPAhead int
 }
 
 type recognised struct {

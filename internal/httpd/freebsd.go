@@ -70,6 +70,18 @@ func (s *Server) next(w http.ResponseWriter, r *http.Request) {
 // isLoaderName says whether a path inside an ISO is one of FreeBSD's boot loaders.
 func isLoaderName(name string) bool { return name == "boot/loader.efi" || name == "boot/pxeboot" }
 
+// TFTPWindow says how many blocks to send ahead to a client: more than one only for FreeBSD's loader once it is running (it has fetched its own loader file
+// already, by the firmware's TFTP client, which does not take blocks ahead).
+func (s *Server) TFTPWindow(client net.IP, name string) int {
+	if s.Handoff == nil || s.TFTPAhead <= 1 || isLoaderName(name) || s.Handoff.Kind(client.String()) != handoff.FreeBSD {
+		return 1
+	}
+	if _, ok := s.Handoff.ISO(client.String()); !ok {
+		return 1
+	}
+	return s.TFTPAhead
+}
+
 // TFTPLookup answers a TFTP request from the ISO the client chose; it has no answer for clients that did not choose a FreeBSD ISO.
 func (s *Server) TFTPLookup(client net.IP, name string) (fs.File, bool) {
 	if s.Handoff == nil {

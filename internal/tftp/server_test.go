@@ -171,3 +171,114 @@ func TestALookupAnswersBeforeTheFilesDo(t *testing.T) {
 		t.Fatalf("b.txt: %q %q", data, msg)
 	}
 }
+
+// loaderLike is a client that behaves like FreeBSD's loader: it takes the block it expects and acknowledges it, answers a block it has seen before with the
+// acknowledgement of the last one it took, and drops a block from the future without an answer. drop says which packets get lost on the way.
+func loaderLike(t *testing.T, server *net.UDPAddr, file string, drop func(block uint16, seen int) bool, opts ...string) []byte {
+	t.Helper()
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	req := append([]byte{0, opRRQ}, []byte(file+"\x00octet\x00")...)
+	for _, o := range opts {
+		req = append(req, []byte(o+"\x00")...)
+	}
+	conn.WriteTo(req, server)
+	buf := make([]byte, 70000)
+	var peer net.Addr
+	var data []byte
+	expect := uint16(1)
+	blockSize := 512
+	seen := map[uint16]int{}
+	for {
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		n, from, err := conn.ReadFrom(buf)
+		if err != nil {
+			t.Fatalf("no answer: %v", err)
+		}
+		if peer == nil {
+			peer = from
+		}
+		switch binary.BigEndian.Uint16(buf) {
+		case opERROR:
+			t.Fatalf("error: %s", buf[4:n])
+		case opOACK:
+			parts := strings.Split(string(buf[2:n]), "\x00")
+			for i := 0; i+1 < len(parts); i += 2 {
+				if parts[i] == "blksize" {
+					fmt.Sscanf(parts[i+1], "%d", &blockSize)
+				}
+			}
+			conn.WriteTo([]byte{0, opACK, 0, 0}, peer)
+		case opDATA:
+			b := binary.BigEndian.Uint16(buf[2:])
+			seen[b]++
+			if drop != nil && drop(b, seen[b]) {
+				continue
+			}
+			switch {
+			case b == expect:
+				data = append(data, buf[4:n]...)
+				expect++
+				conn.WriteTo([]byte{0, opACK, buf[2], buf[3]}, peer)
+				if n-4 < blockSize {
+					return data
+				}
+			case int16(b-expect) < 0: // a block it has already: it says what it has
+				last := expect - 1
+				conn.WriteTo([]byte{0, opACK, byte(last >> 8), byte(last)}, peer)
+			}
+			// a block from the future: no answer
+		}
+	}
+}
+
+func startWindow(t *testing.T, files fstest.MapFS, window int) *net.UDPAddr {
+	t.Helper()
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	s := &Server{FS: files, Timeout: 200 * time.Millisecond, Retries: 5, Window: func(net.IP, string) int { return window }}
+	go s.Serve(conn)
+	return conn.LocalAddr().(*net.UDPAddr)
+}
+
+func TestAWindowOfBlocksArrivesIntactWithLossAndDuplicates(t *testing.T) {
+	data := content(1428*300 + 77)
+	srv := startWindow(t, fstest.MapFS{"big": {Data: data}}, 4)
+	for _, tc := range []struct {
+		name string
+		drop func(uint16, int) bool
+	}{
+		{"nothing lost", nil},
+		{"a block lost once", func(b uint16, seen int) bool { return b == 10 && seen == 1 }},
+		{"the first and the last block lost once", func(b uint16, seen int) bool { return (b == 1 || b == 301) && seen == 1 }},
+		{"every 17th block lost once", func(b uint16, seen int) bool { return b%17 == 0 && seen == 1 }},
+	} {
+		got := loaderLike(t, srv, "big", tc.drop, "blksize\x001428")
+		if !bytes.Equal(got, data) {
+			t.Errorf("%s: %d bytes arrived, want %d, or the content differs", tc.name, len(got), len(data))
+		}
+	}
+}
+
+func TestAWindowSurvivesBlockNumbersGoingRoundAndAnExactMultiple(t *testing.T) {
+	data := content(8*70000 + 0) // an exact multiple of the block size: ends with an empty block; 70000 blocks go past 65535
+	srv := startWindow(t, fstest.MapFS{"long": {Data: data}}, 4)
+	if got := loaderLike(t, srv, "long", nil, "blksize\x008"); !bytes.Equal(got, data) {
+		t.Errorf("%d bytes arrived, want %d, or the content differs", len(got), len(data))
+	}
+}
+
+func TestAClientThatAsksForAWindowIsLeftToTheNormalWay(t *testing.T) {
+	data := content(1428*20 + 5)
+	srv := startWindow(t, fstest.MapFS{"f": {Data: data}}, 8)
+	got, _, errMsg := get(t, srv, "f", "blksize\x001428", "windowsize\x004")
+	if errMsg != "" || !bytes.Equal(got, data) {
+		t.Errorf("err %q, %d bytes", errMsg, len(got))
+	}
+}

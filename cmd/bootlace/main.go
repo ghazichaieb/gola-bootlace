@@ -95,6 +95,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	wimlibFlag := fs.String("wimlib", "", "wimlib-imagex, which starts Windows with UEFI Secure Boot on (default: the one on the PATH)")
 	smbForward := fs.String("smb-forward", "", "for finding faults: pass the share connections on to this SMB server (host:port) and log them")
 	smbPort := fs.Int("smb-port", 445, "the port of the share that Windows set-up reads its files from")
+	tftpAhead := fs.Int("tftp-window", 4, "how many TFTP blocks to send ahead of the acknowledgements to FreeBSD's loader (pfSense, OPNsense), which reads the whole ISO by TFTP, one block at a time otherwise; 1 turns it off")
 	menuLocal := fs.Bool("menu-local", false, "after -menu-timeout seconds the PC goes on to its own disk instead of waiting (useful after an installation has restarted it)")
 	menuPick := fs.String("menu-pick", "", "the entry whose name contains this text starts by itself after -menu-timeout seconds (instead of -menu-default)")
 	menuTimeout := fs.Int("menu-timeout", 20, "seconds before the default menu entry starts (0: wait for ever); the default entry is the PC's own disk unless another is chosen")
@@ -174,7 +175,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	go indexer.Run(background)
 	go imp.Run(background)
 	dataDir := filepath.Dir(*configPath)
-	web := &httpd.Server{CacheSettings: func() (string, int64) { c := store.Get().Cache; return c.Where, int64(c.LocalLimitMB) << 20 }, Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Access: policy, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
+	web := &httpd.Server{CacheSettings: func() (string, int64) { c := store.Get().Cache; return c.Where, int64(c.LocalLimitMB) << 20 }, Handoff: registry, TFTPAhead: *tftpAhead, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Access: policy, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
 		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort, ISCSIPort: *iscsiPort}
 	if winpe.Wimlib(*wimlibFlag) == "" {
 		logf("wimlib-imagex was not found: Windows cannot be started with UEFI Secure Boot on (install wimtools)")

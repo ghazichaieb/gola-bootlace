@@ -30,6 +30,7 @@ const (
 	defaultBlock = 512
 	minBlock     = 8
 	maxBlock     = 65464
+	maxWindow    = 16
 )
 
 // Server answers read requests from a file system (the folder with the boot files).
@@ -46,6 +47,10 @@ type Server struct {
 	LocalIP net.IP
 	// Allow, when set, is asked about every client: a request from an address it refuses is not answered.
 	Allow func(net.Addr) bool
+	// Window, when set, says how many blocks to send ahead of the acknowledgements to a client that did not ask for a window size itself (RFC 7440) and is known to
+	// receive them in order and to acknowledge each one: FreeBSD's loader, which otherwise needs a whole round trip through the firmware's network driver for every
+	// 1428 bytes. 1 or less sends one block and waits, as the protocol says.
+	Window func(client net.IP, name string) int
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -179,7 +184,22 @@ func (s *Server) read(conn net.PacketConn, client net.Addr, raw []byte) error {
 			return err
 		}
 	}
-	return t.data(f, block)
+	window := 1
+	if _, asked := req.options["windowsize"]; !asked && s.Window != nil {
+		if udp, ok := client.(*net.UDPAddr); ok {
+			window = s.Window(udp.IP, name)
+		}
+	}
+	started := time.Now()
+	if window > 1 {
+		err = t.dataWindow(f, block, min(window, maxWindow))
+	} else {
+		err = t.data(f, block)
+	}
+	if took := time.Since(started); err == nil && info.Size() >= 4<<20 && took > 0 { // how fast a large file went: the way to see whether a setting helps
+		s.logf("tftp: %v got %s: %d bytes in %.1f s (%.1f MB/s, %d blocks ahead)", client, name, info.Size(), took.Seconds(), float64(info.Size())/1e6/took.Seconds(), max(window, 1))
+	}
+	return err
 }
 
 type transfer struct {
@@ -253,4 +273,93 @@ func sendError(conn net.PacketConn, to net.Addr, code uint16, message string) {
 	b := []byte{0, opERROR, byte(code >> 8), byte(code)}
 	b = append(append(b, message...), 0)
 	_, _ = conn.WriteTo(b, to)
+}
+
+// dataWindow is data with a number of blocks sent before the first is acknowledged. The client's answers move the window along; a timeout, or an answer for a block
+// that was acknowledged before (the client is missing the one after it), sends the blocks that are not acknowledged again, oldest first.
+func (t *transfer) dataWindow(r io.Reader, size, window int) error {
+	type sent struct {
+		block uint16
+		data  []byte
+	}
+	chunk := make([]byte, size)
+	buf := make([]byte, 1500)
+	var inflight []sent
+	var next uint16 = 1
+	eof := false
+	tries := 0
+	var lastAgain time.Time
+	again := func() error {
+		lastAgain = time.Now()
+		for _, p := range inflight {
+			if _, err := t.conn.WriteTo(p.data, t.client); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for {
+		for !eof && len(inflight) < window {
+			n, err := io.ReadFull(r, chunk)
+			if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
+				return err
+			}
+			packet := make([]byte, 4+n)
+			binary.BigEndian.PutUint16(packet, opDATA)
+			binary.BigEndian.PutUint16(packet[2:], next)
+			copy(packet[4:], chunk[:n])
+			if n < size {
+				eof = true
+			}
+			inflight = append(inflight, sent{next, packet})
+			next++ // wraps from 65535 to 0, as clients expect for files longer than 65535 blocks
+			if _, err := t.conn.WriteTo(packet, t.client); err != nil {
+				return err
+			}
+		}
+		if len(inflight) == 0 {
+			return nil
+		}
+		_ = t.conn.SetReadDeadline(time.Now().Add(t.timeout))
+		n, from, err := t.conn.ReadFrom(buf)
+		if err != nil { // no answer in time: all that is not acknowledged goes out again
+			if tries++; tries > t.retries {
+				return errors.New("the client stopped answering")
+			}
+			if err := again(); err != nil {
+				return err
+			}
+			continue
+		}
+		if from.String() != t.client.String() {
+			sendError(t.conn, from, 5, "unknown transfer ID")
+			continue
+		}
+		if n >= 2 && binary.BigEndian.Uint16(buf) == opERROR {
+			return errors.New("the client stopped the transfer")
+		}
+		if n < 4 || binary.BigEndian.Uint16(buf) != opACK {
+			continue
+		}
+		ack := binary.BigEndian.Uint16(buf[2:])
+		found := -1
+		for i, p := range inflight {
+			if p.block == ack {
+				found = i
+				break
+			}
+		}
+		if found >= 0 {
+			inflight = inflight[found+1:]
+			tries = 0
+			continue
+		}
+		// an answer for a block that was acknowledged already: the client waits for the block after it, which did not arrive. Not on every such answer, or the
+		// blocks that are already on their way would be sent again and again.
+		if time.Since(lastAgain) > 50*time.Millisecond {
+			if err := again(); err != nil {
+				return err
+			}
+		}
+	}
 }
