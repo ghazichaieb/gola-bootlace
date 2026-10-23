@@ -3,7 +3,7 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Unreleased
+## 0.1.3 - 2026-10-23
 
 - **FreeBSD, pfSense and OPNsense: the loader's own address request.** On the first real PC the hand-off worked and FreeBSD's loader started, then stopped after "Setting currdev to net0:". The server's log showed why: the loader asks for an address again with a DHCP request of its own (it says PXEClient but sends no architecture), and Bootlace answered it like a PXE firmware, with a proxy answer that has no address. The loader needs an address *and* the name of the server in one answer. Bootlace now answers that request (and only that one, from a PC that chose a FreeBSD ISO a moment ago) with the address the PC already had, this server as the server to read from, and the network mask; a request meant for the network's own DHCP server is left alone. Not yet confirmed on real hardware.
 - The Proxmox script's closing message and `docs/proxmox.md` told people to run `pct exec <number> update`, which fails ("No such file or directory"): `pct exec` does not search `/usr/local/bin`. They now give the full path, and say that `pct enter <number>` needs no password (the container console asks for one because the container's root has none).
