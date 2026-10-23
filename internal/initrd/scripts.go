@@ -1,65 +1,14 @@
-// Package initrd makes the extra initramfs archive that Bootlace appends to a live Linux's own: a few files that overwrite the ones of the initramfs of the same name. The
-// kernel unpacks every archive of the initrd in turn, and later files replace earlier ones, so the ISO's initramfs is used as it is except for those files.
+// Shell scripts that go into the extra archive, and helpers to write the ones that differ only in a few values.
 // Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
 package initrd
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 )
 
-// File is one entry of an archive.
-type File struct {
-	Name string // without a leading slash
-	Mode uint32 // permission bits; directories get 040000 added
-	Data []byte
-	Dir  bool
-}
-
-// Archive writes the files in the "newc" cpio format the kernel reads.
-func Archive(files []File) []byte {
-	var b bytes.Buffer
-	ino := 1
-	put := func(name string, mode uint32, data []byte) {
-		fmt.Fprintf(&b, "070701%08X%08X%08X%08X%08X%08X%08X%08X%08X%08X%08X%08X%08X", ino, mode, 0, 0, 1, 0, len(data), 0, 0, 0, 0, len(name)+1, 0)
-		b.WriteString(name)
-		b.WriteByte(0)
-		for b.Len()%4 != 0 {
-			b.WriteByte(0)
-		}
-		b.Write(data)
-		for b.Len()%4 != 0 {
-			b.WriteByte(0)
-		}
-		ino++
-	}
-	for _, f := range files {
-		if f.Dir {
-			put(f.Name, 0o040000|f.Mode, nil)
-		} else {
-			put(f.Name, 0o100000|f.Mode, f.Data)
-		}
-	}
-	put("TRAILER!!!", 0, nil)
-	return b.Bytes()
-}
-
-// Settings say where the ISO is.
-type Settings struct {
-	Host string // the server
-	Port int    // its NBD port
-	Name string // the ISO's id: the NBD export
-	// Block is the block size of the disk: 0 for an ISO's 2048 bytes, 512 for a partition of a disk image (a FAT file system cannot be mounted on a device with larger blocks)
-	Block int
-}
-
-func (s Settings) block() int {
-	if s.Block == 0 {
-		return 2048
-	}
-	return s.Block
-}
+// ShellWord keeps a value from being read as anything but one word.
+func ShellWord(s string) string { return "'" + strings.ReplaceAll(s, "'", `'''`) + "'" }
 
 // nfsmount is what casper runs where it would mount an NFS share: "nfsmount -o options server:path mountpoint". It attaches the ISO as a network block disk
 // and mounts it from there.
@@ -133,8 +82,8 @@ exit 1
 const nbdroot = `#!/bin/sh
 # Gola Bootlace: dracut's netroot handler for netroot=nbd:host:port:name
 rest="${2#nbd:}"
-host="${rest%%%%:*}"; rest="${rest#*:}"
-port="${rest%%%%:*}"; name="${rest#*:}"
+host="${rest%%:*}"; rest="${rest#*:}"
+port="${rest%%:*}"; name="${rest#*:}"
 modprobe nbd >/dev/null 2>&1
 modprobe isofs >/dev/null 2>&1
 /usr/bin/bootlace-nbd -host "$host" -port "$port" -name "$name" -dev /dev/nbd0 &
@@ -149,26 +98,6 @@ echo "Gola Bootlace: the network disk did not come up" >&2
 exit 1
 `
 
-// Extra is the archive for a live Linux that casper starts from the ISO: nfsmount and the helper that attaches the network block disk.
-func Extra(s Settings, helper []byte) []byte {
-	// The whole ISO is never copied into the PC's memory, not even when the network disk fails: that needs RAM for all of it and fails in a way that is hard to read.
-	// A PC that cannot use the network disk says so.
-	fallback := fmt.Sprintf("echo 'Gola Bootlace: this PC could not read the ISO over the network (port %d on the server). Is a firewall in the way?' >&2", s.Port)
-	return Archive([]File{
-		{Name: "usr", Mode: 0o755, Dir: true},
-		{Name: "usr/bin", Mode: 0o755, Dir: true},
-		{Name: "usr/bin/nfsmount", Mode: 0o755, Data: []byte(fmt.Sprintf(nfsmount, shellWord(s.Host), s.Port, shellWord(s.Name), fallback, s.block()))},
-		{Name: "usr/bin/bootlace-nbd", Mode: 0o755, Data: helper},
-		// the same program under the name of the client that Arch's start-up disk calls: it connects again when the connection is lost (see cmd/bootlace-nbd)
-		{Name: "usr/bin/nbd-client", Mode: 0o755, Data: helper},
-		// (no directory entry for sbin: in Fedora's start-up disk /usr/sbin is a link to bin, and a directory entry would replace it with an empty folder, hiding NetworkManager and the rest)
-		{Name: "sbin/nbdroot", Mode: 0o755, Data: []byte(fmt.Sprintf(nbdroot))},
-	})
-}
-
-// shellWord keeps a value from being read as anything but one word.
-func shellWord(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
-
 // UdhcpcScript is what busybox's udhcpc runs when it has an address (for start-up disks that have no network configuration of their own).
 const UdhcpcScript = `#!/bin/sh
 # Gola Bootlace: what busybox's udhcpc runs when it has an address.
@@ -182,3 +111,58 @@ bound|renew)
 esac
 exit 0
 `
+
+// RdinitWrapper is the script a kernel runs in place of the initramfs's /init when "rdinit=/bootlace-init" is on its command line: body does what is needed before the
+// initramfs starts (load drivers, fix a line of its script), and then the initramfs's own /init takes over. This works for any initramfs, whatever it is made of.
+func RdinitWrapper(body string) string {
+	return "#!/bin/sh\n# Gola Bootlace\n" + strings.TrimRight(body, "\n") + "\nexec /init\n"
+}
+
+// NetworkScript is the shell text that loads the network drivers, gets an address with busybox's udhcpc and attaches the ISO as /dev/nbd0: for start-up disks that
+// bring none of this themselves. Say and Fail are the commands that print a message and an error (a start-up system may have its own: mkinitcpio's msg and err).
+type NetworkScript struct {
+	Helper    string // the helper program in the initramfs
+	Dir       string // the folder in the initramfs with the drivers (modules/), the DHCP script (udhcpc.sh)
+	Host      string
+	Port      int
+	Name      string
+	Block     int
+	Say, Fail string
+}
+
+// String is the script's text, to be put where it should run.
+func (n NetworkScript) String() string {
+	block := n.Block
+	if block == 0 {
+		block = 2048
+	}
+	return fmt.Sprintf(`    %[1]s ":: Gola Bootlace: starting the network"
+    %[2]s insmod %[3]s/modules/* >/dev/null 2>&1
+    modprobe -q nbd
+    netok=
+    for try in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        for n in /sys/class/net/*; do
+            dev="${n##*/}"
+            [ "$dev" = lo ] && continue
+            [ -d "$n" ] || continue
+            ip link set "$dev" up
+            if udhcpc -i "$dev" -n -q -t 3 -T 2 -s %[3]s/udhcpc.sh >/dev/null 2>&1; then
+                netok=$dev
+                break
+            fi
+        done
+        [ -n "$netok" ] && break
+        sleep 2
+    done
+    if [ -n "$netok" ]; then
+        %[1]s ":: Gola Bootlace: reading the ISO over the network ($netok)"
+        %[2]s -host %[4]s -port %[5]d -name %[6]s -dev /dev/nbd0 -block %[7]d &
+        for try in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            [ "$(cat /sys/block/nbd0/size 2>/dev/null)" != 0 ] && break
+            sleep 1
+        done
+    else
+        %[8]s "Gola Bootlace: no network card answered, the ISO cannot be read over the network"
+    fi
+`, n.Say, n.Helper, n.Dir, ShellWord(n.Host), n.Port, ShellWord(n.Name), block, n.Fail)
+}

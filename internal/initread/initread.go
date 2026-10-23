@@ -37,6 +37,12 @@ func moduleName(file string) (string, bool) {
 	return "", false
 }
 
+// ModuleName is the name of a module from its file name (without ".ko" and any compression suffix); empty for a file that is not a module.
+func ModuleName(file string) string {
+	n, _ := moduleName(file)
+	return n
+}
+
 // Read goes through an initramfs: one or more cpio archives (the first often only microcode), the last one compressed. It stops when it has the kernel version and every file in
 // want, or at the end.
 func Read(r io.Reader, want ...string) (*Initrd, error) {
@@ -218,9 +224,10 @@ type Module struct {
 	Data []byte // the module itself, uncompressed
 }
 
-// Modules reads the wanted network drivers, and what they need, out of the system image. A module that is in have (the start-up disk's own) is not brought again. The
-// kernel's modules are looked for under usr/lib/modules/<version> or lib/modules/<version>, compressed or not.
-func Modules(sq io.ReaderAt, version string, have map[string]bool, names []string) ([]Module, error) {
+// Modules reads the wanted drivers, and what they need, out of the system image, in the order they must be loaded. What the start-up disk has of them is brought again: it
+// keeps its modules compressed or unloaded, and a driver can only be loaded from a plain file. The kernel's modules are looked for under usr/lib/modules/<version>,
+// lib/modules/<version> or modules/<version> (a modloop), compressed or not.
+func Modules(sq io.ReaderAt, version string, names []string) ([]Module, error) {
 	rd, err := squashfs.NewReader(sq)
 	if err != nil {
 		return nil, err
@@ -236,40 +243,8 @@ func Modules(sq io.ReaderAt, version string, have map[string]bool, names []strin
 	if base == "" {
 		return nil, fmt.Errorf("the system image has no modules for the kernel %s", version)
 	}
-	deps := map[string][]string{} // module path -> the paths it needs
-	byName := map[string]string{}
-	for _, line := range strings.Split(string(dep), "\n") {
-		p, rest, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		deps[p] = strings.Fields(rest)
-		if n, ok := moduleName(p); ok {
-			byName[n] = p
-		}
-	}
-	var order []string
-	seen := map[string]bool{}
-	var add func(p string)
-	add = func(p string) {
-		if seen[p] {
-			return
-		}
-		seen[p] = true
-		for _, d := range deps[p] {
-			add(d)
-		}
-		if n, _ := moduleName(p); !have[n] {
-			order = append(order, p)
-		}
-	}
-	for _, n := range names {
-		if p, ok := byName[n]; ok && !have[n] {
-			add(p)
-		}
-	}
 	var out []Module
-	for _, p := range order {
+	for _, p := range loadOrder(string(dep), names) {
 		b, err := sqRead(rd, base+p)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", p, err)
@@ -283,6 +258,41 @@ func Modules(sq io.ReaderAt, version string, have map[string]bool, names []strin
 		return nil, errors.New("no network driver found in the system image")
 	}
 	return out, nil
+}
+
+// loadOrder is the paths of the named modules and of everything they need, each after the modules it needs, from the text of a modules.dep ("path: needed paths").
+func loadOrder(dep string, names []string) []string {
+	needs := map[string][]string{}
+	byName := map[string]string{}
+	for _, line := range strings.Split(dep, "\n") {
+		p, rest, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		needs[p] = strings.Fields(rest)
+		if n, ok := moduleName(p); ok {
+			byName[n] = p
+		}
+	}
+	var order []string
+	seen := map[string]bool{}
+	var add func(p string)
+	add = func(p string) {
+		if seen[p] {
+			return
+		}
+		seen[p] = true
+		for _, d := range needs[p] {
+			add(d)
+		}
+		order = append(order, p)
+	}
+	for _, n := range names {
+		if p, ok := byName[n]; ok {
+			add(p)
+		}
+	}
+	return order
 }
 
 // decompress gives the module's own bytes (the kernel loads a module from memory, not from a compressed file).

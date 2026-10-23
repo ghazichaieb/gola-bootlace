@@ -1,65 +1,156 @@
-// Package family recognises which kind of Linux an ISO holds and says how to start it over the network: the kernel and the start-up disk come
-// out of the ISO, and the kernel is told where the rest of the ISO is on the web server. The distributions' own network boot support does the work
-// after that, so the ISO is never changed.
+// Package family recognises which kind of system an ISO (or a partition of a disk image) holds and says how to start it over the network: the kernel and the start-up disk
+// come out of the files, and the kernel is told where the rest is. The ISO is never changed.
+//
+// Every system is described the same way. A *locator* finds the kernel and the start-up disk (in the ISO, in a partition, in the EFI image inside the ISO); a *strategy* says
+// how that start-up disk is made to find the ISO, by one of the ways in Transport; and, when the start-up disk lacks something (the network disk client, network card
+// drivers), an *extra archive* adds it (package initrd). The files of one family (debian.go, arch.go ...) hold the locators and strategies of that kind of system.
 // Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
 package family
 
 import (
-	"path"
 	"sort"
-	"strconv"
 	"strings"
+
+	"github.com/ghazichaieb/gola-bootlace/internal/disc"
+	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
 )
 
-// Tree is what Detect needs to look at: the files of an ISO.
+// Tree is the files of one ISO, or of one partition of a disk image.
 type Tree interface {
 	Exists(name string) bool
 	List(name string) ([]string, error)
+	Open(name string) (disc.File, error)
 }
 
 // URLs says where the web server offers this ISO: the whole file, and its contents file by file (both without a trailing slash).
 type URLs struct {
-	ISO string
-	FS  string
-	Win string // generated files for Windows set-up (see package winpe)
-	// NBD says that the ISO can be offered to a live Linux as a network disk, with Extra the address of the extra initramfs archive that makes use of it; empty: the whole
-	// ISO is downloaded into the PC's memory (a PC then needs RAM for all of it, twice over).
+	ISO  string
+	FS   string
+	Win  string // generated files for Windows set-up (see package winpe)
+	Base string // the server
+
+	// NBD says that the ISO can be offered as a network disk, with Extra the address of the extra initramfs archive that makes use of it; both are empty when the server has
+	// no network disk server (the whole ISO is then downloaded into the PC's memory, a PC needing RAM for all of it, twice over).
 	NBD, Extra string
-	// The network disk's address and the ISO's name on it, for the ones that attach it themselves (archiso has its own NBD client).
+	// The network disk's address and the ISO's name on it, for the start-up disks that attach it themselves (archiso has its own client).
 	NBDHost, NBDName string
-	ISCSI            string // the ISO as a network CD-ROM (the address iPXE's sanboot takes), when the iSCSI server is on
-	// The same network CD-ROM for a Linux that logs in to it itself (dracut's iSCSI support): server, port and the target's name. Empty when the iSCSI server is off.
+	NBDPort          int
+
+	ISCSI string // the ISO as a network CD-ROM (the address iPXE's sanboot takes), when the iSCSI server is on
+	// The same network CD-ROM for a start-up disk that logs in to it itself (dracut's iSCSI support): server, port and the target's name. Empty when the iSCSI server is off.
 	ISCSIHost, ISCSIIQN string
 	ISCSIPort           int
-	NBDPort             int
-	Base                string // the server
-	// KernelFS is where the kernel and initramfs are fetched from when they are not in the ISO's own files (an ISO whose kernel sits in the start-up image inside it): the
-	// files of that image, offered like the ISO's.
-	KernelFS string
+}
+
+// Volume is a set of files besides the ISO's own that a family may need: an EFI image inside the ISO, or a partition of a disk image. URL is where the server offers them.
+type Volume struct {
+	FS  Tree
+	URL string
+}
+
+// Context is what is known when an ISO is looked at.
+type Context struct {
+	FS      Tree            // the ISO's files (or those of the partition being looked at)
+	URLs    URLs            // where the server offers them
+	Volumes func() []Volume // the other volumes of the same file, found when asked for; may be nil
+}
+
+// volumeWith finds a path in the ISO's files or, failing that, in another volume, and says where the server offers the files of the volume it was found in.
+func (c *Context) volumeWith(path string) (Volume, bool) {
+	if c.FS.Exists(path) {
+		return Volume{c.FS, c.URLs.FS}, true
+	}
+	if c.Volumes != nil {
+		for _, v := range c.Volumes() {
+			if v.FS.Exists(path) {
+				return v, true
+			}
+		}
+	}
+	return Volume{}, false
 }
 
 // Boot is how to start one ISO.
 type Boot struct {
-	Family   string   // "Alpine", "Debian live" ...
+	Family   string   // "Alpine Linux", "Debian live" ...
 	Commands []string // iPXE commands: kernel, initrd, boot
 
 	// For a kernel that GRUB (signed by the distribution, so that UEFI Secure Boot can stay on) starts instead of iPXE: the files inside the ISO and the kernel's
 	// arguments. Empty for the kinds that cannot be started that way.
 	Kernel, Initrd, Args string
-	ExtraInitrd          string // an address: a second initramfs archive to load after the ISO's own
+
+	ExtraInitrd string       // an address: a second initramfs archive to load after the ISO's own
+	extra       ExtraBuilder // how that archive is made; nil for the usual one
 }
 
+// ExtraEnv is what an extra archive is made from besides the files: where the network disk is, and the helper program that attaches it.
+type ExtraEnv struct {
+	Settings initrd.Settings
+	Helper   []byte
+}
+
+// ExtraBuilder makes the extra initramfs archive of one ISO. It reads the ISO's files, so it is made while they are still open (see Boot.BuildExtra).
+type ExtraBuilder func(ExtraEnv) ([]byte, error)
+
+// BuildExtra makes the extra archive that the boot's ExtraInitrd address serves.
+func (b Boot) BuildExtra(env ExtraEnv) ([]byte, error) {
+	if b.extra != nil {
+		return b.extra(env)
+	}
+	return initrd.Extra(env.Settings, env.Helper), nil
+}
+
+// HasOwnExtra says whether the extra archive is made specially for this ISO (and so takes time to make), not the usual one.
+func (b Boot) HasOwnExtra() bool { return b.extra != nil }
+
 // Detect returns the way to boot the ISO, or false when it is not one of the kinds known here.
-func Detect(t Tree, u URLs) (Boot, bool) {
+func Detect(t Tree, u URLs) (Boot, bool) { return DetectIn(&Context{FS: t, URLs: u}) }
+
+// DetectIn is Detect with the context, which can lead to other volumes of the same file.
+func DetectIn(c *Context) (Boot, bool) {
 	for _, d := range detectors {
-		if b, ok := d(t, u); ok {
+		if b, ok := d(c); ok {
 			return b, true
 		}
 	}
 	return Boot{}, false
 }
 
-var detectors = []func(Tree, URLs) (Boot, bool){windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, gentooLive, tinyCore, porteus, tails, libreELEC, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike}
+// detectors are tried in order, the most specific first (Tails is a Debian live system, Pop!_OS an Ubuntu).
+var detectors = []func(*Context) (Boot, bool){
+	windows, proxmox, alpine, archLinux, systemRescue, shredOS, openSUSE, fedoraLiveISO, gentooLive, tinyCore, porteus, tails, libreELEC, debianInstaller, debianLive, ubuntu, freeBSD, fedoraLike,
+}
+
+// files are the kernel and the start-up disk to load, and the address the server offers the files they are in at.
+type files struct {
+	base, kernel, initrd string // initrd is empty for a kernel that holds its own
+}
+
+// in is the files in a path of the ISO's own volume.
+func (c *Context) in(kernel, initrd string) files { return files{c.URLs.FS, kernel, initrd} }
+
+// newBoot is the usual start: load the kernel with the arguments and the start-up disk, and boot.
+func newBoot(family string, f files, args string) Boot {
+	b := Boot{Family: family, Kernel: f.kernel, Initrd: f.initrd, Args: args, Commands: []string{"kernel " + f.base + f.kernel + " " + args}}
+	if f.initrd != "" {
+		b.Commands = append(b.Commands, "initrd "+f.base+f.initrd)
+	}
+	b.Commands = append(b.Commands, "boot")
+	return b
+}
+
+// withExtra adds the extra initramfs archive after the ISO's own. build says how it is made when it is not the usual one.
+func (b Boot) withExtra(u URLs, build ExtraBuilder) Boot {
+	b.ExtraInitrd, b.extra = u.Extra, build
+	return b.before("initrd " + u.Extra)
+}
+
+// before adds an iPXE command just before the final "boot".
+func (b Boot) before(cmd string) Boot {
+	n := len(b.Commands) - 1
+	b.Commands = append(append(append([]string(nil), b.Commands[:n]...), cmd), b.Commands[n:]...)
+	return b
+}
 
 // firstMatch is the first file in dir whose name starts with prefix (sorted, so the choice is the same every time).
 func firstMatch(t Tree, dir, prefix string) string {
@@ -74,401 +165,4 @@ func firstMatch(t Tree, dir, prefix string) string {
 		}
 	}
 	return ""
-}
-
-// withExtra adds the extra initramfs archive (the network disk's helper and nfsmount stand-in) after the ISO's own.
-func withExtra(b Boot, u URLs) Boot {
-	b.ExtraInitrd = u.Extra
-	b.Commands = []string{b.Commands[0], b.Commands[1], "initrd " + u.Extra, "boot"}
-	return b
-}
-
-func boot(family string, u URLs, kernel, initrd, args string) Boot {
-	base := u.FS
-	if u.KernelFS != "" {
-		base = u.KernelFS
-	}
-	return Boot{Family: family, Kernel: kernel, Initrd: initrd, Args: args, Commands: []string{
-		"kernel " + base + kernel + " " + args,
-		"initrd " + base + initrd,
-		"boot",
-	}}
-}
-
-// Alpine: the kernel and initramfs of its flavour, the modules disk and the packages from the ISO.
-func alpine(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/.alpine-release") {
-		return Boot{}, false
-	}
-	kernel := firstMatch(t, "/boot", "vmlinuz-")
-	if kernel == "" {
-		return Boot{}, false
-	}
-	flavor := strings.TrimPrefix(kernel, "/boot/vmlinuz-")
-	initrd, modloop := "/boot/initramfs-"+flavor, "/boot/modloop-"+flavor
-	if !t.Exists(initrd) {
-		return Boot{}, false
-	}
-	args := "ip=dhcp modules=loop,squashfs,sd-mod,usb-storage,hv_netvsc,virtio_net alpine_repo=" + u.FS + "/apks console=tty0"
-	if t.Exists(modloop) {
-		args += " modloop=" + u.FS + modloop
-	}
-	if u.Extra != "" { // the start-up disk's network card drivers come in the extra archive, loaded by the script that rdinit= names (see package alpineinit)
-		b := boot("Alpine Linux", u, kernel, initrd, args+" rdinit=/bootlace-init")
-		return withExtra(b, u), true
-	}
-	b := boot("Alpine Linux", u, kernel, initrd, args)
-	return b, true
-}
-
-// Arch Linux and its relatives (archiso, CachyOS ...): the boot files and the squashfs come from the web server. The kernel is the one named
-// vmlinuz-linux or, in a relative, vmlinuz-linux-<name> (the long-term-support one only when it is the only one).
-func archLinux(t Tree, u URLs) (Boot, bool) {
-	dir := "/arch/boot/x86_64"
-	names, err := t.List(dir)
-	if err != nil {
-		return Boot{}, false
-	}
-	sort.Strings(names)
-	kernel := ""
-	for _, n := range names {
-		if strings.HasPrefix(n, "vmlinuz-") && (kernel == "" || (strings.Contains(kernel, "lts") && !strings.Contains(n, "lts"))) {
-			kernel = n
-		}
-	}
-	if kernel == "" {
-		return Boot{}, false
-	}
-	initrd := "initramfs-" + strings.TrimPrefix(kernel, "vmlinuz-") + ".img"
-	if !t.Exists(dir + "/" + initrd) {
-		return Boot{}, false
-	}
-	return archiso("Arch Linux", u, "ip=:::::eth0:dhcp", "arch", dir+"/"+kernel, dir+"/"+initrd), true // (CachyOS wants the long form)
-}
-
-// archiso is how Arch Linux ISOs and the ones built with it (SystemRescue, CachyOS ...) are started. Their initramfs has an NBD client of its own (the archiso_pxe_nbd hook):
-// the ISO is attached as /dev/nbd0 and the squashfs is read from it a piece at a time, with copytoram=n so that it is not copied into memory. That client takes the server's
-// address only, so it is used when the NBD server listens on the standard port; otherwise the squashfs is downloaded into memory over HTTP.
-func archiso(family string, u URLs, ip, basedir, kernel, initrd string) Boot {
-	if u.NBDHost != "" && u.NBDPort == 10809 {
-		b := boot(family, u, kernel, initrd, ip+" archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n console=tty0")
-		if u.Extra != "" { // the extra archive replaces the start-up disk's nbd-client by one that connects again when the connection is lost (the live system changes its address)
-			b = withExtra(b, u)
-		}
-		return b
-	}
-	return boot(family, u, kernel, initrd, ip+" archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y console=tty0")
-}
-
-// DetectInImage is Detect for an ISO whose kernel is not among its files but in the start-up image inside it (the EFI system partition that the ISO's partition table
-// shows): the files of the ISO are t, those of that image esp, and espFS is where the web server offers the image's files. ChimeraOS is one: an archiso whose boot loader
-// (systemd-boot) and kernel are in that image and the system, airootfs.sfs, in the ISO.
-func DetectInImage(t, esp Tree, u URLs, espFS string) (Boot, bool) {
-	if !t.Exists("/arch/x86_64/airootfs.sfs") {
-		return Boot{}, false
-	}
-	dir := "/arch/boot/x86_64"
-	kernel := firstMatch(esp, dir, "vmlinuz-")
-	if kernel == "" {
-		return Boot{}, false
-	}
-	initrd := dir + "/initramfs-" + strings.TrimPrefix(kernel, dir+"/vmlinuz-") + ".img"
-	if !esp.Exists(initrd) {
-		return Boot{}, false
-	}
-	if u.NBD == "" || u.Extra == "" { // its initramfs has no network start of its own: only the extra archive's hook makes one
-		return Boot{}, false
-	}
-	args := "archisobasedir=arch archisodevice=/dev/nbd0 copytoram=n console=tty0"
-	return Boot{Family: "Arch Linux (kernel in the EFI image)", Kernel: kernel, Initrd: initrd, Args: args, ExtraInitrd: u.Extra, Commands: []string{
-		"kernel " + espFS + kernel + " " + args,
-		"initrd " + espFS + initrd,
-		"initrd " + u.Extra,
-		"boot",
-	}}, true
-}
-
-// SystemRescue: archiso with its own folder name.
-func systemRescue(t Tree, u URLs) (Boot, bool) {
-	const dir = "/sysresccd/boot/x86_64"
-	if !t.Exists(dir+"/vmlinuz") || !t.Exists(dir+"/sysresccd.img") {
-		return Boot{}, false
-	}
-	return archiso("SystemRescue", u, "ip=dhcp", "sysresccd", dir+"/vmlinuz", dir+"/sysresccd.img"), true // (its archiso hook builds the long form itself from ip=dhcp)
-}
-
-// Debian live and the distributions built the same way (TrueNAS keeps its kernel at the top of the ISO): the squashfs comes from the web server.
-// isVyOS says whether a live folder is VyOS's (its kernel and initramfs files carry "vyos" in their names).
-func isVyOS(t Tree) bool {
-	names, _ := t.List("/live")
-	for _, n := range names {
-		if strings.Contains(n, "vyos") {
-			return true
-		}
-	}
-	return false
-}
-
-// Porteus (and Slax, built the same way): a Slackware live system whose start-up script finds its files on a disk, over NFS (a share of its own layout) or in an ISO file that
-// "from=" names. The ISO is handed over as a file in the initramfs, in a folder under /mnt where the script looks for disks (the extra archive makes the folder): the PC needs memory for the ISO, twice over (the script
-// copies the initramfs once), but nothing else. "Always fresh" options: the ISO cannot hold changes.
-func porteus(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/boot/syslinux/vmlinuz") || !t.Exists("/boot/syslinux/initrd.xz") || !t.Exists("/porteus/base/001-core.xzm") || u.Extra == "" {
-		return Boot{}, false
-	}
-	return Boot{Family: "Porteus (whole ISO in memory)", Kernel: "/boot/syslinux/vmlinuz", Initrd: "/boot/syslinux/initrd.xz", Commands: []string{
-		"echo Loading Porteus ... the whole ISO is read into memory first, this takes a while",
-		"kernel " + u.FS + "/boot/syslinux/vmlinuz from=/porteus.iso nomagic base_only norootcopy",
-		"initrd " + u.FS + "/boot/syslinux/initrd.xz",
-		"initrd " + u.Extra, // (makes the folder: iPXE does not, and a file in a folder that is not there is dropped without a word)
-		"initrd --name /mnt/bootlace/porteus.iso " + u.ISO + " /mnt/bootlace/porteus.iso mode=0644",
-		"boot",
-	}}, true
-}
-
-// LibreELEC and the systems built from it (Lakka): the kernel has its initramfs inside and mounts the boot partition itself; "boot=NBD=host:port" makes it read that partition
-// over the network (an nbd-client comes in the extra archive, see package libreelec), and without "disk=" its storage is in memory. Only a disk image's partition looks like
-// this, and only the network disk way works (the kernel cannot see a disk that the firmware reads over iSCSI).
-func libreELEC(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/KERNEL") || !t.Exists("/SYSTEM") || t.Exists("/live") || u.NBD == "" || u.Extra == "" || u.NBDHost == "" {
-		return Boot{}, false
-	}
-	args := "boot=NBD=" + u.NBDHost + ":" + strconv.Itoa(u.NBDPort) + " ip=dhcp rdinit=/bootlace-init quiet"
-	return Boot{Family: "Lakka / LibreELEC", Kernel: "/KERNEL", Args: args, ExtraInitrd: u.Extra, Commands: []string{ // (no initrd of its own: the extra archive is the only one)
-		"kernel " + u.FS + "/KERNEL " + args,
-		"initrd " + u.Extra,
-		"boot",
-	}}, true
-}
-
-// Tails: a Debian live system that comes as a disk image with one FAT partition (kernel and initramfs in /live, the module name in /live/Tails.module). The arguments are
-// Tails's own, but for the ones that find the start-up medium: live-boot is told to take the system from the network disk instead.
-func tails(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/live/Tails.module") || !t.Exists("/live/vmlinuz") || !t.Exists("/live/initrd.img") || !t.Exists("/live/filesystem.squashfs") {
-		return Boot{}, false
-	}
-	hardening := "slab_nomerge slub_debug=FZ mce=0 vsyscall=none init_on_free=1 mds=full,nosmt page_alloc.shuffle=1 randomize_kstack_offset=on efi_pstore.pstore_disable=1 erst_disable spec_store_bypass_disable=on systemd.condition_needs_update=no proc_mem.force_override=ptrace"
-	if u.NBD != "" && u.Extra != "" {
-		return withExtra(boot("Tails", u, "/live/vmlinuz", "/live/initrd.img", "boot=live config nopersistence noprompt timezone=Etc/UTC splash noautologin module=Tails netboot=nfs nfsroot="+u.NBD+" "+hardening+" console=tty0"), u), true
-	}
-	return boot("Tails", u, "/live/vmlinuz", "/live/initrd.img", "boot=live config nopersistence noprompt timezone=Etc/UTC splash noautologin module=Tails ip=dhcp fetch="+u.FS+"/live/filesystem.squashfs "+hardening+" console=tty0"), true
-}
-
-func debianLive(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/live/filesystem.squashfs") {
-		return Boot{}, false
-	}
-	kernel, initrd := firstMatch(t, "/live", "vmlinuz"), firstMatch(t, "/live", "initrd")
-	if kernel == "" && t.Exists("/vmlinuz") {
-		kernel = "/vmlinuz"
-	}
-	if initrd == "" && t.Exists("/initrd.img") {
-		initrd = "/initrd.img"
-	}
-	if kernel == "" || initrd == "" {
-		return Boot{}, false
-	}
-	// VyOS's start-up disk has no network block disk driver: its system image (a few hundred MB, not the whole ISO) is downloaded by live-boot instead
-	if u.NBD != "" && u.Extra != "" && strings.HasPrefix(kernel, "/live/") && !isVyOS(t) { // the usual layout: live-boot mounts the ISO through nfsmount, which Bootlace replaces (package initrd)
-		b := boot("Debian live", u, kernel, initrd, "boot=live components netboot=nfs nfsroot="+u.NBD+" console=tty0")
-		return withExtra(b, u), true
-	}
-	if isVyOS(t) { // VyOS's own boot menu passes these: without noautologin the console logs in as a user that does not exist, over and over
-		return boot("Debian live", u, kernel, initrd, "boot=live components hostname=vyos username=live nopersistence noautologin union=overlay net.ifnames=0 biosdevname=0 ip=dhcp fetch="+u.FS+"/live/filesystem.squashfs console=tty0"), true
-	}
-	return boot("Debian live", u, kernel, initrd, "boot=live components ip=dhcp fetch="+u.FS+"/live/filesystem.squashfs console=tty0"), true
-}
-
-// Proxmox VE: its installer finds the ISO as a file in the start-up disk, so the ISO is given to the kernel as a second one.
-func proxmox(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/.pve-cd-id.txt") || !t.Exists("/boot/linux26") || !t.Exists("/boot/initrd.img") {
-		return Boot{}, false
-	}
-	if u.NBD != "" && u.Extra != "" && t.Exists("/pve-installer.squashfs") { // read over the network a piece at a time (see package pve)
-		return Boot{Family: "Proxmox VE", Commands: []string{
-			"kernel " + u.FS + "/boot/linux26 ro rw quiet splash=silent console=tty0",
-			"initrd " + u.FS + "/boot/initrd.img",
-			"initrd " + u.Extra,
-			"boot",
-		}}, true
-	}
-	return Boot{Family: "Proxmox VE", Commands: []string{
-		"kernel " + u.FS + "/boot/linux26 ro ramdisk_size=16777216 rw quiet splash=silent console=tty0",
-		"initrd " + u.FS + "/boot/initrd.img",
-		"initrd --name /proxmox.iso " + u.ISO + " /proxmox.iso mode=0644",
-		"boot",
-	}}, true
-}
-
-// Ubuntu and its flavours (casper): the initramfs downloads the ISO into memory.
-func ubuntu(t Tree, u URLs) (Boot, bool) {
-	dir, kernel := casperDir(t)
-	if dir == "" {
-		return Boot{}, false
-	}
-	initrd := firstMatch(t, dir, "initrd")
-	if initrd == "" {
-		return Boot{}, false
-	}
-	path := ""
-	if dir != "/casper" { // Pop!_OS and others keep the live system in a folder of their own name, which casper is told about
-		path = " live-media-path=" + dir
-	}
-	if u.NBD != "" && u.Extra != "" { // the ISO is read over the network a piece at a time: any amount of RAM will do (see package initrd)
-		// cloud-init stays on for the server ISOs: casper hands them the network settings of the start-up (which the network disk needs kept: see package initrd), and with
-		// cloud-init off they get a plain "DHCP on every card" instead, take another address and lose the connection to the ISO. The desktop ISOs do not need it.
-		ci := " cloud-init=disabled"
-		if firstMatch(t, dir, "ubuntu-server") != "" {
-			ci = ""
-		}
-		return withExtra(boot("Ubuntu (casper)", u, kernel, initrd, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+path+ci+" console=tty0"), u), true
-	}
-	return boot("Ubuntu (casper)", u, kernel, initrd, "ip=dhcp url="+u.ISO+" boot=casper"+path+" cloud-init=disabled console=tty0"), true
-}
-
-// casperDir finds the folder of a casper live system and its kernel: /casper, or a folder whose name starts with casper (Pop!_OS: casper_pop-os_24.04_..., kernel vmlinuz.efi).
-func casperDir(t Tree) (dir, kernel string) {
-	if t.Exists("/casper/vmlinuz") {
-		return "/casper", "/casper/vmlinuz"
-	}
-	names, _ := t.List("/")
-	sort.Strings(names)
-	for _, n := range names {
-		if strings.HasPrefix(n, "casper") && strings.HasSuffix(n, "/") {
-			d := "/" + strings.TrimSuffix(n, "/")
-			if k := firstMatch(t, d, "vmlinuz"); k != "" {
-				return d, k
-			}
-		}
-	}
-	return "", ""
-}
-
-// Fedora, CentOS, Rocky, Alma and other Red Hat family ISOs: an installer reads its packages from the web server, a live ISO is fetched whole.
-func fedoraLike(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/images/pxeboot/vmlinuz") || !t.Exists("/images/pxeboot/initrd.img") {
-		return Boot{}, false
-	}
-	if t.Exists("/LiveOS") {
-		// read over the network a piece at a time: the whole ISO (Bazzite and Nobara are 8 GB) is never downloaded into memory
-		// (Bazzite's own boot menu passes enforcing=0: with SELinux enforcing its live system stops at the first thing it labels. A live session loses nothing by it.)
-		return dracutLive(Boot{Family: "Fedora (live)", Kernel: "/images/pxeboot/vmlinuz", Initrd: "/images/pxeboot/initrd.img"}, u, " enforcing=0"), true
-	}
-	return boot("Red Hat family (installer)", u, "/images/pxeboot/vmlinuz", "/images/pxeboot/initrd.img", "ip=dhcp inst.repo="+u.FS+" console=tty0"), true
-}
-
-// Windows installation media: Windows' own set-up environment is loaded with wimboot, and the installation files come from a share (see package winpe).
-func windows(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/sources/boot.wim") || !t.Exists("/boot/boot.sdi") || !t.Exists("/efi/boot/bootx64.efi") || !t.Exists("/efi/microsoft/boot/bcd") {
-		return Boot{}, false
-	}
-	if !t.Exists("/sources/install.wim") && !t.Exists("/sources/install.esd") && !t.Exists("/sources/install.swm") {
-		// a Windows PE with no installation image (Hiren's BootCD PE, a recovery or rescue disc): it starts its own programs, so Bootlace adds nothing to it
-		// With iSCSI the PC reads the ISO as a CD-ROM a piece at a time. Through wimboot the boot image (1.8 GB for Hiren's) would be held in memory twice
-		// (wimboot's copy and Windows' RAM disk), which needs 6 GB or more.
-		if u.ISCSI != "" {
-			return Boot{Family: "Windows PE", Commands: []string{"sanboot --no-describe --drive 0x80 " + u.ISCSI}}, true
-		}
-		return Boot{Family: "Windows PE", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
-	}
-	return Boot{Family: "Windows setup", Commands: []string{"chain " + u.Win + "/boot.ipxe"}}, true
-}
-
-// Fedora's live ISOs since version 44 (built with KIWI): kernel and initramfs in /boot/x86_64/loader, the system in /LiveOS/squashfs.img. The initramfs (dracut) has an iSCSI
-// client: it logs in to the ISO as a network CD-ROM and reads the system from it a piece at a time, so the PC does not need RAM for the whole ISO.
-func fedoraLiveISO(t Tree, u URLs) (Boot, bool) {
-	const dir = "/boot/x86_64/loader"
-	if !t.Exists(dir+"/linux") || !t.Exists(dir+"/initrd") || !t.Exists("/LiveOS/squashfs.img") || t.Exists("/.treeinfo") {
-		return Boot{}, false
-	}
-	return dracutLive(Boot{Family: "Fedora (live)", Kernel: dir + "/linux", Initrd: dir + "/initrd"}, u, ""), true
-}
-
-// dracutLive is how a live system made with dracut (Fedora, Nobara, Bazzite ...) is told to find its ISO over the network, without downloading it: as a network block disk
-// that the extra archive's handler attaches (it connects again if the live system takes another address), else as an iSCSI CD, else the whole ISO is downloaded.
-func dracutLive(b Boot, u URLs, extra string) Boot {
-	if u.NBD != "" && u.Extra != "" && u.NBDHost != "" {
-		args := "ip=dhcp rd.neednet=1 netroot=nbd:" + u.NBDHost + ":" + strconv.Itoa(u.NBDPort) + ":" + u.NBDName + " root=live:/dev/nbd0 rd.live.image console=tty0" + extra
-		return withExtra(boot(b.Family, u, b.Kernel, b.Initrd, args), u)
-	}
-	if u.ISCSIHost != "" {
-		return boot(b.Family, u, b.Kernel, b.Initrd, dracutISCSI(u)+" rd.live.image console=tty0"+extra)
-	}
-	return boot(b.Family, u, b.Kernel, b.Initrd, "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"+extra)
-}
-
-// dracutISCSI is how a live system made with dracut (Fedora and its relatives) is told to find its ISO as a network CD-ROM: it logs in over iSCSI and looks for the disk by its path.
-func dracutISCSI(u URLs) string {
-	port := strconv.Itoa(u.ISCSIPort)
-	return "ip=dhcp rd.neednet=1 netroot=iscsi:" + u.ISCSIHost + "::" + port + "::" + u.ISCSIIQN +
-		" root=live:/dev/disk/by-path/ip-" + u.ISCSIHost + ":" + port + "-iscsi-" + u.ISCSIIQN + "-lun-0"
-}
-
-// Gentoo's live ISOs (minimal install CD, LiveGUI): a dracut live system with its kernel and initramfs in /boot and the system in /image.squashfs.
-func gentooLive(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/boot/gentoo") || !t.Exists("/boot/gentoo.igz") || !t.Exists("/image.squashfs") {
-		return Boot{}, false
-	}
-	return dracutLive(Boot{Family: "Gentoo (live)", Kernel: "/boot/gentoo", Initrd: "/boot/gentoo.igz"}, u, " rd.live.dir=/ rd.live.squashimg=image.squashfs cdroot"), true
-}
-
-// Tiny Core (Core, without the graphical parts): a 20 MB kernel and a small initramfs that holds the whole system, so nothing is read from the ISO afterwards.
-func tinyCore(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/boot/vmlinuz") || !t.Exists("/boot/core.gz") {
-		return Boot{}, false
-	}
-	return boot("Tiny Core", u, "/boot/vmlinuz", "/boot/core.gz", "loglevel=3"), true
-}
-
-// ShredOS (nwipe, for wiping drives): one kernel with everything inside it.
-func shredOS(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/boot/bzImage") || !t.Exists("/boot/shredos.id") {
-		return Boot{}, false
-	}
-	return Boot{Family: "ShredOS", Kernel: "/boot/bzImage", Args: "console=tty3 loglevel=3", Commands: []string{"kernel " + u.FS + "/boot/bzImage console=tty3 loglevel=3", "boot"}}, true
-}
-
-// openSUSE (Leap, Tumbleweed): the installer reads the packages from the web server, file by file, when the ISO has them (the DVD); the network ISO asks the person.
-func openSUSE(t Tree, u URLs) (Boot, bool) {
-	const dir = "/boot/x86_64/loader"
-	if !t.Exists(dir+"/linux") || !t.Exists(dir+"/initrd") || !t.Exists("/.treeinfo") {
-		return Boot{}, false
-	}
-	args := "netsetup=dhcp"
-	if t.Exists("/repodata") {
-		args += " install=" + u.FS + "/"
-	}
-	return boot("openSUSE", u, dir+"/linux", dir+"/initrd", args), true
-}
-
-// Debian's installer and the ones built on it (Kali's): kernel and initrd come out of the ISO, the packages from a mirror or from the ISO's own files over the web server.
-func debianInstaller(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/install.amd/vmlinuz") {
-		return Boot{}, false
-	}
-	initrd := "/install.amd/gtk/initrd.gz"
-	if !t.Exists(initrd) {
-		initrd = "/install.amd/initrd.gz"
-	}
-	if !t.Exists(initrd) {
-		return Boot{}, false
-	}
-	return boot("Debian installer", u, "/install.amd/vmlinuz", initrd, "vga=788 --- quiet"), true
-}
-
-// FreeBSD and what is built on it (pfSense, OPNsense, TrueNAS CORE): FreeBSD's own loader is started from the ISO and then reads everything else,
-// the kernel and the ISO itself as a memory disk, by TFTP from this server (see package httpd, which chooses the files by who asks).
-func freeBSD(t Tree, u URLs) (Boot, bool) {
-	if !t.Exists("/boot/kernel/kernel") || !t.Exists("/boot/loader.efi") {
-		return Boot{}, false
-	}
-	// FreeBSD's loader cannot use the network card while iPXE holds it, so iPXE says which PC chose this ISO and restarts it: the next network boot
-	// of that PC gets the loader as boot file straight from the firmware (see package handoff).
-	return Boot{Family: "FreeBSD, experimental", Commands: []string{
-		// (the hand-off has no boot file for a BIOS PC, which would restart for ever)
-		"iseq ${platform} pcbios && echo FreeBSD-based ISOs (pfSense, OPNsense) start on UEFI PCs only, not in BIOS mode. && sleep 8 && exit || echo", // (the menu adds "|| goto failed" to every line: on a UEFI PC iseq is false, and the echo makes the line succeed)
-		"echo Restarting this PC to start the FreeBSD loader from the firmware. It reads the kernel and the ISO by TFTP: this takes a while",
-		"imgfetch --name handoff " + u.Base + "/next?iso=" + path.Base(u.FS) + "&mac=${net0/mac}&ip=${net0/ip}",
-		"reboot",
-	}}, true
 }

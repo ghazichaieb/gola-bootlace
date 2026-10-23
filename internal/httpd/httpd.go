@@ -16,7 +16,6 @@ import (
 
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
-	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/diskimg"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/gfx"
@@ -101,37 +100,6 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
 	return mux
-}
-
-// recognise looks inside the ISO (once) and says whether it is a Linux this server knows how to start over the network.
-func (s *Server) recognise(iso isos.ISO) (family.Boot, bool) {
-	if iso.Disk {
-		return family.Boot{}, false
-	}
-	key := fmt.Sprintf("%s|%d|%d", iso.Path, iso.Size, iso.ModTime.UnixNano())
-	s.mu.Lock()
-	if r, ok := s.known[key]; ok {
-		s.mu.Unlock()
-		return r.boot, r.ok
-	}
-	s.mu.Unlock()
-	var result recognised
-	if f, err := os.Open(iso.Path); err == nil {
-		if img, err := disc.Open(f, iso.Size); err == nil {
-			result.boot, result.ok = family.Detect(img, s.familyURLs(iso))
-			if !result.ok {
-				result.boot, result.ok = s.recogniseImage(f, iso, img)
-			}
-		}
-		f.Close()
-	}
-	s.mu.Lock()
-	if s.known == nil {
-		s.known = map[string]recognised{}
-	}
-	s.known[key] = result
-	s.mu.Unlock()
-	return result.boot, result.ok
 }
 
 // find is isos.Find with the unpacked files taken into account (see scan).

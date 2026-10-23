@@ -1,5 +1,5 @@
 // A live Linux that reads its ISO over the network a piece at a time instead of copying it into memory: the NBD server that shows an ISO as a disk, and the extra
-// initramfs archive that attaches it (see packages nbd and initrd).
+// initramfs archive that attaches it (see packages nbd, initrd and family).
 // Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
 package httpd
 
@@ -10,38 +10,31 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/ghazichaieb/gola-bootlace/internal/alpineinit"
-	"github.com/ghazichaieb/gola-bootlace/internal/archisoesp"
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
-	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
 	"github.com/ghazichaieb/gola-bootlace/internal/iscsi"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
-	"github.com/ghazichaieb/gola-bootlace/internal/libreelec"
 	"github.com/ghazichaieb/gola-bootlace/internal/nbd"
-	"github.com/ghazichaieb/gola-bootlace/internal/pve"
-	"github.com/ghazichaieb/gola-bootlace/internal/tails"
 )
 
 // familyURLs says where the web server offers an ISO.
 func (s *Server) familyURLs(iso isos.ISO) family.URLs { return s.familyURLsFor(iso, iso.ID) }
 
-// familyURLsFor is familyURLs for what a spec names: an ISO, or a partition of a disk image (see diskboot.go).
+// familyURLsFor is familyURLs for what a spec names: an ISO, or a partition of a file (see source.go).
 func (s *Server) familyURLsFor(iso isos.ISO, spec string) family.URLs {
 	u := family.URLs{ISO: s.Base + isoPath(iso.Name), FS: s.Base + "/fs/" + spec, Win: s.Base + "/w/" + iso.ID, Base: s.Base}
-	u.ISCSI = s.iscsiURL(iso)
-	if u.ISCSI != "" {
-		if pu, err := url.Parse(s.Base); err == nil {
-			u.ISCSIHost, u.ISCSIPort, u.ISCSIIQN = pu.Hostname(), s.ISCSIPort, iscsi.IQNPrefix+iso.ID
-		}
+	pu, err := url.Parse(s.Base)
+	if err != nil {
+		return u
+	}
+	if u.ISCSI = s.iscsiURL(iso); u.ISCSI != "" {
+		u.ISCSIHost, u.ISCSIPort, u.ISCSIIQN = pu.Hostname(), s.ISCSIPort, iscsi.IQNPrefix+iso.ID
 	}
 	if s.NBDPort != 0 {
-		if pu, err := url.Parse(s.Base); err == nil {
-			u.NBD = pu.Hostname() + ":/" + spec // what casper's nfsroot= shows; the helper gets the real address from the archive
-			u.NBDHost, u.NBDPort, u.NBDName = pu.Hostname(), s.NBDPort, spec
-			u.Extra = s.Base + "/x/" + spec + "/extra.cpio"
-		}
+		u.NBD = pu.Hostname() + ":/" + spec // what casper's nfsroot= shows; the helper gets the real address from the archive
+		u.NBDHost, u.NBDPort, u.NBDName = pu.Hostname(), s.NBDPort, spec
+		u.Extra = s.Base + "/x/" + spec + "/extra.cpio"
 	}
 	return u
 }
@@ -75,47 +68,22 @@ func (s *Server) ServeNBD(l net.Listener) error {
 	return (&nbd.Server{Open: s.NBDExport, Names: s.NBDNames, Logf: s.logf}).Serve(l)
 }
 
-// extraArchive is the archive for one ISO or partition: the one for Proxmox VE (its installer finds its ISO in its own way, see package pve), the one for Tails (its start-up
-// disk has no network card drivers, see package tails) or the usual one.
+// extraArchive is the extra initramfs archive for one ISO or partition: whatever its family needs (package family), or the usual one for a file that is not recognised.
 func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) {
 	src, err := s.openSource(spec)
 	if err != nil {
 		return nil, err
 	}
 	defer src.Close()
-	helper := assets.NBDHelper()
-	var build func() ([]byte, error) // set for the kinds whose archive takes seconds to make (drivers are read out of the system image and unpacked)
-	if src.FS != nil {
-		switch {
-		case libreelec.Is(src.FS):
-			return libreelec.Extra(set, helper), nil
-		case pve.Is(src.FS):
-			build = func() ([]byte, error) {
-				return pve.Extra(src.FS, pve.Settings{Host: set.Host, Port: set.Port, Name: set.Name}, helper)
-			}
-		case src.FS.Exists("/.alpine-release") && alpineFlavor(src.FS) != "":
-			flavor := alpineFlavor(src.FS)
-			build = func() ([]byte, error) { return alpineinit.Extra(src.FS, flavor, helper) }
-		case src.FS.Exists("/porteus/base/001-core.xzm") && src.FS.Exists("/boot/syslinux/initrd.xz"): // Porteus: only the folder its start-up script will look in for the ISO
-			return initrd.Archive([]initrd.File{{Name: "mnt", Mode: 0o755, Dir: true}, {Name: "mnt/bootlace", Mode: 0o755, Dir: true}}), nil
-		case tails.Is(src.FS):
-			build = func() ([]byte, error) { return tails.Extra(src.FS, set, helper) }
-		case !src.ISO.Disk && src.FS.Exists("/arch/x86_64/airootfs.sfs"): // an archiso whose kernel is in the ISO's EFI image
-			if parts, err := disc.OpenDisk(src.R, src.Size); err == nil {
-				for _, p := range parts {
-					if archisoesp.Is(p.FS) {
-						esp := p.FS
-						build = func() ([]byte, error) { return archisoesp.Extra(esp, src.FS, set, helper) }
-						break
-					}
-				}
-			}
-		}
+	env := family.ExtraEnv{Settings: set, Helper: assets.NBDHelper()}
+	if src.FS == nil {
+		return family.Boot{}.BuildExtra(env)
 	}
-	if build == nil {
-		return initrd.Extra(set, helper), nil
+	b, _ := family.DetectIn(s.context(src, spec))
+	if !b.HasOwnExtra() {
+		return b.BuildExtra(env)
 	}
-	// the last few are kept
+	// An archive of its own takes seconds to make (drivers are read out of the system image and unpacked), so the last few are kept.
 	key := fmt.Sprintf("%s|%s|%d|%d|%s", spec, src.ISO.Path, src.Size, src.ISO.ModTime.UnixNano(), set.Host)
 	s.mu.Lock()
 	for _, c := range s.extras {
@@ -125,7 +93,7 @@ func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) 
 		}
 	}
 	s.mu.Unlock()
-	data, err := build()
+	data, err := b.BuildExtra(env)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +114,7 @@ type extraCache struct {
 // extraInitrd is /x/<id>/extra.cpio: the archive that makes a live Linux read this ISO over the network.
 func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 	spec, file, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/x/"), "/")
-	id, _ := splitSpec(spec)
+	id, part := splitSpec(spec)
 	if file != "extra.cpio" || s.NBDPort == 0 {
 		http.NotFound(w, r)
 		return
@@ -162,37 +130,24 @@ func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, iso := range list {
-		if iso.ID == id {
-			set := initrd.Settings{Host: pu.Hostname(), Port: s.NBDPort, Name: spec}
-			if _, part := splitSpec(spec); part != 0 {
-				set.Block = 512 // a disk image's partition (an ISO's blocks are 2048 bytes)
-			}
-			data, err := s.extraArchive(spec, set)
-			if err != nil {
-				s.logf("cannot make the network-disk archive for %s: %v", iso.Title, err)
-				http.Error(w, "cannot make the archive", http.StatusInternalServerError)
-				return
-			}
-			s.logf("%s fetches the network-disk archive for %s", r.RemoteAddr, iso.Title)
-			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Header().Set("Content-Length", fmt.Sprint(len(data)))
-			_, _ = w.Write(data)
+		if iso.ID != id {
+			continue
+		}
+		set := initrd.Settings{Host: pu.Hostname(), Port: s.NBDPort, Name: spec}
+		if part != 0 {
+			set.Block = 512 // a partition of a disk image (an ISO's blocks are 2048 bytes)
+		}
+		data, err := s.extraArchive(spec, set)
+		if err != nil {
+			s.logf("cannot make the network-disk archive for %s: %v", iso.Title, err)
+			http.Error(w, "cannot make the archive", http.StatusInternalServerError)
 			return
 		}
+		s.logf("%s fetches the network-disk archive for %s", r.RemoteAddr, iso.Title)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+		_, _ = w.Write(data)
+		return
 	}
 	http.NotFound(w, r)
-}
-
-// alpineFlavor is the kernel flavor ("lts", "virt" ...) of an Alpine ISO whose start-up disk can be given network card drivers, or empty.
-func alpineFlavor(t disc.FS) string {
-	names, err := t.List("/boot")
-	if err != nil {
-		return ""
-	}
-	for _, n := range names {
-		if flavor, ok := strings.CutPrefix(n, "initramfs-"); ok && alpineinit.Is(t, flavor) {
-			return flavor
-		}
-	}
-	return ""
 }
