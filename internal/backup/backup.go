@@ -143,16 +143,18 @@ func Merge(current config.Config, in *Contents) config.Config {
 
 // Counts are the numbers a person compares before agreeing to a restore.
 type Counts struct {
-	Rules       int `json:"rules"`
-	PCNames     int `json:"pcNames"`
-	Titles      int `json:"titles"`
-	Hidden      int `json:"hidden"`
-	Args        int `json:"args"`
-	HidePattern int `json:"hidePatterns"`
-	PCs         int `json:"pcs"`
+	Rules       int  `json:"rules"`
+	PCNames     int  `json:"pcNames"`
+	Titles      int  `json:"titles"`
+	Hidden      int  `json:"hidden"`
+	Args        int  `json:"args"`
+	HidePattern int  `json:"hidePatterns"`
+	PCs         int  `json:"pcs"`
+	Networks    int  `json:"networks"` // extra networks that may use the server
+	Open        bool `json:"open"`     // the server answers every address
 }
 
 // CountsOf counts what a set of settings holds; pcs is the number of PCs in the list that goes with it.
 func CountsOf(c config.Config, pcs int) Counts {
-	return Counts{Rules: len(c.Rules), PCNames: len(c.PCNames), Titles: len(c.Titles), Hidden: len(c.Hidden), Args: len(c.Args), HidePattern: len(c.HidePatterns), PCs: pcs}
+	return Counts{Rules: len(c.Rules), PCNames: len(c.PCNames), Titles: len(c.Titles), Hidden: len(c.Hidden), Args: len(c.Args), HidePattern: len(c.HidePatterns), PCs: pcs, Networks: len(c.Access.Networks), Open: c.Access.AllowPublic}
 }
