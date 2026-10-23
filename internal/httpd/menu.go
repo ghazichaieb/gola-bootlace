@@ -74,26 +74,21 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 			e.Title = t
 		}
 		size := fmt.Sprintf("%.1f GB", float64(iso.Size)/(1<<30))
-		var diskBoot family.Boot
-		diskKnown := false
 		if iso.Packed != "" { // packed, and not unpacked yet
 			e.Display, e.Entry, e.Known, e.Boot = s.diskEntry(iso, e.Title, size)
 			out = append(out, e)
 			continue
 		}
-		if iso.Disk {
-			diskBoot, diskKnown = s.recogniseDisk(iso) // a disk image with a Linux on it that is started from the files inside
-		}
-		if diskKnown {
-			e.Boot, e.Known = diskBoot, true
-			e.Display = fmt.Sprintf("%s  [%s, from a disk image, %s]", e.Title, diskBoot.Family, size)
-			e.Entry = menu.Entry{Name: e.Display, Commands: addArgs(diskBoot.Commands, cfg.Args[iso.ID]), Title: e.Title, Kind: diskBoot.Family, Size: size}
+		if b, ok := s.recognise(iso); ok { // started from the files inside (an ISO's, or a disk image's partition)
+			where := b.Family
+			if iso.Disk {
+				where += ", from a disk image"
+			}
+			e.Boot, e.Known = b, true
+			e.Display = fmt.Sprintf("%s  [%s, %s]", e.Title, where, size)
+			e.Entry = menu.Entry{Name: e.Display, Commands: addArgs(b.Commands, cfg.Args[iso.ID]), Title: e.Title, Kind: b.Family, Size: size}
 		} else if iso.Disk {
 			e.Display, e.Entry, e.Known, e.Boot = s.diskEntry(iso, e.Title, size)
-		} else if b, ok := s.recognise(iso); ok {
-			e.Boot, e.Known = b, true
-			e.Display = fmt.Sprintf("%s  [%s, %s]", e.Title, b.Family, size)
-			e.Entry = menu.Entry{Name: e.Display, Commands: addArgs(b.Commands, cfg.Args[iso.ID]), Title: e.Title, Kind: b.Family, Size: size}
 		} else {
 			e.Display = fmt.Sprintf("%s  [as a disk, %s]", e.Title, size)
 			e.Entry = menu.Entry{Name: e.Display, Title: e.Title, Kind: "as a disk", Size: size, Commands: []string{

@@ -60,6 +60,9 @@ type Server struct {
 	mu          sync.Mutex
 	extras      []extraCache          // the last few extra initramfs archives that take long to make (see extraArchive)
 	known       map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
+	looking     map[string]bool       // the ISOs that are being looked into for what no family is known by (see recogniseGeneric)
+	lookMu      sync.Mutex            // one such look at a time: it reads the whole start-up disk
+	findings    family.Findings       // what those looks found
 	// Handoff holds the PCs that iPXE sent to FreeBSD's loader; their TFTP requests are answered from the ISO they chose.
 	Handoff *handoff.Registry
 }

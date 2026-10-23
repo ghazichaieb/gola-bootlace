@@ -106,3 +106,53 @@ func lookInside(t *testing.T, f *os.File, size int64, disk bool, u URLs) *Contex
 	}
 	return c
 }
+
+// What the generic path (no names, only the ISO's menu and its start-up disk) must make of the ISOs that the named families know: the same make, with the arguments that make
+// needs. An ISO of a make that is not handled generically is not listed.
+var genericExpectations = map[string]struct{ label, args string }{
+	"Ubuntu (casper)":                      {"Ubuntu-style (casper)", "boot=casper netboot=nfs nfsroot="},
+	"Debian live":                          {"Debian-style live", "boot=live components"},
+	"Arch Linux":                           {"Arch-style (archiso)", "archiso_nbd_srv="},
+	"Arch Linux (kernel in the EFI image)": {"Arch-style (archiso, no network hooks)", "archisodevice=/dev/nbd0"},
+	"Fedora (live)":                        {"dracut live", "netroot=nbd:"},
+	"Tails":                                {"Debian-style live", "module=Tails"},
+}
+
+func TestTheGenericPathReachesTheSameMakeAsTheNamesOnTheTestedIsos(t *testing.T) {
+	dir := os.Getenv("BOOTLACE_TEST_ISODIR")
+	if dir == "" {
+		t.Skip("BOOTLACE_TEST_ISODIR is not set")
+	}
+	entries, _ := os.ReadDir(dir)
+	u := withISCSI(withNBD(urls))
+	for _, e := range entries {
+		var named string
+		for _, k := range knownIsos {
+			if strings.HasPrefix(e.Name(), k.prefix) {
+				named = k.family
+			}
+		}
+		want, ok := genericExpectations[named]
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if !ok || (ext != ".iso" && ext != ".img") {
+			continue
+		}
+		t.Run(e.Name(), func(t *testing.T) {
+			f, err := os.Open(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			st, _ := f.Stat()
+			c := lookInside(t, f, st.Size(), ext == ".img", u)
+			b, ok := DetectGeneric(c)
+			if !ok || !strings.HasPrefix(b.Family, want.label) {
+				t.Fatalf("generic: %q (%v), want %q (named: %q)", b.Family, ok, want.label, named)
+			}
+			if !strings.Contains(lines(b), want.args) {
+				t.Errorf("lacks %q:\n%s", want.args, lines(b))
+			}
+			t.Logf("%s\n%s", b.Family, lines(b))
+		})
+	}
+}

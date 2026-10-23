@@ -79,7 +79,11 @@ func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) 
 	if src.FS == nil {
 		return family.Boot{}.BuildExtra(env)
 	}
-	b, _ := family.DetectIn(s.context(src, spec))
+	c := s.context(src, spec)
+	b, ok := family.DetectIn(c)
+	if !ok {
+		b, _ = family.DetectGeneric(c) // (what it found is remembered: this does not read the start-up disk again)
+	}
 	if !b.HasOwnExtra() {
 		return b.BuildExtra(env)
 	}

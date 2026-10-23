@@ -10,6 +10,7 @@ package family
 import (
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
@@ -53,6 +54,39 @@ type Context struct {
 	FS      Tree            // the ISO's files (or those of the partition being looked at)
 	URLs    URLs            // where the server offers them
 	Volumes func() []Volume // the other volumes of the same file, found when asked for; may be nil
+
+	// Looking into a start-up disk takes seconds. Where Findings are given, what was found is kept in it under Stamp, which names this version of the file.
+	Findings *Findings
+	Stamp    string
+}
+
+// Findings keeps what was found by looking into start-up disks, for as long as the ISO does not change.
+type Findings struct {
+	mu    sync.Mutex
+	facts map[string]facts
+}
+
+// remember returns the facts kept under the key, or finds them with look and keeps them.
+func (m *Findings) remember(key string, look func() (facts, bool)) (facts, bool) {
+	if m == nil {
+		return look()
+	}
+	m.mu.Lock()
+	if f, ok := m.facts[key]; ok {
+		m.mu.Unlock()
+		return f, true
+	}
+	m.mu.Unlock()
+	f, ok := look()
+	if ok {
+		m.mu.Lock()
+		if m.facts == nil {
+			m.facts = map[string]facts{}
+		}
+		m.facts[key] = f
+		m.mu.Unlock()
+	}
+	return f, ok
 }
 
 // volumeWith finds a path in the ISO's files or, failing that, in another volume, and says where the server offers the files of the volume it was found in.

@@ -1,12 +1,12 @@
-// Package initread takes an initramfs apart as far as is needed to add to it, and collects network card drivers out of the system image of a live ISO. Some live systems
-// (Proxmox's installer, Tails) start from an initramfs made for a USB stick or a disc: it has no network card drivers at all, which a start over the network needs. The full
-// set of kernel modules is in the system image (a squashfs), so the drivers worth bringing along are read from there and put in an extra initramfs archive (see package initrd).
+// Package initread takes an initramfs apart as far as is needed to add to it or to tell what it is made of, and collects network card drivers out of the system image of a
+// live ISO. Some live systems (Proxmox's installer, Tails) start from an initramfs made for a USB stick or a disc: it has no network card drivers at all, which a start over the
+// network needs. The full set of kernel modules is in the system image (a squashfs), so the drivers worth bringing along are read from there and put in an extra initramfs
+// archive (see package initrd).
 // Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
 package initread
 
 import (
 	"bufio"
-	"bytes"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -14,16 +14,71 @@ import (
 	"path"
 	"strings"
 
-	"github.com/CalebQ42/squashfs"
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 )
 
-// Initrd is what was learnt from reading an initramfs.
-type Initrd struct {
-	Version string            // the kernel version of the modules it carries
-	Have    map[string]bool   // the modules it carries, by name
-	Files   map[string][]byte // the files that were asked for (by name without a leading slash), when it has them
+// Stop is what a function given to Walk returns to end the walk early without an error.
+var Stop = errors.New("stop")
+
+// Walk goes through an initramfs: one or more cpio archives, the first often only microcode and the last one compressed (gzip, xz or zstd). fn is called with the name of
+// every entry (without a leading "./") and a reader for its contents, which must be read before fn returns.
+func Walk(r io.Reader, fn func(name string, size int64, body io.Reader) error) error {
+	br := bufio.NewReaderSize(r, 1<<20)
+	for {
+		// skip the padding between archives
+		for {
+			b, err := br.Peek(1)
+			if err != nil {
+				return nil // the end
+			}
+			if b[0] != 0 {
+				break
+			}
+			_, _ = br.ReadByte()
+		}
+		peek, err := br.Peek(6)
+		if err != nil {
+			return nil
+		}
+		magic := append([]byte(nil), peek...) // (Peek's bytes are overwritten by the next read)
+		var cr io.Reader = br
+		compressed := true
+		switch {
+		case string(magic) == "070701":
+			compressed = false
+		case magic[0] == 0x28 && magic[1] == 0xb5 && magic[2] == 0x2f && magic[3] == 0xfd:
+			zr, err := zstd.NewReader(br)
+			if err != nil {
+				return err
+			}
+			defer zr.Close()
+			cr = zr
+		case magic[0] == 0x1f && magic[1] == 0x8b:
+			zr, err := gzip.NewReader(br)
+			if err != nil {
+				return err
+			}
+			cr = zr
+		case magic[0] == 0xfd && string(magic[1:6]) == "7zXZ\x00":
+			zr, err := xz.NewReader(br)
+			if err != nil {
+				return err
+			}
+			cr = zr
+		default:
+			return fmt.Errorf("unknown archive start %x", magic)
+		}
+		if err := walkCPIO(cr, fn); err != nil {
+			if errors.Is(err, Stop) {
+				return nil
+			}
+			return err
+		}
+		if compressed { // (a decompressor reads ahead: nothing after a compressed archive can be read, and nothing follows it)
+			return nil
+		}
+	}
 }
 
 // moduleName is the name of a module from its file name (".ko" and a compression suffix taken off).
@@ -43,107 +98,108 @@ func ModuleName(file string) string {
 	return n
 }
 
-// Read goes through an initramfs: one or more cpio archives (the first often only microcode), the last one compressed. It stops when it has the kernel version and every file in
-// want, or at the end.
-func Read(r io.Reader, want ...string) (*Initrd, error) {
-	br := bufio.NewReaderSize(r, 1<<20)
-	res := &Initrd{Have: map[string]bool{}, Files: map[string][]byte{}}
-	wanted := map[string]bool{}
-	for _, w := range want {
-		wanted[w] = true
-	}
-	// a wanted name that starts with "*/" matches any file of that name below some folder (the modules' index files sit under a folder named for the kernel version)
-	matchWanted := func(name string) (string, bool) {
-		if wanted[name] {
-			return name, true
+// moduleVersion is the kernel version a module's path belongs to ("usr/lib/modules/<version>/kernel/..."), when it is one.
+func moduleVersion(name string) (string, bool) {
+	for _, prefix := range []string{"usr/lib/modules/", "lib/modules/"} {
+		if rest, ok := strings.CutPrefix(name, prefix); ok {
+			if _, isModule := moduleName(name); isModule {
+				return strings.SplitN(rest, "/", 2)[0], true
+			}
 		}
-		for w := range wanted {
-			if strings.HasPrefix(w, "*/") && strings.HasSuffix(name, w[1:]) {
+	}
+	return "", false
+}
+
+// Initrd is what was learnt from reading an initramfs for a few files.
+type Initrd struct {
+	Version string            // the kernel version of the modules it carries
+	Have    map[string]bool   // the modules it carries, by name
+	Files   map[string][]byte // the files that were asked for (by name without a leading slash), when it has them
+}
+
+// Read goes through an initramfs for the kernel version of its modules and for the files named in want, and stops when it has them all. A name that starts with "*/" matches a
+// file of that name in any folder (the modules' index files sit in a folder named for the kernel version).
+func Read(r io.Reader, want ...string) (*Initrd, error) {
+	res := &Initrd{Have: map[string]bool{}, Files: map[string][]byte{}}
+	match := func(name string) (string, bool) {
+		for _, w := range want {
+			if w == name || (strings.HasPrefix(w, "*/") && strings.HasSuffix(name, w[1:])) {
 				return w, true
 			}
 		}
 		return "", false
 	}
-	for {
-		// skip padding between archives
-		for {
-			b, e := br.Peek(1)
-			if e != nil {
-				return nil, errors.New("no compressed archive found")
+	err := Walk(r, func(name string, size int64, body io.Reader) error {
+		if key, ok := match(name); ok {
+			b, err := io.ReadAll(body)
+			if err != nil {
+				return err
 			}
-			if b[0] != 0 {
-				break
-			}
-			_, _ = br.ReadByte()
+			res.Files[key] = b
+		} else if v, ok := moduleVersion(name); ok {
+			res.Version, res.Have[ModuleName(name)] = v, true
 		}
-		peek, e := br.Peek(6)
-		if e != nil {
-			return nil, e
+		if res.Version != "" && len(res.Files) == len(want) {
+			return Stop
 		}
-		magic := append([]byte(nil), peek...) // (Peek's bytes are overwritten by the next read)
-		var cr io.Reader = br
-		switch {
-		case string(magic) == "070701":
-		case magic[0] == 0x28 && magic[1] == 0xb5 && magic[2] == 0x2f && magic[3] == 0xfd:
-			zr, e := zstd.NewReader(br)
-			if e != nil {
-				return nil, e
-			}
-			defer zr.Close()
-			cr = zr
-		case magic[0] == 0x1f && magic[1] == 0x8b:
-			zr, e := gzip.NewReader(br)
-			if e != nil {
-				return nil, e
-			}
-			cr = zr
-		case magic[0] == 0xfd && string(magic[1:6]) == "7zXZ\x00":
-			zr, e := xz.NewReader(br)
-			if e != nil {
-				return nil, e
-			}
-			cr = zr
-		default:
-			return nil, fmt.Errorf("unknown archive start %x", magic)
-		}
-		e = walkCPIO(cr, func(name string, size int64, body io.Reader) error {
-			key, isWanted := matchWanted(name)
-			switch {
-			case isWanted:
-				b, e := io.ReadAll(body)
-				res.Files[key] = b
-				return e
-			default:
-				for _, prefix := range []string{"lib/modules/", "usr/lib/modules/"} {
-					if !strings.HasPrefix(name, prefix) {
-						continue
-					}
-					if n, ok := moduleName(name); ok {
-						res.Version = strings.SplitN(strings.TrimPrefix(name, prefix), "/", 2)[0]
-						res.Have[n] = true
-					}
-				}
-			}
-			return nil
-		})
-		if e != nil {
-			return nil, e
-		}
-		if res.Version != "" && len(res.Files) == len(wanted) {
-			return res, nil
-		}
-		if string(magic) != "070701" && res.Version == "" {
-			return nil, errors.New("the kernel modules were not found in the start-up disk")
-		}
-		if string(magic) != "070701" { // the last (compressed) archive was read: that is all there is
-			for w := range wanted {
-				if _, ok := res.Files[w]; !ok {
-					return nil, fmt.Errorf("%s was not found in the start-up disk", w)
-				}
-			}
-			return res, nil
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if res.Version == "" {
+		return nil, errors.New("the kernel modules were not found in the start-up disk")
+	}
+	for _, w := range want {
+		if _, ok := res.Files[w]; !ok {
+			return nil, fmt.Errorf("%s was not found in the start-up disk", w)
 		}
 	}
+	return res, nil
+}
+
+// Listing is what is in an initramfs: the names of its files, a few of the small ones (to read what a start-up script is made of), and the modules it carries.
+type Listing struct {
+	Names   map[string]bool   // every entry, without a leading "./"
+	Texts   map[string][]byte // the files that were asked for, up to 64 KB of each
+	Version string            // the kernel version of the modules it carries, when it has any
+	Have    map[string]bool   // the modules it carries, by name
+}
+
+// Has says whether the initramfs has an entry of that name.
+func (l *Listing) Has(name string) bool { return l.Names[name] }
+
+// HasSuffix says whether it has an entry whose name ends with the text.
+func (l *Listing) HasSuffix(suffix string) bool {
+	for n := range l.Names {
+		if strings.HasSuffix(n, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// Inspect goes through the whole initramfs and lists it; texts are the names of the files whose beginning is to be kept.
+func Inspect(r io.Reader, texts ...string) (*Listing, error) {
+	l := &Listing{Names: map[string]bool{}, Texts: map[string][]byte{}, Have: map[string]bool{}}
+	keep := map[string]bool{}
+	for _, t := range texts {
+		keep[t] = true
+	}
+	err := Walk(r, func(name string, size int64, body io.Reader) error {
+		l.Names[name] = true
+		if keep[name] {
+			b, err := io.ReadAll(io.LimitReader(body, 64<<10))
+			if err != nil {
+				return err
+			}
+			l.Texts[name] = b
+		} else if v, ok := moduleVersion(name); ok {
+			l.Version, l.Have[ModuleName(name)] = v, true
+		}
+		return nil
+	})
+	return l, err
 }
 
 // walkCPIO reads a "newc" cpio archive up to its end marker, calling fn with each file's name and a reader for its contents.
@@ -208,135 +264,4 @@ func hexNum(b []byte) int64 {
 		}
 	}
 	return n
-}
-
-// NICModules are the network card drivers worth bringing along, by module name: the common wired cards of PCs and servers, USB network adapters and the virtual cards of the
-// usual hypervisors. Those the start-up disk already has are skipped; a driver whose card is not there does nothing.
-var NICModules = []string{
-	"e1000", "e1000e", "igb", "igc", "ixgbe", "i40e", "ice", "r8169", "realtek", "tg3", "bnx2", "bnxt_en", "vmxnet3", "hv_netvsc", "8139too", "8139cp",
-	"forcedeth", "atlantic", "sky2", "r8152", "cdc_ether", "ax88179_178a", "virtio_net", "alx", "atl1c", "igbvf", "ixgbevf", "mlx4_en", "mlx5_core", "qede", "be2net",
-	"sfc", "e100", "via-rhine", "r8125", "cdc_ncm", "asix", "ax88772", "lan78xx", "smsc95xx", "rtl8150", "pegasus",
-}
-
-// Module is a kernel module ready to be loaded: its file, uncompressed.
-type Module struct {
-	Path string // in the system image, relative to the folder of the kernel's modules
-	Data []byte // the module itself, uncompressed
-}
-
-// Modules reads the wanted drivers, and what they need, out of the system image, in the order they must be loaded. What the start-up disk has of them is brought again: it
-// keeps its modules compressed or unloaded, and a driver can only be loaded from a plain file. The kernel's modules are looked for under usr/lib/modules/<version>,
-// lib/modules/<version> or modules/<version> (a modloop), compressed or not.
-func Modules(sq io.ReaderAt, version string, names []string) ([]Module, error) {
-	rd, err := squashfs.NewReader(sq)
-	if err != nil {
-		return nil, err
-	}
-	var base string
-	var dep []byte
-	for _, b := range []string{"usr/lib/modules/" + version + "/", "lib/modules/" + version + "/", "modules/" + version + "/"} {
-		if dep, err = sqRead(rd, b+"modules.dep"); err == nil {
-			base = b
-			break
-		}
-	}
-	if base == "" {
-		return nil, fmt.Errorf("the system image has no modules for the kernel %s", version)
-	}
-	var out []Module
-	for _, p := range loadOrder(string(dep), names) {
-		b, err := sqRead(rd, base+p)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-		if b, err = decompress(p, b); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-		out = append(out, Module{Path: p, Data: b})
-	}
-	if len(out) == 0 {
-		return nil, errors.New("no network driver found in the system image")
-	}
-	return out, nil
-}
-
-// loadOrder is the paths of the named modules and of everything they need, each after the modules it needs, from the text of a modules.dep ("path: needed paths").
-func loadOrder(dep string, names []string) []string {
-	needs := map[string][]string{}
-	byName := map[string]string{}
-	for _, line := range strings.Split(dep, "\n") {
-		p, rest, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		needs[p] = strings.Fields(rest)
-		if n, ok := moduleName(p); ok {
-			byName[n] = p
-		}
-	}
-	var order []string
-	seen := map[string]bool{}
-	var add func(p string)
-	add = func(p string) {
-		if seen[p] {
-			return
-		}
-		seen[p] = true
-		for _, d := range needs[p] {
-			add(d)
-		}
-		order = append(order, p)
-	}
-	for _, n := range names {
-		if p, ok := byName[n]; ok {
-			add(p)
-		}
-	}
-	return order
-}
-
-// decompress gives the module's own bytes (the kernel loads a module from memory, not from a compressed file).
-func decompress(name string, b []byte) ([]byte, error) {
-	switch {
-	case strings.HasSuffix(name, ".xz"):
-		r, err := xz.NewReader(bytes.NewReader(b))
-		if err != nil {
-			return nil, err
-		}
-		return io.ReadAll(r)
-	case strings.HasSuffix(name, ".gz"):
-		r, err := gzip.NewReader(bytes.NewReader(b))
-		if err != nil {
-			return nil, err
-		}
-		return io.ReadAll(r)
-	case strings.HasSuffix(name, ".zst"):
-		r, err := zstd.NewReader(bytes.NewReader(b))
-		if err != nil {
-			return nil, err
-		}
-		defer r.Close()
-		return io.ReadAll(r)
-	}
-	return b, nil
-}
-
-// sqRead reads a file out of the squashfs, one path component at a time (the reader's own path handling turns the slashes into backslashes on Windows).
-func sqRead(rd squashfs.Reader, p string) ([]byte, error) {
-	cur := rd.FS
-	parts := strings.Split(p, "/")
-	for i, part := range parts {
-		f, err := cur.OpenFile(part)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-		if i == len(parts)-1 {
-			defer f.Close()
-			return io.ReadAll(f)
-		}
-		if cur, err = f.FS(); err != nil {
-			return nil, fmt.Errorf("%s: %w", p, err)
-		}
-	}
-	return nil, errors.New("empty path")
 }

@@ -109,7 +109,7 @@ func (s *Server) open(iso isos.ISO, part int) (source, error) {
 
 // context is what the package family looks at for a source: its files, where the server offers them, and, for a whole ISO, the files of its partitions (found when asked for).
 func (s *Server) context(src source, spec string) *family.Context {
-	c := &family.Context{FS: src.FS, URLs: s.familyURLsFor(src.ISO, spec)}
+	c := &family.Context{FS: src.FS, URLs: s.familyURLsFor(src.ISO, spec), Findings: &s.findings, Stamp: stamp(src.ISO)}
 	if _, part := splitSpec(spec); part == 0 {
 		var once sync.Once
 		var vols []family.Volume
@@ -129,47 +129,126 @@ func (s *Server) context(src source, spec string) *family.Context {
 	return c
 }
 
-// recognise looks inside the ISO (once) and says whether it is a system this server knows how to start over the network.
-func (s *Server) recognise(iso isos.ISO) (family.Boot, bool) {
-	if iso.Disk {
-		return family.Boot{}, false
+// readable is the file to look into for an ISO of the list: itself, or for a disk image the unpacked copy (false while that is not there).
+func (s *Server) readable(iso isos.ISO) (path string, size int64, ok bool) {
+	if !iso.Disk {
+		return iso.Path, iso.Size, iso.Packed == ""
 	}
-	return s.remember("iso", iso.Path, iso.Size, iso.ModTime, func() (family.Boot, bool) {
-		src, err := s.open(iso, 0)
-		if err != nil {
-			return family.Boot{}, false
-		}
-		defer src.Close()
-		if src.FS == nil {
-			return family.Boot{}, false
-		}
-		return family.DetectIn(s.context(src, iso.ID))
-	})
+	st := s.diskState(iso)
+	return st.Path, st.Size, st.Ready
 }
 
-// recogniseDisk looks at the partitions of a disk image (once) for a system this server knows how to start, and gives the way to start it.
-func (s *Server) recogniseDisk(iso isos.ISO) (family.Boot, bool) {
-	st := s.diskState(iso)
-	if !st.Ready {
+// contexts are what a file is looked at as: the ISO itself, or each readable partition of a disk image. The returned function closes the file.
+func (s *Server) contexts(iso isos.ISO) ([]*family.Context, func()) {
+	if !iso.Disk {
+		src, err := s.open(iso, 0)
+		if err != nil || src.FS == nil {
+			if err == nil {
+				src.Close()
+			}
+			return nil, func() {}
+		}
+		return []*family.Context{s.context(src, iso.ID)}, src.Close
+	}
+	path, size, ok := s.readable(iso)
+	if !ok {
+		return nil, func() {}
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, func() {}
+	}
+	parts, err := disc.OpenDisk(f, size)
+	if err != nil {
+		f.Close()
+		return nil, func() {}
+	}
+	var out []*family.Context
+	for _, p := range parts {
+		spec := specOf(iso, p.Number)
+		out = append(out, &family.Context{FS: p.FS, URLs: s.familyURLsFor(iso, spec), Findings: &s.findings, Stamp: stamp(iso) + "|" + spec})
+	}
+	return out, func() { f.Close() }
+}
+
+// stamp names this version of an ISO file.
+func stamp(iso isos.ISO) string {
+	return fmt.Sprintf("%s|%d|%d", iso.Path, iso.Size, iso.ModTime.UnixNano())
+}
+
+// recognise looks inside an ISO or disk image (once) and says whether it is a system this server knows how to start over the network: first by the names of its files,
+// which is quick, and then, in the background, by its boot menu and what its start-up disk is made of (see recogniseGeneric).
+func (s *Server) recognise(iso isos.ISO) (family.Boot, bool) {
+	path, size, ok := s.readable(iso)
+	if !ok {
 		return family.Boot{}, false
 	}
-	return s.remember("disk", st.Path, st.Size, iso.ModTime, func() (family.Boot, bool) {
-		f, err := os.Open(st.Path)
-		if err != nil {
-			return family.Boot{}, false
+	if !s.byNameSkipped(iso) {
+		if b, ok := s.remember("named", path, size, iso.ModTime, func() (family.Boot, bool) { return s.detect(iso, family.DetectIn) }); ok {
+			return b, true
 		}
-		defer f.Close()
-		parts, err := disc.OpenDisk(f, st.Size)
-		if err != nil {
-			return family.Boot{}, false
+	}
+	return s.recogniseGeneric(iso)
+}
+
+// detect runs a way of recognising over what the file holds, until one of them knows it.
+func (s *Server) detect(iso isos.ISO, by func(*family.Context) (family.Boot, bool)) (family.Boot, bool) {
+	cs, done := s.contexts(iso)
+	defer done()
+	for _, c := range cs {
+		if b, ok := by(c); ok {
+			return b, true
 		}
-		for _, p := range parts {
-			if b, ok := family.DetectIn(&family.Context{FS: p.FS, URLs: s.familyURLsFor(iso, specOf(iso, p.Number))}); ok {
-				return b, true
-			}
+	}
+	return family.Boot{}, false
+}
+
+// byNameSkipped is a test aid: BOOTLACE_GENERIC_ONLY lists names (the start of an ISO's file name, separated by commas) whose recognition by name is skipped, so that the
+// generic way is what starts them.
+func (s *Server) byNameSkipped(iso isos.ISO) bool {
+	for _, p := range strings.Split(os.Getenv("BOOTLACE_GENERIC_ONLY"), ",") {
+		if p != "" && strings.HasPrefix(strings.ToLower(iso.Name), strings.ToLower(p)) {
+			return true
 		}
+	}
+	return false
+}
+
+// recogniseGeneric is the answer for an ISO that no family is known by: from its boot menu and its start-up disk, which takes seconds. Until the answer is there it is "not
+// recognised", and the look is made in the background (one at a time) so that the menu of a PC is not held up; the next menu has the answer.
+func (s *Server) recogniseGeneric(iso isos.ISO) (family.Boot, bool) {
+	key := "generic|" + stamp(iso)
+	s.mu.Lock()
+	if r, ok := s.known[key]; ok {
+		s.mu.Unlock()
+		return r.boot, r.ok
+	}
+	if s.looking[key] {
+		s.mu.Unlock()
 		return family.Boot{}, false
-	})
+	}
+	if s.looking == nil {
+		s.looking = map[string]bool{}
+	}
+	s.looking[key] = true
+	s.mu.Unlock()
+	go func() {
+		s.lookMu.Lock()
+		defer s.lookMu.Unlock()
+		var r recognised
+		r.boot, r.ok = s.detect(iso, family.DetectGeneric)
+		s.mu.Lock()
+		if s.known == nil {
+			s.known = map[string]recognised{}
+		}
+		s.known[key] = r
+		delete(s.looking, key)
+		s.mu.Unlock()
+		if r.ok {
+			s.logf("%s: not known by name, but it is made like one that is: %s", iso.Title, r.boot.Family)
+		}
+	}()
+	return family.Boot{}, false
 }
 
 // remember runs a look inside a file once, and keeps the answer until the file changes (reading an ISO's folders takes a moment).

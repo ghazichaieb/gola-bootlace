@@ -48,9 +48,9 @@ func archLinux(c *Context) (Boot, bool) {
 	}
 	f := files{vol.URL, archDir + "/" + kernel, archDir + "/" + initrd}
 	if vol.URL != c.URLs.FS { // the kernel is in the EFI image: the start-up disk is the one for a disc
-		return c.archisoHook("Arch Linux (kernel in the EFI image)", vol, f)
+		return c.archisoHook("Arch Linux (kernel in the EFI image)", vol, f, "arch", "/arch/x86_64/airootfs.sfs", "")
 	}
-	return c.archiso("Arch Linux", f, "ip=:::::eth0:dhcp", "arch"), true // (CachyOS wants the long form)
+	return c.archiso("Arch Linux", f, "ip=:::::eth0:dhcp", "arch", ""), true // (CachyOS wants the long form)
 }
 
 // SystemRescue: archiso with its own folder name.
@@ -59,27 +59,28 @@ func systemRescue(c *Context) (Boot, bool) {
 	if !c.FS.Exists(dir+"/vmlinuz") || !c.FS.Exists(dir+"/sysresccd.img") {
 		return Boot{}, false
 	}
-	return c.archiso("SystemRescue", c.in(dir+"/vmlinuz", dir+"/sysresccd.img"), "ip=dhcp", "sysresccd"), true // (its archiso hook builds the long form itself from ip=dhcp)
+	return c.archiso("SystemRescue", c.in(dir+"/vmlinuz", dir+"/sysresccd.img"), "ip=dhcp", "sysresccd", ""), true // (its archiso hook builds the long form itself from ip=dhcp)
 }
 
 // archiso is how the ISOs built with archiso are started when their start-up disk has the hooks for the network. The network disk client of the hook takes the server's
 // address only, so the network disk is used when the server listens on the standard port; otherwise the system image is downloaded over HTTP.
-func (c *Context) archiso(family string, f files, ip, basedir string) Boot {
+func (c *Context) archiso(family string, f files, ip, basedir, args string) Boot {
 	u := c.URLs
 	if u.has(NBD) && u.NBDPort == 10809 {
 		// (the extra archive replaces the start-up disk's nbd-client by one that connects again when the connection is lost: the live system changes its address)
-		return newBoot(family, f, ip+" archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n console=tty0").withExtra(u, nil)
+		return newBoot(family, f, ip+" archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n"+args+" console=tty0").withExtra(u, nil)
 	}
-	return newBoot(family, f, ip+" archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y console=tty0")
+	return newBoot(family, f, ip+" archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y"+args+" console=tty0")
 }
 
-// archisoHook is for an ISO whose start-up disk has no hook for the network: the extra archive makes one, and the arguments name the device it attaches.
-func (c *Context) archisoHook(family string, vol Volume, f files) (Boot, bool) {
-	if !c.FS.Exists("/arch/x86_64/airootfs.sfs") || !c.URLs.has(NBD) {
+// archisoHook is for an ISO whose start-up disk has no hook for the network: the extra archive makes one, and the arguments name the device it attaches. basedir is the
+// folder of the live system (arch); image is the system image that has the kernel's modules, or empty to look for it. args are the system's own arguments that go with these.
+func (c *Context) archisoHook(family string, vol Volume, f files, basedir, image, args string) (Boot, bool) {
+	if !c.URLs.has(NBD) {
 		return Boot{}, false
 	}
-	b := newBoot(family, f, "archisobasedir=arch archisodevice=/dev/nbd0 copytoram=n console=tty0")
-	return b.withExtra(c.URLs, func(env ExtraEnv) ([]byte, error) { return c.hookExtra(vol, f.initrd, env) }), true
+	b := newBoot(family, f, "archisobasedir="+basedir+" archisodevice=/dev/nbd0 copytoram=n"+args+" console=tty0")
+	return b.withExtra(c.URLs, func(env ExtraEnv) ([]byte, error) { return c.hookExtra(vol, f.initrd, image, env) }), true
 }
 
 // mkinitcpioHook is the hook that goes in front of archiso's own. mkinitcpio only runs hooks that are executable.
@@ -88,7 +89,7 @@ func mkinitcpioHook(net initrd.NetworkScript) string {
 }
 
 // hookExtra is the archive with the hook, the drivers it loads and the DHCP script; the initramfs's list of hooks (/config) is changed to run it after udev starts.
-func (c *Context) hookExtra(vol Volume, initramfsPath string, env ExtraEnv) ([]byte, error) {
+func (c *Context) hookExtra(vol Volume, initramfsPath, image string, env ExtraEnv) ([]byte, error) {
 	f, err := vol.FS.Open(initramfsPath)
 	if err != nil {
 		return nil, err
@@ -101,7 +102,7 @@ func (c *Context) hookExtra(vol Volume, initramfsPath string, env ExtraEnv) ([]b
 	if !strings.Contains(config, "HOOKS=\"") || !strings.Contains(config, " archiso ") {
 		return nil, errors.New("the start-up disk has a form that is not known here")
 	}
-	mods, err := c.nicDrivers("/arch/x86_64/airootfs.sfs", in.Version)
+	mods, err := c.nicDrivers(image, in.Version)
 	if err != nil {
 		return nil, err
 	}

@@ -18,7 +18,7 @@ import (
 
 // Ubuntu and its flavours (casper).
 func ubuntu(c *Context) (Boot, bool) {
-	t, u := c.FS, c.URLs
+	t := c.FS
 	dir, kernel := casperDir(t)
 	if dir == "" {
 		return Boot{}, false
@@ -27,21 +27,27 @@ func ubuntu(c *Context) (Boot, bool) {
 	if initrd == "" {
 		return Boot{}, false
 	}
+	return c.casper("Ubuntu (casper)", c.in(kernel, initrd), dir, firstMatch(t, dir, "ubuntu-server") != "", "", nil), true
+}
+
+// casper is how a start-up disk with Ubuntu's casper scripts is told to find its ISO: through the network disk if there is one, otherwise the whole ISO is downloaded.
+// dir is the folder of the live system (casper looks in /casper unless told); args are the system's own arguments that go with these.
+func (c *Context) casper(family string, f files, dir string, server bool, args string, extra ExtraBuilder) Boot {
+	u := c.URLs
 	livePath := ""
 	if dir != "/casper" { // Pop!_OS and others keep the live system in a folder of their own name, which casper is told about
 		livePath = " live-media-path=" + dir
 	}
-	f := c.in(kernel, initrd)
 	if u.pick(NBD, Memory) == NBD {
 		// cloud-init stays on for the server ISOs: casper hands them the network settings of the start-up (which the network disk needs kept: see package initrd), and with
 		// cloud-init off they get a plain "DHCP on every card" instead, take another address and lose the connection to the ISO. The desktop ISOs do not need it.
 		cloudInit := " cloud-init=disabled"
-		if firstMatch(t, dir, "ubuntu-server") != "" {
+		if server {
 			cloudInit = ""
 		}
-		return newBoot("Ubuntu (casper)", f, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+livePath+cloudInit+" console=tty0").withExtra(u, nil), true
+		return newBoot(family, f, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+livePath+cloudInit+args+" console=tty0").withExtra(u, extra)
 	}
-	return newBoot("Ubuntu (casper)", f, "ip=dhcp url="+u.ISO+" boot=casper"+livePath+" cloud-init=disabled console=tty0"), true
+	return newBoot(family, f, "ip=dhcp url="+u.ISO+" boot=casper"+livePath+" cloud-init=disabled"+args+" console=tty0")
 }
 
 // casperDir finds the folder of a casper live system and its kernel: /casper, or a folder whose name starts with casper (Pop!_OS: casper_pop-os_24.04_..., kernel vmlinuz.efi).
@@ -64,7 +70,7 @@ func casperDir(t Tree) (dir, kernel string) {
 
 // Debian live and the distributions built the same way (TrueNAS keeps its kernel at the top of the ISO).
 func debianLive(c *Context) (Boot, bool) {
-	t, u := c.FS, c.URLs
+	t := c.FS
 	if !t.Exists("/live/filesystem.squashfs") {
 		return Boot{}, false
 	}
@@ -79,16 +85,23 @@ func debianLive(c *Context) (Boot, bool) {
 		return Boot{}, false
 	}
 	f := c.in(kernel, initrd)
-	fetch := "ip=dhcp fetch=" + u.FS + "/live/filesystem.squashfs"
-	switch {
-	case isVyOS(t):
+	if isVyOS(t) {
 		// VyOS's start-up disk has no network block disk driver, so only its system image (a few hundred MB, not the whole ISO) is downloaded. Its own boot menu passes these
 		// options: without noautologin the console logs in as a user that does not exist, over and over.
-		return newBoot("Debian live", f, "boot=live components hostname=vyos username=live nopersistence noautologin union=overlay net.ifnames=0 biosdevname=0 "+fetch+" console=tty0"), true
-	case strings.HasPrefix(kernel, "/live/") && u.has(NBD): // the usual layout
-		return newBoot("Debian live", f, "boot=live components netboot=nfs nfsroot="+u.NBD+" console=tty0").withExtra(u, nil), true
+		return newBoot("Debian live", f, "boot=live components hostname=vyos username=live nopersistence noautologin union=overlay net.ifnames=0 biosdevname=0 ip=dhcp fetch="+c.URLs.FS+"/live/filesystem.squashfs console=tty0"), true
 	}
-	return newBoot("Debian live", f, "boot=live components "+fetch+" console=tty0"), true
+	// (the usual layout has the kernel in /live: the other, TrueNAS's, was only ever started by fetching its system image)
+	return c.liveBoot("Debian live", f, "/live/filesystem.squashfs", "", strings.HasPrefix(kernel, "/live/"), nil), true
+}
+
+// liveBoot is how a start-up disk with Debian's live-boot scripts is told to find its ISO: through the network disk if there is one and network says it works, otherwise
+// only the system image (image, a path in the ISO) is downloaded. args are the system's own arguments that go with these.
+func (c *Context) liveBoot(family string, f files, image, args string, network bool, extra ExtraBuilder) Boot {
+	u := c.URLs
+	if network && u.has(NBD) {
+		return newBoot(family, f, "boot=live components netboot=nfs nfsroot="+u.NBD+args+" console=tty0").withExtra(u, extra)
+	}
+	return newBoot(family, f, "boot=live components ip=dhcp fetch="+u.FS+image+args+" console=tty0")
 }
 
 // isVyOS says whether a live folder is VyOS's (its kernel and initramfs files carry "vyos" in their names).
@@ -114,7 +127,7 @@ func tails(c *Context) (Boot, bool) {
 	const hardening = "slab_nomerge slub_debug=FZ mce=0 vsyscall=none init_on_free=1 mds=full,nosmt page_alloc.shuffle=1 randomize_kstack_offset=on efi_pstore.pstore_disable=1 erst_disable spec_store_bypass_disable=on systemd.condition_needs_update=no proc_mem.force_override=ptrace"
 	f := c.in("/live/vmlinuz", "/live/initrd.img")
 	if u.has(NBD) {
-		return newBoot("Tails", f, own+" netboot=nfs nfsroot="+u.NBD+" "+hardening+" console=tty0").withExtra(u, c.tailsExtra), true
+		return newBoot("Tails", f, own+" netboot=nfs nfsroot="+u.NBD+" "+hardening+" console=tty0").withExtra(u, c.drivers(Volume{c.FS, u.FS}, "/live/initrd.img", "/live/filesystem.squashfs")), true
 	}
 	return newBoot("Tails", f, own+" ip=dhcp fetch="+u.FS+"/live/filesystem.squashfs "+hardening+" console=tty0"), true
 }
@@ -131,31 +144,34 @@ esac
 exit 0
 `
 
-// tailsExtra is the usual archive with the drivers and the script that loads them, which the initramfs's ORDER file is made to run first.
-func (c *Context) tailsExtra(env ExtraEnv) ([]byte, error) {
-	const order = "scripts/init-top/ORDER"
-	initramfs, err := c.FS.Open("/live/initrd.img")
-	if err != nil {
-		return nil, err
+// drivers makes the archive of a start-up disk made with initramfs-tools that has no network card drivers (Tails's, or an unknown ISO's): the usual archive, the drivers
+// read from the system image (image, or one found in the ISO when it is empty) and the script that loads them, which the initramfs's ORDER file is made to run first.
+func (c *Context) drivers(vol Volume, initramfs, image string) ExtraBuilder {
+	return func(env ExtraEnv) ([]byte, error) {
+		const order = "scripts/init-top/ORDER"
+		f, err := vol.FS.Open(initramfs)
+		if err != nil {
+			return nil, err
+		}
+		in, err := initread.Read(f.Reader(), order)
+		if err != nil {
+			return nil, fmt.Errorf("the start-up disk: %w", err)
+		}
+		if !strings.Contains(string(in.Files[order]), "/scripts/init-top/") {
+			return nil, errors.New("the start-up disk has a form that is not known here")
+		}
+		mods, err := c.nicDrivers(image, in.Version)
+		if err != nil {
+			return nil, err
+		}
+		var b initrd.Builder
+		b.Archive(env.Settings, env.Helper)
+		b.Script("scripts/init-top/bootlace-nic", initTopLoader)
+		b.File(order, 0o644, []byte("/scripts/init-top/bootlace-nic \"$@\"\n[ -e /conf/param.conf ] && . /conf/param.conf\n"+string(in.Files[order])))
+		b.Dir("bootlace")
+		b.Modules("bootlace/modules", mods)
+		return b.Bytes(), nil
 	}
-	in, err := initread.Read(initramfs.Reader(), order)
-	if err != nil {
-		return nil, fmt.Errorf("the start-up disk of Tails: %w", err)
-	}
-	if !strings.Contains(string(in.Files[order]), "/scripts/init-top/") {
-		return nil, errors.New("the start-up disk of Tails has a form that is not known here")
-	}
-	mods, err := c.nicDrivers("/live/filesystem.squashfs", in.Version)
-	if err != nil {
-		return nil, err
-	}
-	var b initrd.Builder
-	b.Archive(env.Settings, env.Helper)
-	b.Script("scripts/init-top/bootlace-nic", initTopLoader)
-	b.File(order, 0o644, []byte("/scripts/init-top/bootlace-nic \"$@\"\n[ -e /conf/param.conf ] && . /conf/param.conf\n"+string(in.Files[order])))
-	b.Dir("bootlace")
-	b.Modules("bootlace/modules", mods)
-	return b.Bytes(), nil
 }
 
 // Debian's installer and the ones built on it (Kali's): kernel and initrd come out of the ISO, the packages from a mirror or from the ISO's own files over the web server.

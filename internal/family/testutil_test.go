@@ -1,7 +1,9 @@
 package family
 
 import (
+	"bytes"
 	"errors"
+	"io"
 	"io/fs"
 	"sort"
 	"strings"
@@ -91,4 +93,39 @@ func detect(t *testing.T, name string, tree Tree, u URLs, family string, wants .
 		}
 	}
 	return b
+}
+
+// bytesFile is a disc file made of bytes.
+type bytesFile []byte
+
+func (b bytesFile) Size() int64 { return int64(len(b)) }
+func (b bytesFile) ReadAt(p []byte, off int64) (int, error) {
+	if off >= int64(len(b)) {
+		return 0, io.EOF
+	}
+	n := copy(p, b[off:])
+	if n < len(p) {
+		return n, io.EOF
+	}
+	return n, nil
+}
+func (b bytesFile) Reader() io.ReadSeeker { return bytes.NewReader(b) }
+
+// memTree is a tree whose files have content, so that menus and start-up disks can be read from it.
+type memTree map[string][]byte
+
+func (m memTree) names() fake {
+	f := fake{}
+	for k := range m {
+		f[k] = true
+	}
+	return f
+}
+func (m memTree) Exists(name string) bool            { return m.names().Exists(name) }
+func (m memTree) List(name string) ([]string, error) { return m.names().List(name) }
+func (m memTree) Open(name string) (disc.File, error) {
+	if d, ok := m[name]; ok {
+		return bytesFile(d), nil
+	}
+	return nil, fs.ErrNotExist
 }
