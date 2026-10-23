@@ -3,7 +3,7 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Unreleased
+## 0.1.5 - 2026-10-23
 
 - **FreeBSD, pfSense and OPNsense: reading the ISO by TFTP is several times faster.** FreeBSD's loader reads its kernel and the whole ISO by TFTP, one 1428-byte block at a time, and on the first real PC that took about 30 minutes for pfSense's 875 MB (a round trip through the firmware's network driver for every block). Bootlace now sends up to four blocks ahead of the acknowledgements to that loader (only to it: not to a client that asks for a window itself, and not to the firmware's own TFTP client), and sends the blocks again from the oldest one that is not acknowledged when the client says it missed one. `-tftp-window N` (or `BOOTLACE_TFTP_WINDOW`) changes the number; 1 turns it off. The log now says how long a large TFTP transfer took and its speed.
 - **pfSense, OPNsense, FreeBSD: leave the PC's firmware clock alone.** With 0.1.4 the loader read the kernel and the whole ISO by TFTP (it takes a few minutes) and pfSense's kernel started, then stopped in its debugger right after `netgate0` at an address inside the firmware (the kernel's EFI clock, `efirtc`, is the next thing it starts). The boot settings that Bootlace adds now include `efi.rt.disabled="1"`, FreeBSD's switch for that, and `boot_verbose="YES"` so that the last lines on screen say more if it stops somewhere else.
