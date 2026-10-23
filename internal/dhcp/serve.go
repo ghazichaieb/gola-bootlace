@@ -104,7 +104,7 @@ func (f *Full) Respond(req *Packet) (*Packet, bool) {
 	if t != Discover && t != Request {
 		return nil, false
 	}
-	if f.PXEOnly && !IsPXE(req) && !f.hasLease(req) { // a PC that booted from the network keeps being answered when its system asks for the address again
+	if f.PXEOnly && !IsPXE(req) && !IsHTTPBoot(req) && !f.hasLease(req) { // a PC that booted from the network keeps being answered when its system asks for the address again
 		return nil, false
 	}
 	if id := req.Opts[OptServerID]; len(id) == 4 && !net.IP(id).Equal(f.ServerIP) {
@@ -136,9 +136,15 @@ func (f *Full) Respond(req *Packet) (*Packet, bool) {
 	reply.Opts[51] = binary.BigEndian.AppendUint32(nil, uint32(f.Lease/time.Second))
 	if boot, ok := f.Boot.Reply(req); ok { // a PXE client also gets its boot file
 		reply.File, reply.SIAddr = boot.File, f.ServerIP
-		reply.Opts[OptVendorClass], reply.Opts[OptVendorOpts] = boot.Opts[OptVendorClass], boot.Opts[OptVendorOpts]
+		reply.Opts[OptVendorClass] = boot.Opts[OptVendorClass]
+		if v, has := boot.Opts[OptVendorOpts]; has { // (an HTTP boot answer has none)
+			reply.Opts[OptVendorOpts] = v
+		}
 		reply.Opts[66] = []byte(f.ServerIP.String())
 		reply.Opts[67] = []byte(boot.File)
+		if v, has := boot.Opts[OptBootFile]; has { // an HTTP boot client is told a web address, which can be longer than the 127 characters of the file field
+			reply.Opts[67] = v
+		}
 	}
 	return reply, true
 }

@@ -26,6 +26,7 @@ const (
 	OptLeaseTime    = 51
 	OptMessageType  = 53
 	OptServerID     = 54
+	OptBootFile     = 67
 	OptVendorClass  = 60
 	OptClientArch   = 93
 	OptUserClass    = 77

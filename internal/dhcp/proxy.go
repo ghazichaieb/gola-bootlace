@@ -54,6 +54,18 @@ func IsPXE(p *Packet) bool {
 	return strings.HasPrefix(string(p.Opts[OptVendorClass]), "PXEClient")
 }
 
+// IsHTTPBoot reports whether the packet comes from a UEFI firmware doing an HTTP boot ("HTTP Boot" in the firmware's boot menu): its vendor class starts with "HTTPClient". It can
+// start from a web address instead of a TFTP file, which makes it the way for a PC whose firmware has no PXE but does have HTTP boot.
+func IsHTTPBoot(p *Packet) bool {
+	if p.Op != bootRequest {
+		return false
+	}
+	if t := p.MessageType(); t != Discover && t != Request {
+		return false
+	}
+	return strings.HasPrefix(string(p.Opts[OptVendorClass]), "HTTPClient")
+}
+
 // ClientArch is the architecture the client reports; BIOS when it says nothing (very old firmware).
 func ClientArch(p *Packet) Arch {
 	if v := p.Opts[OptClientArch]; len(v) >= 2 {
@@ -82,11 +94,16 @@ type Boot struct {
 	LoaderAddress func(mac string) (net.IP, bool)
 	// Mask is the network mask of the network this server is on, told to that loader.
 	Mask net.IPMask
+	// HTTPBase, when set (http://<server>:<port>), is where a UEFI HTTP boot client is told to fetch the boot loader: <HTTPBase>/ipxe/<the file for its architecture>. Empty answers no HTTP boot client.
+	HTTPBase string
 }
 
 // Reply builds the proxy answer to a PXE request: an offer to a discover, an acknowledgement to a request. It returns false when the client
 // asks for something this server cannot boot (an architecture without a file), so that it stays silent instead of sending a client nowhere.
 func (b Boot) Reply(req *Packet) (*Packet, bool) {
+	if IsHTTPBoot(req) {
+		return b.httpReply(req)
+	}
 	if !IsPXE(req) {
 		return nil, false
 	}
@@ -122,6 +139,41 @@ func (b Boot) Reply(req *Packet) (*Packet, bool) {
 			// PXE sub-option 6 (discovery control) = 8: "the boot file is named in this answer, do not search for boot servers".
 			OptVendorOpts: {6, 1, 8, 255},
 		},
+	}
+	return r, true
+}
+
+// httpReply answers a UEFI HTTP boot client: a proxy answer that names the boot loader by a web address (option 67, and the file field when it fits) with the vendor class the firmware
+// looks for. The address of the PC is still given by the network's own DHCP server.
+func (b Boot) httpReply(req *Packet) (*Packet, bool) {
+	if b.HTTPBase == "" {
+		return nil, false
+	}
+	a := ClientArch(req).Canonical()
+	file, ok := b.Files[a]
+	if !ok || a == ArchBIOS {
+		return nil, false
+	}
+	if b.Seen != nil {
+		b.Seen(req.MAC().String(), true, false)
+	}
+	url := b.HTTPBase + "/ipxe/" + file
+	kind := byte(Offer)
+	if req.MessageType() == Request {
+		kind = ACK
+	}
+	r := &Packet{
+		Op: bootReply, HType: req.HType, HLen: req.HLen, XID: req.XID, Secs: req.Secs, Flags: req.Flags,
+		CIAddr: net.IPv4zero, YIAddr: net.IPv4zero, SIAddr: net.IPv4zero, GIAddr: req.GIAddr, CHAddr: req.CHAddr,
+		Opts: map[byte][]byte{
+			OptMessageType: {kind},
+			OptServerID:    v4(b.ServerIP),
+			OptVendorClass: []byte("HTTPClient"),
+			OptBootFile:    []byte(url),
+		},
+	}
+	if len(url) < 128 {
+		r.File = url
 	}
 	return r, true
 }

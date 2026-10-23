@@ -373,7 +373,7 @@ func dhcpResponder(mode string, ip net.IP, base string, registry *handoff.Regist
 		}
 		return web.NativeBootFile(mac, efi)
 	}
-	boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Handoff: handoffFile, Seen: web.NoteDHCP, LoaderAddress: registry.LoaderAddress, Mask: maskOf(ip), Files: map[dhcp.Arch]string{
+	boot := dhcp.Boot{ServerIP: ip, HTTPBase: base, Script: base + "/boot.ipxe", Handoff: handoffFile, Seen: web.NoteDHCP, LoaderAddress: registry.LoaderAddress, Mask: maskOf(ip), Files: map[dhcp.Arch]string{
 		dhcp.ArchBIOS: "undionly.kpxe", dhcp.ArchX64EFI: "ipxe.efi",
 	}}
 	if mode == "proxy" {
