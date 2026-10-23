@@ -5,6 +5,7 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **FreeBSD, pfSense and OPNsense on a PC with more than one network card.** The hand-off told the server the address and MAC of the *first* card (`net0`), not of the card that got the address, so the server answered "HTTP 4xx" and the PC went on to its disk. It now uses the card that is in use. Found on the first real UEFI PC (two network cards).
 - **Proxmox script: no needless template download.** A Debian 12 or 13 template that is already on the host (on any storage that holds templates) is used as it is; the newest one on offer is downloaded only when there is none. (The script itself is fetched from `main`, so this applies to the next install without a new release.)
 
 ## 0.1.1 - 2026-10-23

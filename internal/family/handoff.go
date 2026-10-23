@@ -36,7 +36,7 @@ func freeBSD(c *Context) (Boot, bool) {
 		// final echo makes the line succeed)
 		"iseq ${platform} pcbios && echo FreeBSD-based ISOs (pfSense, OPNsense) start on UEFI PCs only, not in BIOS mode. && sleep 8 && exit || echo",
 		"echo Restarting this PC to start the FreeBSD loader from the firmware. It reads the kernel and the ISO by TFTP: this takes a while",
-		"imgfetch --name handoff " + c.URLs.Base + "/next?iso=" + path.Base(c.URLs.FS) + "&mac=${net0/mac}&ip=${net0/ip}",
+		"imgfetch --name handoff " + c.URLs.Base + "/next?iso=" + path.Base(c.URLs.FS) + "&mac=${mac}&ip=${ip}",
 		"reboot",
 	}}, true
 }

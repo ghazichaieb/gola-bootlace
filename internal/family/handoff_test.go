@@ -34,7 +34,7 @@ func TestAWindowsPeWithoutAnInstallImageStartsAsAnIscsiDisc(t *testing.T) {
 func TestFreeBSDRestartsThePcSoThatItsFirmwareStartsTheLoader(t *testing.T) {
 	u := urls
 	b := detect(t, "freebsd", fake{"/boot/kernel/kernel": true, "/boot/loader.efi": true, "/boot/pxeboot": true}, u, "FreeBSD, experimental",
-		"imgfetch --name handoff http://s/next?iso=abc&mac=${net0/mac}&ip=${net0/ip}", "reboot")
+		"imgfetch --name handoff http://s/next?iso=abc&mac=${mac}&ip=${ip}", "reboot")
 	// the menu adds "|| goto failed" to every line: the line that stops a BIOS PC must not fail on a UEFI PC (where iseq is false)
 	for _, c := range b.Commands {
 		if strings.HasPrefix(c, "iseq ${platform} pcbios") && !strings.HasSuffix(c, "|| echo") {
