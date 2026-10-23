@@ -24,6 +24,15 @@ file we tried. BIOS (legacy) boot is covered in its own section at the end.
 
 Result values: **works**, **partial** (boots but a step needs help; see notes), **fails**, **untested**.
 
+## Real PCs
+
+| PC | Mode | What happened |
+|---|---|---|
+| ASUS P8Z77-V LX (Intel Z77, Realtek 8111E/F, 2012 AMI firmware), wired, router as the DHCP server, Bootlace 0.1.1 in a Proxmox container (2026-10-23) | **BIOS (legacy)**: Realtek PXE option ROM enabled, "UEFI/Legacy Boot" set to "Enable both" | **Works.** The menu appears and a custom-built English Windows 11 ISO (built for the 2023 Secure Boot certificates) starts. Secure Boot was set to "enabled" in the firmware, which has no effect on a BIOS-mode boot (it only applies to UEFI). |
+| the same PC | **UEFI** ("Network Stack" enabled in Advanced) | **Does not work:** the PC asks four times, Bootlace answers each time, the PC never takes an offer and falls back to its disk, although it gets an address from the same router in Windows, Proxmox and Ubuntu. Cause not known yet: [#51](https://github.com/ghazichaieb/gola-bootlace/issues/51). Workaround: use BIOS mode. |
+
+Not yet seen on a real PC: a UEFI boot with Secure Boot on (the Windows and Ubuntu paths), and a complete installation to the end.
+
 ## BIOS (legacy) boot, 2026-10-22
 
 Tested in a Proxmox VM (SeaBIOS, 6 GB) started from the network; the menu, with the logo picture, comes up through iPXE's VESA console.
