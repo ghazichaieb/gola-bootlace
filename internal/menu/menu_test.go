@@ -60,11 +60,35 @@ func TestTheMenuCanLeaveTheNetworkBootForTheOwnDisk(t *testing.T) {
 }
 
 func TestDirectAndLocalScriptsHaveNoMenu(t *testing.T) {
-	d := Direct("Rule: this PC starts X", Entry{Name: "X", Commands: []string{"echo a", "boot"}})
+	d := Direct("Rule: this PC starts X", Entry{Name: "X", Commands: []string{"echo a", "boot"}}, "http://s/menu?page=1")
 	if strings.Contains(d, "choose") || !strings.Contains(d, "echo a || goto failed\n") || !strings.Contains(d, ":failed") || !strings.HasPrefix(d, "#!ipxe\necho Rule: this PC starts X\n") {
 		t.Fatal(d)
 	}
 	if l := Local("own disk"); l != "#!ipxe\necho own disk\nexit\n" {
 		t.Fatal(l)
+	}
+}
+
+func TestAFailedStartWaitsThenReturnsToTheMenuNotToTheDisk(t *testing.T) {
+	back := "http://s/menu?page=1"
+	for name, script := range map[string]string{
+		"menu":   ScriptWith("x", []Entry{{Name: "A", Commands: []string{"boot"}}}, Options{Again: back}),
+		"direct": Direct("Rule", Entry{Name: "A", Commands: []string{"boot"}}, back),
+	} {
+		for _, want := range []string{":failed\necho Booting did not work: read the message above.\nprompt --timeout 20000 ", " || echo\ngoto again\n", ":again\nchain " + back + " || goto shell\n"} {
+			if !strings.Contains(script, want) {
+				t.Errorf("%s: missing %q in\n%s", name, want, script)
+			}
+		}
+		if strings.Contains(script, "${self}") {
+			t.Errorf("%s: ${self} is not an iPXE setting", name)
+		}
+		// the only way to the PC's own disk is the explicit entry
+		if strings.Count(script, "\nexit\n") > 1 {
+			t.Errorf("%s: more than one way to the disk:\n%s", name, script)
+		}
+	}
+	if s := Direct("Rule", Entry{Name: "A", Commands: []string{"boot"}}, ""); !strings.Contains(s, ":again\nshell\n") {
+		t.Errorf("without an address the shell is the way out:\n%s", s)
 	}
 }

@@ -214,7 +214,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			if "iso:"+e.ISO.ID == rule.Action || "native:"+e.ISO.ID == rule.Action { // (a native rule that reaches iPXE: Secure Boot is off, the usual way does)
 				s.logf("%s (%s): its rule starts %s", client.MAC, client.IP, e.Title)
 				s.setAction(client.MAC, "rule: "+e.Title)
-				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", e.Entry))
+				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", e.Entry, s.menuURL(1)))
 				return
 			}
 		}
@@ -229,7 +229,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			entries = append(entries, e.Entry)
 		}
 	}
-	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout}
+	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout, Again: s.menuURL(1)}
 	if client.Platform == "efi" {
 		opts.Picture, opts.Width, opts.Height, opts.Top = s.Base+"/bg.png", gfx.Width, gfx.Height, gfx.LogoBottom+16
 	} else if client.Platform == "pcbios" {

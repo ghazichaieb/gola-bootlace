@@ -86,25 +86,25 @@ func (s *Server) diskEntry(iso isos.ISO, title, size string) (display string, e 
 		display = fmt.Sprintf("%s  ["+noun+", cannot be unpacked, %s]", title, size)
 		b.Family = "Packed " + noun + ": cannot be unpacked"
 		e = menu.Entry{Name: display, Title: title, Kind: noun, Size: size, Commands: []string{
-			"echo This " + noun + " could not be unpacked on the server. See the log of the server. && sleep 8 && exit",
+			"echo This " + noun + " could not be unpacked on the server. See the log of the server. && sleep 8 && goto again",
 		}}
 	case !st.Ready && !st.Started:
 		display = fmt.Sprintf("%s  ["+noun+", packed, unpacks when started, %s]", title, size)
 		b.Family = "Packed " + noun + ": packed, unpacks when started"
 		e = menu.Entry{Name: display, Title: title, Kind: noun, Size: size, Commands: []string{
-			"imgfetch " + s.Base + "/unpack/" + iso.ID + " && echo This " + noun + " is being unpacked on the server (it takes a few minutes). Come back to this menu later. && sleep 10 && exit",
+			"imgfetch " + s.Base + "/unpack/" + iso.ID + " && echo This " + noun + " is being unpacked on the server (it takes a few minutes). Come back to this menu later. && sleep 10 && goto again",
 		}}
 	case !st.Ready:
 		display = fmt.Sprintf("%s  ["+noun+", unpacking %d %%, %s]", title, st.Progress, size)
 		b.Family = fmt.Sprintf("Packed "+noun+": unpacking %d %%", st.Progress)
 		e = menu.Entry{Name: display, Title: title, Kind: noun, Size: size, Commands: []string{
-			"echo This " + noun + " is still being unpacked on the server. Try again in a minute. && sleep 8 && exit",
+			"echo This " + noun + " is still being unpacked on the server. Try again in a minute. && sleep 8 && goto again",
 		}}
 	case s.iscsiURL(iso) == "":
 		display = fmt.Sprintf("%s  ["+noun+", needs the iSCSI server, %s]", title, size)
 		b.Family = "Packed " + noun + ": needs the iSCSI server"
 		e = menu.Entry{Name: display, Title: title, Kind: noun, Size: size, Commands: []string{
-			"echo Disk images need the iSCSI server of Bootlace, which is switched off. && sleep 8 && exit",
+			"echo Disk images need the iSCSI server of Bootlace, which is switched off. && sleep 8 && goto again",
 		}}
 	default:
 		display = fmt.Sprintf("%s  ["+noun+", %s]", title, size)

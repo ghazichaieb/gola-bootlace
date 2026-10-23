@@ -61,6 +61,21 @@ type Options struct {
 	// Ascii draws the text screen as a minimal list on black, with the logo (see Logo) above it. For a BIOS PC, whose screen is code page 437: the blanks
 	// that line things up are the byte 0xFF there.
 	Ascii bool
+
+	// Again is the address of the menu to go back to when something did not work (and for the entries that say "try again in a minute"): empty goes to
+	// the iPXE shell. It is a page of the menu that is shown without the PC's rule and without a timeout, so that a failure never ends at the PC's disk.
+	Again string
+}
+
+// failedPrompt is what a failed start says: the message stays on screen for 20 seconds (a key press ends the wait), then the menu is shown again.
+const failedPrompt = "Press a key to go back to the menu now, or wait 20 seconds."
+
+// again is the label that every failure and every "try again later" goes to: the menu again (or the shell where there is no address of it).
+func again(addr string) string {
+	if addr == "" {
+		return ":again\nshell\n"
+	}
+	return ":again\nchain " + addr + " || goto shell\n"
 }
 
 // Logo is the picture a text-mode PC (BIOS, or a screen that cannot show the logo) gets above the list: the lace mark, with the name and what the program is at its
@@ -248,13 +263,14 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	if o.Next != "" {
 		fmt.Fprintf(&b, ":next\nchain %s || goto shell\n\n", o.Next)
 	}
-	b.WriteString(":failed\necho Booting did not work: read the message above, then press a key for the menu.\nprompt\nchain ${self} || goto shell\n\n")
+	b.WriteString(":failed\necho Booting did not work: read the message above.\nprompt --timeout 20000 " + failedPrompt + " || echo\ngoto again\n\n")
+	b.WriteString(again(o.Again) + "\n")
 	b.WriteString(":local\necho Leaving the network boot: the PC goes on to its own disk.\nexit\n\n:reboot\nreboot\n\n:shell\nshell\n")
 	return b.String()
 }
 
 // Direct is the script for a PC that a rule sends straight to one entry: no menu, the entry's commands, and the same way out when they fail.
-func Direct(why string, e Entry) string {
+func Direct(why string, e Entry, back string) string {
 	var b strings.Builder
 	b.WriteString("#!ipxe\n")
 	fmt.Fprintf(&b, "echo %s\n", clean(why))
@@ -262,7 +278,8 @@ func Direct(why string, e Entry) string {
 		fmt.Fprintf(&b, "%s || goto failed\n", c)
 	}
 	b.WriteString("goto failed\n\n")
-	b.WriteString(":failed\necho Booting did not work: read the message above, then press a key for the shell.\nprompt\nshell\n")
+	b.WriteString(":failed\necho Booting did not work: read the message above.\nprompt --timeout 20000 " + failedPrompt + " || echo\ngoto again\n\n")
+	b.WriteString(again(back))
 	return b.String()
 }
 

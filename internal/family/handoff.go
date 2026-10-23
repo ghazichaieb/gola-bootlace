@@ -34,7 +34,7 @@ func freeBSD(c *Context) (Boot, bool) {
 	return Boot{Family: "FreeBSD, experimental", Commands: []string{
 		// (the hand-off has no boot file for a BIOS PC, which would restart for ever. The menu adds "|| goto failed" to every line: on a UEFI PC iseq is false, and the
 		// final echo makes the line succeed)
-		"iseq ${platform} pcbios && echo FreeBSD-based ISOs (pfSense, OPNsense) start on UEFI PCs only, not in BIOS mode. && sleep 8 && exit || echo",
+		"iseq ${platform} pcbios && echo FreeBSD-based ISOs (pfSense, OPNsense) start on UEFI PCs only, not in BIOS mode. && sleep 8 && goto again || echo",
 		"echo Restarting this PC to start the FreeBSD loader from the firmware. It reads the kernel and the ISO by TFTP: this takes a while",
 		"imgfetch --name handoff " + c.URLs.Base + "/next?iso=" + path.Base(c.URLs.FS) + "&mac=${mac}&ip=${ip}",
 		"reboot",
