@@ -40,7 +40,7 @@ You get:
 
 ### Using it, step by step
 
-1. **Get the program** (`bootlace`, one file): download it for Linux or Windows from the [Releases page](https://github.com/ghazichaieb/gola-bootlace/releases) (check it against `SHA256SUMS`), use the Proxmox script or Docker image below, or build it as described in [For developers](#for-developers).
+1. **Get the program** (`bootlace`, one file): download it for Linux or Windows from the [Releases page](https://github.com/ghazichaieb/gola-bootlace/releases) (the releases are signed: [docs/verifying.md](docs/verifying.md)), use the Proxmox script or Docker image below, or build it as described in [For developers](#for-developers).
 2. **Make a folder** for the ISOs and copy them in. It becomes the **library**: Bootlace needs to read *and* write it (it adds a hidden `.bootlace` folder), and you can choose another folder later in the web interface. You can also add ISOs from the web interface (**Library**): upload them, or give a web address and the server downloads the file itself, checks it and keeps it. (ISOs can be in sub-folders. `.iso` files, disk images `.img`, and packed ones such as `.iso.xz` or `.zip` are all accepted.)
 3. **Start it** on the server:
    ```

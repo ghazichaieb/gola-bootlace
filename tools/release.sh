@@ -6,6 +6,7 @@
 #   bootlace-<version>-windows-amd64.zip      the program for Windows
 #   bootlace-<version>-third-party-sources.tar  the source of the GPL programs inside the program (iPXE, wimboot, GRUB), see NOTICE
 #   SHA256SUMS                                the checksums of the files above
+#   SHA256SUMS.sig                            their signature (ssh-keygen -Y sign), made when a key is given: BOOTLACE_SIGN_KEY=<private key file>, default ~/.ssh/gola_bootlace_release
 #
 # Each archive holds the program (bootlace or bootlace.exe), README.md, CHANGELOG.md, LICENSE, ADDITIONAL-TERMS.md and NOTICE.
 # A release is made from a commit that has a tag vX.Y.Z and a clean working tree; --snapshot allows any state (the version then reads X.Y.Z-N-gHASH).
@@ -56,6 +57,17 @@ done
 rm -rf dist/stage
 sh tools/third_party_sources.sh "dist/bootlace-$VERSION-third-party-sources.tar" >/dev/null && echo "made dist/bootlace-$VERSION-third-party-sources.tar (the source of the GPL programs inside)"
 (cd dist && sha256sum bootlace-* >SHA256SUMS)
+# sign the checksums: whoever checks the signature with allowed_signers (see docs/verifying.md) knows the files came from the maintainers
+key=${BOOTLACE_SIGN_KEY:-$HOME/.ssh/gola_bootlace_release}
+rm -f dist/SHA256SUMS.sig
+if [ -f "$key" ]; then
+	ssh-keygen -q -Y sign -f "$key" -n file dist/SHA256SUMS
+	ssh-keygen -Y verify -f allowed_signers -I gola-bootlace-releases -n file -s dist/SHA256SUMS.sig <dist/SHA256SUMS >/dev/null || { echo "the signature does not match allowed_signers: wrong key?" >&2; exit 1; }
+	echo "signed dist/SHA256SUMS.sig"
+elif [ "$snapshot" != 1 ]; then
+	echo "no signing key ($key): set BOOTLACE_SIGN_KEY, a release must be signed" >&2
+	exit 1
+fi
 echo
 cat dist/SHA256SUMS
 echo
@@ -81,5 +93,5 @@ opts=""
 for t in $tags; do opts="$opts -t $image:$t"; done
 echo "version $VERSION. To publish it (not done by this script):"
 echo "  git push origin v$VERSION"
-echo "  gh release create v$VERSION dist/bootlace-* dist/SHA256SUMS --repo ghazichaieb/gola-bootlace --title \"Gola Bootlace $VERSION\" --notes-file <the section of CHANGELOG.md>"
+echo "  gh release create v$VERSION dist/bootlace-* dist/SHA256SUMS dist/SHA256SUMS.sig --repo ghazichaieb/gola-bootlace --title \"Gola Bootlace $VERSION\" --notes-file <the section of CHANGELOG.md>"
 echo "  docker buildx build --platform linux/amd64,linux/arm64 --build-arg VERSION=$VERSION$opts --push ."
