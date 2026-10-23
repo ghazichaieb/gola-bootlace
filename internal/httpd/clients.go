@@ -138,17 +138,19 @@ func (s *Server) Clients() []Client {
 
 // ISOInfo is one ISO for the web interface.
 type ISOInfo struct {
-	ID       string    `json:"id"`
-	Name     string    `json:"name"`  // path under the ISO folder
-	Title    string    `json:"title"` // the name shown in the menu (the file name unless it was renamed)
-	Original string    `json:"original"`
-	Size     int64     `json:"size"`
-	Modified time.Time `json:"modified"`
-	Hidden   bool      `json:"hidden"`
-	ByRule   bool      `json:"hiddenByRule,omitempty"` // hidden by a pattern (Menu page), so its own switch does not apply
-	Method   string    `json:"method"`                 // "recognised" or "disk"
-	Family   string    `json:"family,omitempty"`       // for example "Windows setup" or "Ubuntu (casper)"
-	Args     string    `json:"args,omitempty"`         // extra kernel arguments for this ISO
+	ID       string           `json:"id"`
+	Name     string           `json:"name"`  // path under the ISO folder
+	Title    string           `json:"title"` // the name shown in the menu (the file name unless it was renamed)
+	Original string           `json:"original"`
+	Size     int64            `json:"size"`
+	Modified time.Time        `json:"modified"`
+	Hidden   bool             `json:"hidden"`
+	ByRule   bool             `json:"hiddenByRule,omitempty"` // hidden by a pattern (Menu page), so its own switch does not apply
+	Method   string           `json:"method"`                 // "recognised" or "disk"
+	Family   string           `json:"family,omitempty"`       // for example "Windows setup" or "Ubuntu (casper)"
+	Args     string           `json:"args,omitempty"`         // extra kernel arguments for this ISO
+	Debug    config.DebugMode `json:"debug"`                  // how it is started for finding faults
+	Commands []string         `json:"commands,omitempty"`     // what the menu gives a PC that chooses it (the iPXE commands), so that the final command line can be read
 }
 
 // ISOInfos lists the ISOs of the folder with what is known of each.
@@ -164,6 +166,8 @@ func (s *Server) ISOInfos() ([]ISOInfo, error) {
 			i.Method, i.Family = "recognised", e.Boot.Family
 		}
 		i.Args = s.settings().Args[e.ISO.ID]
+		i.Debug = s.settings().Debug[e.ISO.ID]
+		i.Commands = e.Entry.Commands
 		out = append(out, i)
 	}
 	return out, nil

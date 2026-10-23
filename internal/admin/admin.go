@@ -452,9 +452,10 @@ func (a *Admin) isos(w http.ResponseWriter, _ *http.Request) {
 func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var in struct {
-		Hidden *bool   `json:"hidden"`
-		Title  *string `json:"title"`
-		Args   *string `json:"args"`
+		Hidden *bool             `json:"hidden"`
+		Title  *string           `json:"title"`
+		Args   *string           `json:"args"`
+		Debug  *config.DebugMode `json:"debug"`
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -484,6 +485,12 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 				c.Args = map[string]string{}
 			}
 			c.Args[id] = *in.Args // empty: dropped by the check
+		}
+		if in.Debug != nil {
+			if c.Debug == nil {
+				c.Debug = map[string]config.DebugMode{}
+			}
+			c.Debug[id] = *in.Debug // both off: dropped by the check
 		}
 		return nil
 	})

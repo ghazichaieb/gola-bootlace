@@ -63,6 +63,45 @@ func addArgs(commands []string, extra string) []string {
 	return out
 }
 
+// debugArgs changes the kernel command of an ISO's start for finding faults: the quiet start-up words go, the kernel's messages are turned up and, if asked, the console
+// goes to the first serial port as well (the last console= is the one the kernel treats as its main console).
+func debugArgs(commands []string, d config.DebugMode) []string {
+	if !d.Verbose && !d.Serial {
+		return commands
+	}
+	out := append([]string(nil), commands...)
+	for i, c := range out {
+		if !strings.HasPrefix(c, "kernel ") {
+			continue
+		}
+		var words []string
+		have := map[string]bool{}
+		for _, w := range strings.Fields(c) {
+			if d.Verbose && (w == "quiet" || w == "splash" || w == "rhgb") {
+				continue
+			}
+			if d.Serial && strings.HasPrefix(w, "console=") {
+				continue // replaced below, so that the serial port is the last one
+			}
+			have[w] = true
+			words = append(words, w)
+		}
+		if d.Verbose {
+			for _, w := range []string{"loglevel=7", "ignore_loglevel", "debug"} {
+				if !have[w] {
+					words = append(words, w)
+				}
+			}
+		}
+		if d.Serial {
+			words = append(words, "console=tty0", "console=ttyS0,115200n8")
+		}
+		out[i] = strings.Join(words, " ")
+		break
+	}
+	return out
+}
+
 func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 	list, err := s.scan()
 	if err != nil {
@@ -88,7 +127,7 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 			}
 			e.Boot, e.Known = b, true
 			e.Display = fmt.Sprintf("%s  [%s, %s]", e.Title, where, size)
-			e.Entry = menu.Entry{Name: e.Display, Commands: addArgs(b.Commands, cfg.Args[iso.ID]), Title: e.Title, Kind: b.Family, Size: size}
+			e.Entry = menu.Entry{Name: e.Display, Commands: debugArgs(addArgs(b.Commands, cfg.Args[iso.ID]), cfg.Debug[iso.ID]), Title: e.Title, Kind: b.Family, Size: size}
 		} else if iso.Disk {
 			e.Display, e.Entry, e.Known, e.Boot = s.diskEntry(iso, e.Title, size)
 		} else {

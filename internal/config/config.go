@@ -32,27 +32,28 @@ type Rule struct {
 
 // Config is the whole file.
 type Config struct {
-	MenuTimeout     int               `json:"menuTimeout"` // seconds before the default entry starts; 0 waits for a choice
-	PCDays          int               `json:"pcDays"`      // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
-	Default         string            `json:"default"`     // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
-	Hidden          map[string]bool   `json:"hidden"`      // ISO id -> not in the menu
-	Titles          map[string]string `json:"titles"`      // ISO id -> the name shown instead of the file name
-	Args            map[string]string `json:"args"`        // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
-	Rules           []Rule            `json:"rules"`
-	PCNames         map[string]string `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
-	AdminHash       string            `json:"adminHash"`       // see package admin
-	SMBPassword     string            `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
-	Library         Library           `json:"library"`         // the folder with the ISOs; empty until one is chosen
-	NoAutoStart     bool              `json:"noAutoStart"`     // the services stay stopped when the program starts, until they are started in the web interface
-	Access          Access            `json:"access"`          // which addresses may use the server, besides the local network
-	ImportLimitMBps int               `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
-	Cache           CacheSettings     `json:"cache"`
-	Tuning          Tuning            `json:"tuning"`
-	PasswordChosen  bool              `json:"passwordChosen"` // the person set the web interface's password (it was not only made up at the first start)
-	FirstStartDone  bool              `json:"firstStartDone"` // the first-start guide was finished or skipped
-	LibrarySync     string            `json:"librarySync"`    // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
-	MenuAccent      string            `json:"menuAccent"`     // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
-	HidePatterns    []string          `json:"hidePatterns"`   // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
+	MenuTimeout     int                  `json:"menuTimeout"` // seconds before the default entry starts; 0 waits for a choice
+	PCDays          int                  `json:"pcDays"`      // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
+	Default         string               `json:"default"`     // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
+	Hidden          map[string]bool      `json:"hidden"`      // ISO id -> not in the menu
+	Titles          map[string]string    `json:"titles"`      // ISO id -> the name shown instead of the file name
+	Debug           map[string]DebugMode `json:"debug"`       // ISO id -> how to start it for finding faults (see DebugMode)
+	Args            map[string]string    `json:"args"`        // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
+	Rules           []Rule               `json:"rules"`
+	PCNames         map[string]string    `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
+	AdminHash       string               `json:"adminHash"`       // see package admin
+	SMBPassword     string               `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
+	Library         Library              `json:"library"`         // the folder with the ISOs; empty until one is chosen
+	NoAutoStart     bool                 `json:"noAutoStart"`     // the services stay stopped when the program starts, until they are started in the web interface
+	Access          Access               `json:"access"`          // which addresses may use the server, besides the local network
+	ImportLimitMBps int                  `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
+	Cache           CacheSettings        `json:"cache"`
+	Tuning          Tuning               `json:"tuning"`
+	PasswordChosen  bool                 `json:"passwordChosen"` // the person set the web interface's password (it was not only made up at the first start)
+	FirstStartDone  bool                 `json:"firstStartDone"` // the first-start guide was finished or skipped
+	LibrarySync     string               `json:"librarySync"`    // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
+	MenuAccent      string               `json:"menuAccent"`     // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
+	HidePatterns    []string             `json:"hidePatterns"`   // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
 }
 
 // AccentNames are the colours the menu's highlighted line may have (see package menu).
@@ -119,6 +120,13 @@ func glob(p, s string) bool {
 		pi++
 	}
 	return pi == len(pr)
+}
+
+// DebugMode is how an ISO is started when it does not start well: Verbose takes out the quiet start-up (no `quiet`, `splash`, `rhgb`) and turns the kernel's messages
+// up; Serial also sends the console to the first serial port (115200 baud), for a PC or a virtual machine whose serial port is being recorded.
+type DebugMode struct {
+	Verbose bool `json:"verbose,omitempty"`
+	Serial  bool `json:"serial,omitempty"`
 }
 
 // Library is the folder the ISOs are in, as it was added (see package library): its path and the id that was written into its marker.
@@ -240,6 +248,11 @@ func (c *Config) Validate() error {
 		}
 		c.Args[id] = a
 	}
+	for id, d := range c.Debug {
+		if !idPattern.MatchString(id) || (!d.Verbose && !d.Serial) {
+			delete(c.Debug, id)
+		}
+	}
 	seen := map[string]bool{}
 	rules := []Rule{}
 	for _, r := range c.Rules {
@@ -292,6 +305,10 @@ func (c Config) clone() Config {
 	d.Titles = map[string]string{}
 	for k, v := range c.Titles {
 		d.Titles[k] = v
+	}
+	d.Debug = map[string]DebugMode{}
+	for k, v := range c.Debug {
+		d.Debug[k] = v
 	}
 	d.Args = map[string]string{}
 	for k, v := range c.Args {
@@ -346,6 +363,9 @@ func Open(path string, seed Config) (s *Store, created bool, err error) {
 		}
 		if s.cfg.PCNames == nil {
 			s.cfg.PCNames = map[string]string{}
+		}
+		if s.cfg.Debug == nil {
+			s.cfg.Debug = map[string]DebugMode{}
 		}
 	case errors.Is(err, os.ErrNotExist):
 		s.cfg = seed.clone()
