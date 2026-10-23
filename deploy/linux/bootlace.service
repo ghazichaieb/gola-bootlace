@@ -1,0 +1,16 @@
+[Unit]
+Description=Gola Bootlace network boot server
+Documentation=https://github.com/ghazichaieb/gola-bootlace
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/default/bootlace
+StateDirectory=bootlace
+ExecStart=/usr/bin/bootlace serve $BOOTLACE_ARGS
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

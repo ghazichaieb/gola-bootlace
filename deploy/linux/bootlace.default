@@ -1,0 +1,9 @@
+# Settings of the Gola Bootlace service. Every option of "bootlace serve" can be set here as BOOTLACE_<NAME> (run "bootlace serve -h" for the list).
+# After a change: systemctl restart bootlace
+BOOTLACE_CONFIG=/var/lib/bootlace/config.json
+# The folder with your ISO files (the library). It can also be chosen in the web interface, under Server.
+BOOTLACE_ISO_DIR=/srv/library
+# proxy: answer PXE PCs next to the network's own DHCP server (nothing to change on the router). full: hand out addresses too (only on a network without a DHCP server).
+BOOTLACE_DHCP=proxy
+# More options as command-line words, for example: BOOTLACE_ARGS="-log-file /var/log/bootlace.log"
+BOOTLACE_ARGS=""

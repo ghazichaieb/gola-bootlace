@@ -94,8 +94,11 @@ volumes:
 Then `docker compose up -d`, and `docker compose logs bootlace | grep -i password` for the password. The page is `http://<the host's address>:8080/admin/`. Options go in the
 `environment:` part as `BOOTLACE_<NAME>` (for example `BOOTLACE_IP`); to update, `docker compose pull && docker compose up -d`. Details: [docs/docker.md](docs/docker.md).
 
-**3. Linux, as a service (a PC, a mini PC, a Raspberry Pi, a virtual machine).** Download `bootlace-<version>-linux-amd64.tar.gz` (or `arm64`) from the
-[Releases page](https://github.com/ghazichaieb/gola-bootlace/releases), then, as root (Debian or Ubuntu shown; install `wimtools` with your system's package manager otherwise):
+**3. Linux, as a service (a PC, a mini PC, a Raspberry Pi, a virtual machine).** The simplest way on Debian, Ubuntu, Raspberry Pi OS and Proxmox hosts is the package: download
+`bootlace-<version>-linux-amd64.deb` (or `arm64`) from the [Releases page](https://github.com/ghazichaieb/gola-bootlace/releases) and `apt install ./bootlace-*.deb`
+(`dnf install ./bootlace-*.rpm` on Fedora and RHEL). It installs the program, a systemd service that it starts, and `/etc/default/bootlace` for the settings (kept when you
+upgrade); `journalctl -u bootlace | grep -i password` shows the password. Or install it by hand from the archive: download `bootlace-<version>-linux-amd64.tar.gz` (or `arm64`),
+then, as root (Debian or Ubuntu shown; install `wimtools` with your system's package manager otherwise):
 
 ```
 apt install -y wimtools                      # only needed to start Windows with Secure Boot on

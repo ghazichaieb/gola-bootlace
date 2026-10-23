@@ -4,6 +4,7 @@
 #   bootlace-<version>-linux-amd64.tar.gz     the program for Linux (also what the Proxmox scripts install)
 #   bootlace-<version>-linux-arm64.tar.gz     the same for ARM (a Raspberry Pi, an ARM Proxmox host)
 #   bootlace-<version>-windows-amd64.zip      the program for Windows
+#   bootlace-<version>-linux-<arch>.deb / .rpm  the same program as a Debian and an RPM package (tools/package.sh; needs Docker)
 #   bootlace-<version>-third-party-sources.tar  the source of the GPL programs inside the program (iPXE, wimboot, GRUB), see NOTICE
 #   SHA256SUMS                                the checksums of the files above
 #   SHA256SUMS.sig                            their signature (ssh-keygen -Y sign), made when a key is given: BOOTLACE_SIGN_KEY=<private key file>, default ~/.ssh/gola_bootlace_release
@@ -56,6 +57,12 @@ for target in linux/amd64 linux/arm64 windows/amd64; do
 done
 rm -rf dist/stage
 sh tools/third_party_sources.sh "dist/bootlace-$VERSION-third-party-sources.tar" >/dev/null && echo "made dist/bootlace-$VERSION-third-party-sources.tar (the source of the GPL programs inside)"
+# the Debian and RPM packages (made by nfpm in Docker): without Docker they are left out, and the release says so
+if command -v docker >/dev/null 2>&1; then
+	sh tools/package.sh
+else
+	echo "no Docker: the .deb and .rpm packages were not made (tools/package.sh)" >&2
+fi
 (cd dist && sha256sum bootlace-* >SHA256SUMS)
 # sign the checksums: whoever checks the signature with allowed_signers (see docs/verifying.md) knows the files came from the maintainers
 key=${BOOTLACE_SIGN_KEY:-$HOME/.ssh/gola_bootlace_release}
