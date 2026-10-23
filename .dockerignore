@@ -1,0 +1,17 @@
+.git
+dist
+data
+bin
+*.iso
+*.wim
+*.log
+/bootlace
+/bootlace.exe
+/bootlace.json
+/pcs.json
+docs
+tools
+deploy
+branding
+.idea
+.vscode

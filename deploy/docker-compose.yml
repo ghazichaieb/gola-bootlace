@@ -1,10 +1,32 @@
-# Placeholder: nothing runs yet. PXE needs broadcast traffic, which Docker's normal network does not pass, so the real file will use host
-# networking (Linux hosts only) or a macvlan network.
+# Gola Bootlace with Docker Compose.
+#
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# Host networking is needed: network boot uses broadcast traffic, which Docker's own networks do not pass. That works on a Linux host; Docker Desktop on Windows
+# or macOS cannot reach the network PCs are on (run Bootlace in a Linux machine or a Proxmox container instead).
+#
+# The library (the ISOs) must be readable and writable by the container, which runs as root: any folder of the host, or a network share mounted on it. Set it with
+# BOOTLACE_LIBRARY (default: ./library next to this file). Settings and the small cache are kept in the "bootlace-data" volume.
+name: bootlace
+
 services:
   bootlace:
-    image: gola-bootlace:dev
+    image: ghcr.io/ghazichaieb/gola-bootlace:${BOOTLACE_VERSION:-latest}
+    # To build the image from this source instead of pulling it:
+    # build: { context: .., args: { VERSION: dev } }
+    container_name: bootlace
     network_mode: host
-    volumes:
-      - ./data/isos:/data/isos
-      - ./data/state:/data/state
     restart: unless-stopped
+    environment:
+      TZ: ${TZ:-UTC}
+      # Every option of "bootlace serve" can be set here as BOOTLACE_<NAME> (see "docker compose run --rm bootlace serve -h").
+      # BOOTLACE_ADMIN_PASSWORD: change-me-please   # otherwise one is made up and written in the log (docker compose logs bootlace)
+      # BOOTLACE_IP: 192.168.1.10                   # the address PCs reach this computer at, when it is not the one of its default route
+      # BOOTLACE_DHCP: proxy                        # proxy (next to your own DHCP server), full (hand out addresses too), off
+      # BOOTLACE_HTTP_PORT: 8080
+    volumes:
+      - bootlace-data:/data
+      - ${BOOTLACE_LIBRARY:-./library}:/library
+
+volumes:
+  bootlace-data:

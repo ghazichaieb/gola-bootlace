@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -41,6 +42,11 @@ const usage = `Gola Bootlace: boots PCs over the network from the ISO files in a
   bootlace inspect <iso>...  say what is inside ISO files and how the server would start them
   bootlace -version          print the version
 
+  bootlace health            ask a running server whether it is well (exit status 0 when it is); for a container's health check
+
+Every option of "bootlace serve" can also be set in the environment as BOOTLACE_<NAME> (BOOTLACE_HTTP_PORT, BOOTLACE_DHCP, BOOTLACE_ADMIN_PASSWORD ...);
+the command line wins.
+
 Run "bootlace serve -h" for the options.
 `
 
@@ -48,6 +54,9 @@ Run "bootlace serve -h" for the options.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "serve" {
 		return serve(args[1:], stdout, stderr)
+	}
+	if len(args) > 0 && args[0] == "health" {
+		return health(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "inspect" {
 		return inspect(args[1:], stdout, stderr)
@@ -90,9 +99,13 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	menuPick := fs.String("menu-pick", "", "the entry whose name contains this text starts by itself after -menu-timeout seconds (instead of -menu-default)")
 	menuTimeout := fs.Int("menu-timeout", 20, "seconds before the default menu entry starts (0: wait for ever); the default entry is the PC's own disk unless another is chosen")
 	configPath := fs.String("config", "bootlace.json", "the file where the settings made in the web interface are kept (the menu options above only give its first contents)")
-	adminPassword := fs.String("admin-password", os.Getenv("BOOTLACE_ADMIN_PASSWORD"), "the password of the web interface (default: made up the first time and written in the log; also read from BOOTLACE_ADMIN_PASSWORD)")
+	adminPassword := fs.String("admin-password", "", "the password of the web interface (default: made up the first time and written in the log)")
 	noAdmin := fs.Bool("no-admin", false, "do not offer the web interface")
 	debugSMB := fs.Bool("debug-smb", false, "log every message of the Windows file share (a lot: for finding faults)")
+	if err := applyEnv(fs, osLookup); err != nil { // (before the command line, so that the command line wins)
+		fmt.Fprintf(stderr, "bootlace: %v\n", err)
+		return 2
+	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -310,16 +323,41 @@ func randomPassword() string {
 	return hex.EncodeToString(b)
 }
 
-// privateIP is the first private IPv4 address of this computer (the network the PCs are on).
+// privateIP is this computer's private IPv4 address on the network the PCs are on. The address that the computer uses to reach the rest of the network is the
+// one (a computer, and especially a container, often has several: a bridge made by Docker is private too, and is the wrong one). Only when that is not a private
+// address, the first private address of a real network card is taken.
 func privateIP() net.IP {
-	addrs, err := net.InterfaceAddrs()
+	if c, err := net.Dial("udp4", "192.0.2.1:9"); err == nil { // (no packet is sent: the system only says which address it would use)
+		ip := c.LocalAddr().(*net.UDPAddr).IP.To4()
+		c.Close()
+		if ip != nil && ip.IsPrivate() {
+			return ip
+		}
+	}
+	ifaces, err := net.Interfaces()
 	if err != nil {
 		return nil
 	}
-	for _, a := range addrs {
-		if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil && n.IP.IsPrivate() {
-			return n.IP.To4()
+	for _, ifc := range ifaces {
+		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 || virtualInterface(ifc.Name) {
+			continue
+		}
+		addrs, _ := ifc.Addrs()
+		for _, a := range addrs {
+			if n, ok := a.(*net.IPNet); ok && n.IP.To4() != nil && n.IP.IsPrivate() {
+				return n.IP.To4()
+			}
 		}
 	}
 	return nil
+}
+
+// virtualInterface says whether a network card's name is one that a container system or a virtual machine host makes (not a network PCs are on).
+func virtualInterface(name string) bool {
+	for _, p := range []string{"docker", "br-", "veth", "virbr", "cni", "flannel", "cali", "lxcbr", "lxdbr", "podman", "vmnet", "vEthernet"} {
+		if strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
 }
