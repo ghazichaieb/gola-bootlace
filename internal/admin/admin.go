@@ -25,6 +25,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/importer"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
+	"github.com/ghazichaieb/gola-bootlace/internal/selftest"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
 )
@@ -56,6 +57,8 @@ type Options struct {
 	Importer *importer.Manager
 	Indexer  *library.Indexer
 	ServerIP string // the address PCs are told to use
+	// SelfTest says where the services are for the self-test (see package selftest); without it the page has no self-test.
+	SelfTest func() selftest.Target
 	Logf     func(format string, args ...any)
 }
 
@@ -126,6 +129,7 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("POST /api/library/upload/check", a.authed(a.uploadCheck))
 	api.HandleFunc("PUT /api/library/upload", a.authed(a.upload))
 	api.HandleFunc("GET /api/log/download", a.authed(a.logDownload))
+	api.HandleFunc("POST /api/selftest", a.authed(a.selfTest))
 	api.HandleFunc("GET /api/tuning", a.authed(a.tuningGet))
 	api.HandleFunc("PUT /api/tuning", a.authed(a.tuningSet))
 	api.HandleFunc("GET /api/cache", a.authed(a.cacheGet))
@@ -460,6 +464,25 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// selfTest checks the services from the server's own address, the way a PC uses them (see package selftest).
+func (a *Admin) selfTest(w http.ResponseWriter, r *http.Request) {
+	if a.o.SelfTest == nil {
+		fail(w, http.StatusNotFound, "the self-test is not available")
+		return
+	}
+	results := selftest.Run(r.Context(), a.o.SelfTest())
+	failed := 0
+	for _, res := range results {
+		if res.Status == "fail" {
+			failed++
+		}
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: self-test run: %d step(s) failed", failed)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": results, "failed": failed})
 }
 
 // tuningGet and tuningSet are the TFTP knobs and the patterns that keep ISOs out of the menu.

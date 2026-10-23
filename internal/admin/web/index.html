@@ -280,7 +280,17 @@ function serverBanner(lib, svc) {
 
 async function pageServer() {
   const page = $("#page");
-  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>`;
+  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>
+  <div class="card" id="selfcard" style="margin-top:14px"><h2>Self-test</h2><p class="hint" style="margin-top:0">Asks the server's own address for what a PC asks for, one step at a time: the boot script and the menu, the first bytes of an ISO, the TFTP file, the Windows share's first message, the network disk's greeting and the iSCSI port. It shows which step fails and what to look at. A firewall in front of this computer cannot be seen this way, because the questions come from the computer itself.</p>
+    <div class="row"><button class="btn" id="selfgo">Run the self-test</button></div><div id="selfout" aria-live="polite"></div></div>`;
+  $("#selfgo").onclick = guard(async () => {
+    const b = $("#selfgo"); b.disabled = true; b.textContent = "Testing ...";
+    try {
+      const r = await api("/api/selftest", "POST", {});
+      $("#selfout").innerHTML = `<table class="rt" style="margin-top:10px"><tbody>${r.results.map(x => `<tr><td><strong>${esc(x.title)}</strong></td><td class="${x.status === "ok" ? "" : x.status === "fail" ? "bad" : "muted"}">${x.status === "ok" ? "OK" : x.status === "fail" ? "FAILED" : "skipped"}</td><td class="small">${esc(x.detail)}${x.hint ? `<div class="muted">${esc(x.hint)}</div>` : ""}</td></tr>`).join("")}</tbody></table>
+        <p class="${r.failed ? "bad" : "muted"}" style="margin-bottom:0">${r.failed ? r.failed + " step(s) failed." : "Every step that could be tried passed."}</p>`;
+    } finally { b.disabled = false; b.textContent = "Run the self-test"; }
+  });
   let last = "";
   const draw = async (force) => {
     const [lib, svc, acc, cch] = await Promise.all([api("/api/library"), api("/api/services"), api("/api/access"), api("/api/cache")]);

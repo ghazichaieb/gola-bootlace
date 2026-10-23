@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/importer"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
+	"github.com/ghazichaieb/gola-bootlace/internal/selftest"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
 )
 
@@ -438,5 +441,34 @@ func TestTuningAndPatternsAreSavedAndPatternsHideIsos(t *testing.T) {
 	}
 	if got := r.store.Get(); got.Tuning.TFTPBlockSize != 1024 || len(got.HidePatterns) != 2 {
 		t.Fatalf("%+v", got)
+	}
+}
+
+func TestSelfTestRunsTheStepsAndReportsFailures(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	if code, _ := r.do("POST", "/api/selftest", map[string]any{}, nil); code != 404 {
+		t.Fatalf("without a target the self-test is not offered: %d", code)
+	}
+	web := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("#!ipxe\n")) }))
+	defer web.Close()
+	host, port, _ := net.SplitHostPort(web.Listener.Addr().String())
+	p, _ := strconv.Atoi(port)
+	r.admin.o.SelfTest = func() selftest.Target { return selftest.Target{IP: host, HTTP: p} }
+	code, out := r.do("POST", "/api/selftest", map[string]any{}, nil)
+	results, _ := out["results"].([]any)
+	if code != 200 || len(results) != 6 {
+		t.Fatalf("%d %v", code, out)
+	}
+	byID := map[string]string{}
+	for _, x := range results {
+		m := x.(map[string]any)
+		byID[m["id"].(string)] = m["status"].(string)
+	}
+	if byID["menu"] != "ok" || byID["iso"] != "skipped" || byID["smb"] != "skipped" || byID["tftp"] != "fail" {
+		t.Fatalf("%v", byID)
+	}
+	if out["failed"].(float64) != 1 {
+		t.Fatalf("only the TFTP step (nothing on port 69) fails: %v", out)
 	}
 }

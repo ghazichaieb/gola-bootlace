@@ -321,6 +321,9 @@ func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
 }
 
 // isoPath is the URL path of an ISO, escaped.
+// ISOPath is the web path an ISO is downloaded from.
+func ISOPath(name string) string { return isoPath(name) }
+
 func isoPath(name string) string {
 	return (&url.URL{Path: "/iso/" + name}).EscapedPath()
 }

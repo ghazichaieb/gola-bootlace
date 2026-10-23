@@ -27,6 +27,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
+	"github.com/ghazichaieb/gola-bootlace/internal/selftest"
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
 	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
 	"github.com/ghazichaieb/gola-bootlace/internal/tidy"
@@ -227,7 +228,14 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		}
 		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
 			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}
-		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Access: policy, ServerIP: ip.String(), Importer: imp, Indexer: indexer, Logf: logf}).Mount()
+		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Access: policy, ServerIP: ip.String(), Importer: imp, Indexer: indexer, Logf: logf,
+			SelfTest: func() selftest.Target {
+				t := selftest.Target{IP: ip.String(), HTTP: *httpPort, SMB: *smbPort, NBD: *nbdPort, ISCSI: *iscsiPort}
+				if infos, err := web.ISOInfos(); err == nil && len(infos) > 0 {
+					t.ISOPath = httpd.ISOPath(infos[0].Name)
+				}
+				return t
+			}}).Mount()
 		logf("web interface: %s/admin/", base)
 	}
 	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
