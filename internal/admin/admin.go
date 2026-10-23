@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
@@ -47,6 +48,8 @@ type Options struct {
 	Facts    [][2]string // what the status page shows besides the numbers: name and value, in order (addresses, ports, DHCP mode ...)
 	Library  *library.Library
 	Services *service.Supervisor
+	Access   *access.Policy
+	ServerIP string // the address PCs are told to use
 	Logf     func(format string, args ...any)
 }
 
@@ -100,6 +103,8 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("GET /api/library/browse", a.authed(a.libraryBrowse))
 	api.HandleFunc("GET /api/library/inspect", a.authed(a.libraryInspect))
 	api.HandleFunc("PUT /api/library", a.authed(a.librarySelect))
+	api.HandleFunc("GET /api/access", a.authed(a.accessGet))
+	api.HandleFunc("PUT /api/access", a.authed(a.accessSet))
 	api.HandleFunc("GET /api/services", a.authed(a.servicesReport))
 	api.HandleFunc("POST /api/services/start", a.authed(a.servicesStart))
 	api.HandleFunc("POST /api/services/stop", a.authed(a.servicesStop))

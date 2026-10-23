@@ -30,7 +30,8 @@ type serverPlan struct {
 	smbUser, smbPassword string
 	smbForward           string
 	debugSMB             bool
-	dhcp                 dhcp.Responder // nil: no DHCP at all
+	dhcp                 dhcp.Responder      // nil: no DHCP at all
+	allow                func(net.Addr) bool // which addresses are answered (the local network, and what the settings add)
 	logf                 func(format string, args ...any)
 }
 
@@ -63,6 +64,7 @@ func (p serverPlan) startTCP(port int, what string, serve func(net.Listener) err
 		return service.Instance{}, fmt.Errorf("cannot open port %d: %w", port, err)
 	}
 	tl := service.Track(l)
+	tl.Allow = p.allow
 	p.logf("%s on %s:%d", what, p.ip, port)
 	go func() {
 		if err := serve(tl); err != nil && !errors.Is(err, net.ErrClosed) {
@@ -79,6 +81,7 @@ func (p serverPlan) startSMB() (service.Instance, error) {
 		return service.Instance{}, fmt.Errorf("cannot open port %d (is the computer's own file sharing using it? see -smb-port): %w", p.smbPort, err)
 	}
 	tl := service.Track(l)
+	tl.Allow = p.allow
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -105,7 +108,7 @@ func (p serverPlan) startTFTP() (service.Instance, error) {
 		return service.Instance{}, fmt.Errorf("cannot open port 69: %w", err)
 	}
 	go func() {
-		if err := (&tftp.Server{FS: assets.IPXE(), Logf: p.logf, LocalIP: p.ip, Lookup: p.web.TFTPLookup}).Serve(conn); err != nil {
+		if err := (&tftp.Server{FS: assets.IPXE(), Logf: p.logf, LocalIP: p.ip, Lookup: p.web.TFTPLookup, Allow: p.allow}).Serve(conn); err != nil {
 			p.logf("TFTP: %v", err)
 		}
 	}()
@@ -127,7 +130,7 @@ func (p serverPlan) startDHCP() (service.Instance, error) {
 		}
 		conns = append(conns, conn)
 		go func() {
-			if err := dhcp.Serve(conn, p.dhcp, p.logf); err != nil {
+			if err := dhcp.ServeFiltered(conn, p.dhcp, p.logf, p.allow); err != nil {
 				p.logf("DHCP: %v", err)
 			}
 		}()

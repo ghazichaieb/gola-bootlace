@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 )
 
@@ -108,5 +109,35 @@ func TestNoLibraryListsNothing(t *testing.T) {
 	s := &Server{Library: library.New("", ""), Base: "http://10.0.0.1:8080"}
 	if list, err := s.scan(); err != nil || len(list) != 0 {
 		t.Fatalf("%v %v", list, err)
+	}
+}
+
+// The web server answers the local network only, the web interface included, unless the policy says otherwise.
+func TestAddressesOutsideTheLocalNetworkAreRefused(t *testing.T) {
+	policy := access.New(nil)
+	s := &Server{ISODir: t.TempDir(), Base: "http://10.0.0.1:8080", Access: policy,
+		Mount: map[string]http.Handler{"/admin/": http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "page") })}}
+	h := s.Handler()
+	ask := func(from, path string) int {
+		req := httptest.NewRequest("GET", path, nil)
+		req.RemoteAddr = from + ":5555"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	for _, path := range []string{"/boot.ipxe", "/admin/", "/health", "/iso/x.iso"} {
+		if code := ask("203.0.113.9", path); code != 403 {
+			t.Errorf("a public address got %d for %s", code, path)
+		}
+		if code := ask("192.168.1.20", path); code == 403 {
+			t.Errorf("a local address was refused for %s", path)
+		}
+	}
+	_ = policy.Set([]string{"203.0.113.0/24"}, false)
+	if code := ask("203.0.113.9", "/health"); code != 200 {
+		t.Errorf("an allowed network was refused: %d", code)
+	}
+	if st := policy.Stats(); st.Refused != 4 {
+		t.Errorf("refusals counted: %d", st.Refused)
 	}
 }

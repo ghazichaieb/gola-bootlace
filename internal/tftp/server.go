@@ -44,6 +44,8 @@ type Server struct {
 	// LocalIP is this server's address as the clients reach it. Answers leave from it: on a computer with several networks the operating system
 	// might otherwise answer from another network's address, which a PC's firmware rejects.
 	LocalIP net.IP
+	// Allow, when set, is asked about every client: a request from an address it refuses is not answered.
+	Allow func(net.Addr) bool
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -62,6 +64,9 @@ func (s *Server) Serve(conn net.PacketConn) error {
 				return nil
 			}
 			return err
+		}
+		if s.Allow != nil && !s.Allow(client) {
+			continue
 		}
 		request := append([]byte(nil), buf[:n]...)
 		if n >= 2 && binary.BigEndian.Uint16(request) == opRRQ {

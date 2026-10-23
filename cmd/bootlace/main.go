@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/admin"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/dhcp"
@@ -142,10 +143,17 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			logf("cannot keep the share's password in the settings file: %v", err)
 		}
 	}
+	policy := access.New(logf)
+	if a := store.Get().Access; policy.Set(a.Networks, a.AllowPublic) != nil {
+		logf("the saved list of allowed networks is not valid: only the local network is answered")
+	}
+	if err := access.ServerAddress(ip); err != nil {
+		logf("warning: %v", err)
+	}
 	lib := openLibrary(store, *isoDir, logf)
 	sup := &service.Supervisor{Gate: lib.Check, Grace: 30 * time.Second, Logf: logf}
 	dataDir := filepath.Dir(*configPath)
-	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
+	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Access: policy, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
 		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort, ISCSIPort: *iscsiPort}
 	if winpe.Wimlib(*wimlibFlag) == "" {
 		logf("wimlib-imagex was not found: Windows cannot be started with UEFI Secure Boot on (install wimtools)")
@@ -164,7 +172,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		}
 		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
 			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}
-		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Logf: logf}).Mount()
+		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Access: policy, ServerIP: ip.String(), Logf: logf}).Mount()
 		logf("web interface: %s/admin/", base)
 	}
 	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
@@ -181,7 +189,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	addServices(sup, serverPlan{ip: ip, web: web, lib: lib, httpPort: *httpPort, smbPort: *smbPort, nbdPort: *nbdPort, iscsiPort: *iscsiPort,
-		smbUser: "bootlace", smbPassword: smbPassword, smbForward: *smbForward, debugSMB: *debugSMB, dhcp: responder, logf: logf})
+		smbUser: "bootlace", smbPassword: smbPassword, smbForward: *smbForward, debugSMB: *debugSMB, dhcp: responder, allow: policy.AllowedAddr, logf: logf})
 	go func() { // follows the library: no library, no server
 		for range time.Tick(5 * time.Second) {
 			sup.Reconcile()

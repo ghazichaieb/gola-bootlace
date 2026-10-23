@@ -21,6 +21,11 @@ func (b Boot) Respond(req *Packet) (*Packet, bool) { return b.Reply(req) }
 // Serve reads requests from conn until it is closed and sends what the responder says. It runs on any port: 67 (the DHCP server port, where
 // discover messages are broadcast) and 4011 (where a PXE client asks the boot server directly) are two calls with two sockets.
 func Serve(conn *net.UDPConn, r Responder, logf func(format string, args ...any)) error {
+	return ServeFiltered(conn, r, logf, nil)
+}
+
+// ServeFiltered is Serve that does not answer a source address that allow refuses (nil: every address is answered).
+func ServeFiltered(conn *net.UDPConn, r Responder, logf func(format string, args ...any), allow func(net.Addr) bool) error {
 	buf := make([]byte, 1500)
 	for {
 		n, src, err := conn.ReadFromUDP(buf)
@@ -29,6 +34,9 @@ func Serve(conn *net.UDPConn, r Responder, logf func(format string, args ...any)
 				return nil
 			}
 			return err
+		}
+		if allow != nil && !allow(src) {
+			continue
 		}
 		req, err := Parse(buf[:n])
 		if err != nil {

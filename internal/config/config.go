@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ghazichaieb/gola-bootlace/internal/access"
 )
 
 // Rule says where one PC goes when it starts from the network.
@@ -38,6 +40,7 @@ type Config struct {
 	SMBPassword string            `json:"smbPassword"` // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
 	Library     Library           `json:"library"`     // the folder with the ISOs; empty until one is chosen
 	NoAutoStart bool              `json:"noAutoStart"` // the services stay stopped when the program starts, until they are started in the web interface
+	Access      Access            `json:"access"`      // which addresses may use the server, besides the local network
 }
 
 // Library is the folder the ISOs are in, as it was added (see package library): its path and the id that was written into its marker.
@@ -86,6 +89,9 @@ func (c *Config) Validate() error {
 	}
 	if !defaultAction.MatchString(c.Default) {
 		return errors.New("the default entry is not valid")
+	}
+	if _, err := access.Parse(c.Access.Networks); err != nil {
+		return err
 	}
 	if (c.Library.Path == "") != (c.Library.ID == "") || strings.ContainsAny(c.Library.Path, "\r\n\x00") || len(c.Library.Path) > 4096 {
 		return errors.New("the library setting is not valid")
@@ -161,6 +167,7 @@ func (c Config) clone() Config {
 		d.Args[k] = v
 	}
 	d.Rules = append([]Rule(nil), c.Rules...)
+	d.Access.Networks = append([]string(nil), c.Access.Networks...)
 	return d
 }
 
@@ -261,4 +268,10 @@ func (s *Store) save() error {
 		return err
 	}
 	return os.Rename(tmp.Name(), s.path)
+}
+
+// Access says which addresses the server answers: the local network always (see package access), and these as well.
+type Access struct {
+	Networks    []string `json:"networks"`    // more networks, for example 100.64.0.0/10 for a VPN
+	AllowPublic bool     `json:"allowPublic"` // answer any address (the server is then reachable from the internet if its ports are)
 }

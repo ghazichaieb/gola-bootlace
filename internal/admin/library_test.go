@@ -123,3 +123,33 @@ func TestAutoStartIsASetting(t *testing.T) {
 		t.Fatal("not kept")
 	}
 }
+
+func TestAccessSettings(t *testing.T) {
+	r := newRig(t)
+	if code, _ := r.do("GET", "/api/access", nil, nil); code != 401 {
+		t.Fatalf("without a login: %d", code)
+	}
+	r.login()
+	if code, out := r.do("GET", "/api/access", nil, nil); code != 200 || out["warning"] != nil {
+		t.Fatalf("a local server address must not warn: %d %v", code, out)
+	}
+	if code, _ := r.do("PUT", "/api/access", map[string]any{"networks": []string{"100.64.0.0/10", "203.0.113.7"}}, nil); code != 200 {
+		t.Fatalf("add networks: %d", code)
+	}
+	if c := r.store.Get(); len(c.Access.Networks) != 2 || c.Access.AllowPublic {
+		t.Fatalf("not kept: %+v", c.Access)
+	}
+	if code, _ := r.do("PUT", "/api/access", map[string]any{"networks": []string{"0.0.0.0/0"}}, nil); code != 400 {
+		t.Fatalf("a network that is most of the internet: %d", code)
+	}
+	// answering any address has to be confirmed, and a refused change changes nothing
+	if code, out := r.do("PUT", "/api/access", map[string]any{"allowPublic": true}, nil); code != 409 || out["needsConfirm"] != true {
+		t.Fatalf("without confirm: %d %v", code, out)
+	}
+	if r.store.Get().Access.AllowPublic {
+		t.Fatal("applied without a confirmation")
+	}
+	if code, _ := r.do("PUT", "/api/access", map[string]any{"allowPublic": true, "confirm": true}, nil); code != 200 || !r.store.Get().Access.AllowPublic {
+		t.Fatalf("confirmed: %d", code)
+	}
+}

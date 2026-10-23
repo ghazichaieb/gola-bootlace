@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
@@ -81,7 +82,7 @@ func newRig(t *testing.T) *rig {
 	sup := &service.Supervisor{Gate: lib.Check}
 	probe := &probeService{}
 	sup.Add(service.Def{ID: "probe", Title: "Probe", Start: probe.start})
-	a := New(Options{Store: store, Log: lg, Backend: b, Library: lib, Services: sup, Facts: [][2]string{{"Server address", "10.0.0.1"}}})
+	a := New(Options{Store: store, Log: lg, Backend: b, Library: lib, Services: sup, Access: access.New(nil), ServerIP: "192.168.1.5", Facts: [][2]string{{"Server address", "10.0.0.1"}}})
 	mux := http.NewServeMux()
 	for p, h := range a.Mount() {
 		mux.Handle(p, h)

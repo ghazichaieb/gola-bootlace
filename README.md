@@ -82,7 +82,7 @@ asking"), and watch what is happening. It is described in [docs/web-interface.md
 - **Windows ISOs** read their installation files from a small read-only file share the server runs itself (port 445). A Windows server already uses that port for its own
   sharing: use `-smb-port` or run Bootlace on a Linux machine, a container or a Proxmox host.
 - **Speed:** a gigabit network is fine. An installer reads from the server as it goes, so a slow network makes a slow installation.
-- **It is a tool for a trusted network.** It does not log anyone in or encrypt anything; do not run it on a network you do not control.
+- **It is a tool for a local network, and answers only the local network.** Every service refuses addresses that are not private (10.x.x.x, 172.16-31.x.x, 192.168.x.x), loopback or link-local; other networks (a VPN's, for example) are added under Server in the web interface. Do not forward its ports to the internet: the network disk and iSCSI have no login, the web page is not encrypted, and the Windows share is a small server written for this project. To install a PC from outside, use a VPN to reach the local network.
 
 ---
 

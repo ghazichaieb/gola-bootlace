@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/diskimg"
@@ -34,7 +35,9 @@ type Server struct {
 	// Library, when set, is the folder the ISOs are in and replaces ISODir; it can be changed while the server runs.
 	Library *library.Library
 	// Active, when set, says whether PCs are served: while it is false everything but the web interface answers "stopped".
-	Active      func() bool
+	Active func() bool
+	// Access, when set, decides which addresses are answered (the local network by default).
+	Access      *access.Policy
 	Base        string // how PCs reach this server, for example http://192.168.88.1:8080 (no trailing slash)
 	Logf        func(format string, args ...any)
 	Menu        menu.Options // which entry is chosen when nobody chooses, and after how many seconds
@@ -125,6 +128,10 @@ func (s *Server) isoDir() string {
 // gated lets the web interface through always, and everything else only while the server is running; the PCs that are being served right now are counted.
 func (s *Server) gated(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.Access != nil && !s.Access.AllowedAddr(addrOf(r.RemoteAddr)) { // every page, the web interface included
+			http.Error(w, "Gola Bootlace answers the local network only", http.StatusForbidden)
+			return
+		}
 		p := r.URL.Path
 		if p == "/" || p == "/health" || strings.HasPrefix(p, "/admin/") || strings.HasPrefix(p, "/api/") {
 			next.ServeHTTP(w, r)
@@ -152,6 +159,15 @@ func (s *Server) gated(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// addrOf is the address of a "host:port" string, as a net.Addr.
+func addrOf(hostport string) net.Addr {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	return &net.IPAddr{IP: net.ParseIP(host)}
 }
 
 // Sessions are the PCs that are fetching something over the web port right now, once each.

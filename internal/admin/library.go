@@ -3,8 +3,10 @@
 package admin
 
 import (
+	"net"
 	"net/http"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 )
@@ -134,4 +136,57 @@ func (a *Admin) servicesAutoStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, a.servicesData())
+}
+
+// ---- who may use the server
+
+func (a *Admin) accessData() map[string]any {
+	d := map[string]any{"stats": a.o.Access.Stats()}
+	if ip := net.ParseIP(a.o.ServerIP); ip != nil {
+		if err := access.ServerAddress(ip); err != nil {
+			d["warning"] = err.Error()
+		}
+	}
+	return d
+}
+
+func (a *Admin) accessGet(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, a.accessData())
+}
+
+// accessSet changes the networks that are answered besides the local one. Answering any address has to be confirmed in the request.
+func (a *Admin) accessSet(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Networks    []string `json:"networks"`
+		AllowPublic bool     `json:"allowPublic"`
+		Confirm     bool     `json:"confirm"` // the person agreed that the server answers any address
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if in.AllowPublic && !in.Confirm && !a.o.Access.Stats().AllowPublic {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "answering any address needs a confirmation", "needsConfirm": true})
+		return
+	}
+	nets, err := access.Parse(in.Networks)
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	list := make([]string, 0, len(nets))
+	for _, n := range nets {
+		list = append(list, n.String())
+	}
+	if err := a.o.Store.Update(func(c *config.Config) error {
+		c.Access = config.Access{Networks: list, AllowPublic: in.AllowPublic}
+		return nil
+	}); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	_ = a.o.Access.Set(list, in.AllowPublic)
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: allowed networks changed (%d extra, from anywhere: %v)", len(list), in.AllowPublic)
+	}
+	writeJSON(w, http.StatusOK, a.accessData())
 }

@@ -5,6 +5,8 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **Local network only.** Every service (web page and menu, Windows share, iSCSI, network disk, TFTP, DHCP) now refuses addresses that are not local (private ranges, loopback, link-local). More networks, or "from anywhere" with a confirmation, are set under Server in the web interface; refusals are counted there, and a public server address gives a warning. (#38)
+
 - The ISO folder is now a **library**, chosen in the web interface (Server page, with a folder picker). It must be readable and writable and is recognised by a marker in its `.bootlace` folder: a missing network drive is never mistaken for it, and nothing is served or written then. `-iso-dir` only adds the library on the first start.
 - The services PCs talk to can be started and stopped in the web interface, with a warning when PCs are connected; a port that is already taken is reported there instead of ending the program. The server stops after 30 seconds without the library and starts again by itself when it is back.
 - Hidden folders and files (`.bootlace`, `._name.iso`) are never offered as ISOs.

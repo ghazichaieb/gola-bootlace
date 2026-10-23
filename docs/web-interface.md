@@ -70,3 +70,14 @@ network drive that stalls for a moment does not end the installs that are runnin
 
 The server is the group of services the PCs talk to. **Stop the server** closes them all (the web page stays up); the page lists who is connected and asks
 before it interrupts anyone. A service that cannot start (another program holds its port) is shown with the reason and the others keep running.
+
+## Who may use the server
+
+Every service answers the local network only: private addresses (10.x.x.x, 172.16-31.x.x, 192.168.x.x and the IPv6 equivalents), the computer itself and
+link-local addresses. A request from any other address is refused (the web page answers 403, the other services close the connection or stay silent), counted
+under **Server > Who may use the server**, and written to the log once an hour for each address. Extra networks (a VPN's, say) are added there, one per line;
+a network that is most of the internet is refused, and "answer addresses from anywhere" is a separate switch that asks for a confirmation. The server shows a
+warning when its own address is a public one.
+
+This is a guard against a port forwarded by mistake, not a security boundary: inside the local network there is no login on the network disk and iSCSI, and
+the web page is plain HTTP. Do not expose the server to the internet; use a VPN to reach the local network instead.

@@ -11,6 +11,8 @@ import (
 // Listener wraps a listener and keeps the connections it accepted until they are closed.
 type Listener struct {
 	net.Listener
+	// Allow, when set, is asked about every connection: one it refuses is closed at once and never reaches the service.
+	Allow func(net.Addr) bool
 
 	mu    sync.Mutex
 	conns map[net.Conn]struct{}
@@ -21,17 +23,23 @@ func Track(l net.Listener) *Listener {
 	return &Listener{Listener: l, conns: map[net.Conn]struct{}{}}
 }
 
-// Accept returns the next connection, which is forgotten again when it is closed.
+// Accept returns the next connection that is allowed, which is forgotten again when it is closed.
 func (l *Listener) Accept() (net.Conn, error) {
-	c, err := l.Listener.Accept()
-	if err != nil {
-		return nil, err
+	for {
+		c, err := l.Listener.Accept()
+		if err != nil {
+			return nil, err
+		}
+		if l.Allow != nil && !l.Allow(c.RemoteAddr()) {
+			_ = c.Close()
+			continue
+		}
+		t := &conn{Conn: c, owner: l}
+		l.mu.Lock()
+		l.conns[t] = struct{}{}
+		l.mu.Unlock()
+		return t, nil
 	}
-	t := &conn{Conn: c, owner: l}
-	l.mu.Lock()
-	l.conns[t] = struct{}{}
-	l.mu.Unlock()
-	return t, nil
 }
 
 // Sessions are the addresses connected right now, once each.

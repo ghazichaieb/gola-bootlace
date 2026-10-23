@@ -277,19 +277,42 @@ function serverBanner(lib, svc) {
 
 async function pageServer() {
   const page = $("#page");
-  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div>`;
+  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="accesscard" style="margin-top:14px"></div>`;
   let last = "";
   const draw = async (force) => {
-    const [lib, svc] = await Promise.all([api("/api/library"), api("/api/services")]);
-    const key = JSON.stringify([lib, svc]);
+    const [lib, svc, acc] = await Promise.all([api("/api/library"), api("/api/services"), api("/api/access")]);
+    const key = JSON.stringify([lib, svc, acc]);
     if (key === last && !force) return;
     last = key;
     $("#sbanner").innerHTML = serverBanner(lib.library, svc);
     drawLibrary(lib.library, () => draw(true));
     drawServices(svc, () => draw(true));
+    if (force || !$("#accesscard").contains(document.activeElement)) drawAccess(acc, () => draw(true)); // (not while the person is typing in it)
   };
   await guard(draw)(true);
   every(4000, () => draw(false));
+}
+
+function drawAccess(acc, refresh) {
+  const s = acc.stats;
+  $("#accesscard").innerHTML = `<h2>Who may use the server</h2>
+    ${acc.warning ? `<p class="banner bad">${esc(acc.warning)}.</p>` : ""}
+    <p class="small muted">Bootlace is for a local network. Addresses of the local network (10.x.x.x, 172.16-31.x.x, 192.168.x.x and the computer itself) are always answered, on every service; every other address is refused. Do not forward its ports to the internet: to reach it from outside, use a VPN.</p>
+    <div class="field"><label for="nets">Other networks that may use it (one per line, like <code>100.64.0.0/10</code>)</label>
+      <textarea id="nets" rows="3" style="width:100%;border:1px solid var(--line);border-radius:9px;padding:8px 11px;background:var(--panel);color:inherit;font:inherit" placeholder="for example the addresses of a VPN">${esc(s.networks.join("\n"))}</textarea></div>
+    <label class="row small" style="font-weight:500;margin:0 0 10px"><span class="switch"><input type="checkbox" id="pub" ${s.allowPublic ? "checked" : ""} aria-label="Answer addresses from anywhere"><span></span></span> Answer addresses from anywhere, the internet included (not recommended)</label>
+    <div class="row"><button class="btn primary" id="saveacc">Save</button>
+    <span class="small muted">${s.refused ? `${s.refused} request${s.refused > 1 ? "s" : ""} from outside refused since the start${s.recent.length ? " (latest: " + esc(s.recent.slice(0, 3).join(", ")) + ")" : ""}.` : "Nothing from outside has been refused."}</span></div>`;
+  $("#saveacc").onclick = guard(async () => {
+    const body = { networks: $("#nets").value.split(/\r?\n/).map(x => x.trim()).filter(Boolean), allowPublic: $("#pub").checked };
+    try { await api("/api/access", "PUT", body); }
+    catch (e) {
+      if (e.status !== 409 || !(e.data && e.data.needsConfirm)) throw e;
+      if (!await ask("Answer any address?", "The server, its ISOs and its web page will be open to everyone who can reach its ports, the internet included. There is no login on the network disk and iSCSI, and the web page is not encrypted.", "Answer any address")) { refresh(); return; }
+      await api("/api/access", "PUT", { ...body, confirm: true });
+    }
+    toast("Saved"); refresh();
+  });
 }
 
 function drawLibrary(lib, refresh) {

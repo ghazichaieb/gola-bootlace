@@ -170,3 +170,28 @@ func TestTrackedListener(t *testing.T) {
 		t.Fatal("still listening after Shutdown")
 	}
 }
+
+func TestListenerRefusesWhatItIsToldTo(t *testing.T) {
+	raw, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	l := Track(raw)
+	refused := make(chan struct{}, 1)
+	l.Allow = func(a net.Addr) bool { refused <- struct{}{}; return false }
+	go func() { _, _ = l.Accept() }()
+	c, err := net.Dial("tcp", raw.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	<-refused
+	c.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, err := c.Read(make([]byte, 1)); err == nil {
+		t.Fatal("a refused connection was kept open")
+	}
+	if len(l.Sessions()) != 0 {
+		t.Fatal("a refused connection is listed")
+	}
+	l.Shutdown()
+}
