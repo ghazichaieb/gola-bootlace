@@ -36,6 +36,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/tidy"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
 	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
+	"github.com/ghazichaieb/gola-bootlace/internal/wol"
 )
 
 func main() {
@@ -257,7 +258,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
 			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}
 		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Access: policy, ServerIP: ip.String(), Importer: imp, Indexer: indexer, Logf: logf,
-			PXE: pxeChecker, Sync: settingsCopy, Version: version.Version, SelfTest: func() selftest.Target {
+			PXE: pxeChecker, Sync: settingsCopy,
+			Wake: func(mac net.HardwareAddr) error {
+				return wol.Send(mac, ip, net.JoinHostPort(wol.Broadcast(ip, maskOf(ip)).String(), "9"), "255.255.255.255:9")
+			}, Version: version.Version, SelfTest: func() selftest.Target {
 				t := selftest.Target{IP: ip.String(), HTTP: *httpPort, SMB: *smbPort, NBD: *nbdPort, ISCSI: *iscsiPort}
 				if infos, err := web.ISOInfos(); err == nil && len(infos) > 0 {
 					t.ISOPath = httpd.ISOPath(infos[0].Name)

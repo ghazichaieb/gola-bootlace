@@ -73,7 +73,9 @@ type Options struct {
 	Sync *backup.Sync
 	// Version is the program's version, written into the backups.
 	Version string
-	Logf    func(format string, args ...any)
+	// Wake sends a Wake-on-LAN packet for a PC (a MAC address); without it the PCs page has no Wake button.
+	Wake func(mac net.HardwareAddr) error
+	Logf func(format string, args ...any)
 }
 
 // Admin serves the pages and the API.
@@ -123,6 +125,7 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("DELETE /api/pcs/{mac}", a.authed(a.pcForget))
 	api.HandleFunc("POST /api/pcs/clean", a.authed(a.pcClean))
 	api.HandleFunc("PUT /api/pcs/{mac}/name", a.authed(a.pcRename))
+	api.HandleFunc("POST /api/pcs/{mac}/wake", a.authed(a.pcWake))
 	api.HandleFunc("POST /api/rules", a.authed(a.ruleSet))
 	api.HandleFunc("DELETE /api/rules/{mac}", a.authed(a.ruleDelete))
 	api.HandleFunc("GET /api/log", a.authed(a.logLines))
@@ -907,6 +910,28 @@ func (a *Admin) pcRename(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.o.Logf != nil {
 		a.o.Logf("web interface: %s is called %q now", mac, strings.TrimSpace(in.Name))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// pcWake sends a Wake-on-LAN packet to a PC. The PC wakes up only if its network card and its firmware are set to wake on that packet.
+func (a *Admin) pcWake(w http.ResponseWriter, r *http.Request) {
+	mac, ok := config.NormalizeMAC(r.PathValue("mac"))
+	if !ok {
+		fail(w, http.StatusBadRequest, "that is not a MAC address (like aa:bb:cc:dd:ee:ff)")
+		return
+	}
+	if a.o.Wake == nil {
+		fail(w, http.StatusNotFound, "waking PCs is not available")
+		return
+	}
+	hw, _ := net.ParseMAC(mac)
+	if err := a.o.Wake(hw); err != nil {
+		fail(w, http.StatusBadGateway, "the packet could not be sent: "+err.Error())
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: Wake-on-LAN packet sent to %s", mac)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
