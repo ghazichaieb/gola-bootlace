@@ -58,6 +58,10 @@ func TestACasperLikeIsoIsStartedOnTheNetworkDiskWithItsOwnArguments(t *testing.T
 			t.Errorf("lacks %q\n%s", want, lines(b))
 		}
 	}
+	// Debian's and Ubuntu's installers copy what follows "---" into the installed system's kernel command line: nothing of Bootlace's may come after it
+	if words := strings.Fields(strings.Split(lines(b), "\n")[0]); words[len(words)-1] != "---" {
+		t.Errorf("the arguments do not end with the menu's own ---: %v", words)
+	}
 	for _, unwanted := range []string{"findiso", "toram"} { // they look for the ISO on a disk
 		if strings.Contains(lines(b), unwanted) {
 			t.Errorf("has %q\n%s", unwanted, lines(b))
@@ -118,7 +122,7 @@ func TestAnArchisoWithoutNetworkHooksGetsAHookOfItsOwn(t *testing.T) {
 	if !ok || !strings.HasPrefix(b.Family, "Arch-style (archiso, no network hooks)") || !b.HasOwnExtra() {
 		t.Fatalf("%q %v own=%v", b.Family, ok, b.HasOwnExtra())
 	}
-	if !strings.Contains(lines(b), "archisodevice=/dev/nbd0 copytoram=n quiet") {
+	if !strings.Contains(lines(b), "archisodevice=/dev/nbd0 copytoram=n console=tty0 quiet") {
 		t.Errorf("%s", lines(b))
 	}
 	if _, ok := generic(t, iso, urls); ok {

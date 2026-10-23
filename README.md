@@ -7,49 +7,154 @@
 
 # Gola Bootlace
 
-A network boot server for ISO files: put your ISOs in a folder, and any PC on the network can boot and install from them over PXE.
-No USB sticks. Think of [Ventoy](https://github.com/ventoy/Ventoy), but over the network.
+**Install Windows and Linux on any PC without a USB stick.** Put your ISO files in a folder on one computer; every other PC on the network can start any of them from its
+boot menu, run it, and install it. Think of [Ventoy](https://github.com/ventoy/Ventoy), but over the network.
 
-**Status: early, but it works for the ISOs in [docs/compatibility.md](docs/compatibility.md)** (UEFI so far; legacy BIOS PXE starts but is only half
-tested). Alpine, Ubuntu, CachyOS, Proxmox VE and TrueNAS boot from their own ISO, and Windows 11 and Windows Server install over the network from an
-unmodified ISO. FreeBSD/pfSense is in progress. Secure Boot is not supported yet (switch it off on the PC). The goals below are the full plan.
+**Status: early.** It works on the ISOs listed in [docs/compatibility.md](docs/compatibility.md), tested in a lab of virtual machines (Proxmox and Hyper-V), with a
+handful of real PCs still to try. The ISO files are never changed.
 
-## Goals
+---
 
-- Boot unmodified Windows and Linux ISOs (and BSD where possible), straight from the ISO file. The ISO is never changed.
-- One small server program that runs the same way in a Proxmox LXC container and in Docker Compose.
-- Leave the network's existing DHCP server alone (proxyDHCP), with an optional full DHCP mode.
-- BIOS and UEFI clients; ARM64 and Secure Boot later.
-- A public, tested compatibility list: an ISO is listed as working only after it has actually booted in our test rig.
+## For everyone
 
-## How it will work (short version)
+### What is it, in plain words
 
-The server speaks proxyDHCP, TFTP and HTTP and hands clients an iPXE boot menu built from the ISO folder. Linux ISOs start their own kernel
-with a small helper that downloads the ISO into RAM and makes it look like a disc; Windows ISOs start their setup environment with a helper that
-attaches the ISO from a network share. Read [docs/start-plan.md](docs/start-plan.md) for the plan and the phases, and
-[docs/compatibility.md](docs/compatibility.md) for what has been tested.
+Normally, to install an operating system you copy an ISO file onto a USB stick, plug it into the PC, and start the PC from the stick. Do that for twenty PCs and ten different
+systems and you have a drawer of sticks and a lot of waiting.
 
-## Trying it
+Modern PCs can also start **from the network** (this is called *PXE*, or "network boot"). Bootlace is the program that answers them. It lives on one always-on computer (a small
+server, a spare PC, a Proxmox container), looks in a folder of ISO files, and shows every PC that asks a **menu** of what it can start. Choose Windows 11 or
+Ubuntu or a rescue tool, and the PC runs it, reading the ISO from the server across the network.
 
-Put ISOs in a folder, then on a computer that is on the same network as the PCs (the network keeps its own DHCP server):
+You get:
+- one folder of ISOs instead of a drawer of sticks; add an ISO by copying a file, remove it by deleting the file;
+- the same menu on every PC, UEFI or older BIOS, without touching its settings beyond "boot from network";
+- ISOs that start **as they are**: nothing is unpacked or edited on the way.
+
+### What you need
+
+- **A server**: any computer that stays on while PCs are installed (Windows, Linux, or a [Proxmox container](docs/proxmox.md)), on the same network as the PCs, with space for the ISOs.
+- **The ISO files** you want to offer (Windows, Linux, rescue tools, ...).
+- **PCs that can network boot** (almost all can: look for "PXE", "Network boot" or "IPv4" in the boot menu or BIOS), connected by **cable**. Wi-Fi does not work for this.
+- A normal home or office network. **You do not have to change your router**: Bootlace answers only PCs that ask to network boot and leaves the network's own DHCP server alone.
+
+### Using it, step by step
+
+1. **Get the program** (`bootlace`, one file; build it as described in [For developers](#for-developers), or use the Proxmox script below).
+2. **Make a folder** for the ISOs and copy them in. (They can be in sub-folders. `.iso` files, disk images `.img`, and packed ones such as `.iso.xz` or `.zip` are all accepted.)
+3. **Start it** on the server:
+   ```
+   bootlace serve -iso-dir /path/to/the/isos
+   ```
+   The first time it prints a password for the management page.
+4. **On the PC you want to install**: switch it on and choose **boot from network** (often F12, F11 or Esc at the start; or set the boot order). It gets a boot screen with the
+   Bootlace logo and a menu of your ISOs.
+5. **Choose one with the arrow keys and Enter.** It starts. Install as you always would.
+6. **After the installation, the PC restarts** and asks the network again, and the menu waits for a choice. Pick **"Boot from this PC's own disk"**, or start the server with
+   `-menu-local -menu-timeout 5`, which does it by itself after five seconds (or give one PC a rule on the management page).
+
+That is all. Stop the program and nothing is left on the PCs.
+
+### The management page
+
+Open `http://<server address>:8080/admin/` in a browser (the password is in the server's log the first time, or set it with `-admin-password`). There you can see the PCs that
+asked for a menu, rename or hide an ISO, choose what starts by itself after some seconds, give one PC a rule ("always boot from your own disk", "start this ISO without
+asking"), and watch what is happening. It is described in [docs/web-interface.md](docs/web-interface.md).
+
+### Running it for good
+
+- **Proxmox:** one command on the host makes a small container with Bootlace in it ([docs/proxmox.md](docs/proxmox.md)).
+- **Docker:** not ready yet (`deploy/docker-compose.yml` is a placeholder; it needs host networking, because network boot uses broadcast traffic that Docker's normal network does not pass).
+- **On a PC or laptop** for a quick job: just run it, as above. Windows needs one extra thing: its own file sharing must not hold port 445 (see below).
+
+### Good to know
+
+- **Which systems work, and how well:** [docs/compatibility.md](docs/compatibility.md) lists every ISO tried and what happened. An ISO is marked as working only after it started in the test lab.
+- **A system that is not on the list may still work.** Bootlace recognises well-known systems by their files, and for others it reads the ISO's own boot menu and looks at its
+  start-up disk to see what it is made of. A few seconds after you add an ISO, the menu shows what it found.
+- **Does it change what is installed or how the system runs?** The installed system is the installer's own, and Bootlace never writes to the ISO or the PC's disks. But a system that runs from
+  the network does not start exactly as it would from a disc: the network has to stay up, and a few features that need the boot stick (Tails's persistent storage, for example) are not
+  there. Read [docs/what-bootlace-changes.md](docs/what-bootlace-changes.md) before relying on it for something important.
+- **Secure Boot** (a firmware setting) blocks the programs Bootlace starts with. Switch it off on the PC, except for Windows and Ubuntu, which have a way through ([docs/secure-boot.md](docs/secure-boot.md)).
+- **Windows ISOs** read their installation files from a small read-only file share the server runs itself (port 445). A Windows server already uses that port for its own
+  sharing: use `-smb-port` or run Bootlace on a Linux machine, a container or a Proxmox host.
+- **Speed:** a gigabit network is fine. An installer reads from the server as it goes, so a slow network makes a slow installation.
+- **It is a tool for a trusted network.** It does not log anyone in or encrypt anything; do not run it on a network you do not control.
+
+---
+
+## For developers
+
+### How it works
 
 ```
-bootlace serve -iso-dir /path/to/isos
+ PC (firmware, PXE)              Bootlace server                          what it reads
+ ──────────────────              ───────────────                          ─────────────
+ asks for a boot file ─ DHCP ──> proxyDHCP (67, 4011)  answers only PXE requests; the
+                                                      network's own DHCP gives the address
+ fetches iPXE ──────── TFTP ───> TFTP (69)            ipxe.efi / undionly.kpxe (built in)
+ iPXE asks for a menu ─ HTTP ──> web server (8080)    /menu?mac=...  a script made for that PC
+ iPXE loads the system ─ HTTP ─> /fs/<iso>/<path>     files taken out of the ISO as they are asked for
+ the system reads its ISO ─────> NBD (10809)          the ISO (or a partition of an image) as a network
+                                  iSCSI (3260)        block disk / a network CD, read-only, piece by piece
+ Windows Setup ──────── SMB ───> share (445)          the ISO's files, read-only
 ```
 
-and set the PC to boot from the network (PXE). The menu lists every ISO. The management page is at `http://<server>:8080/admin/` (password in the log the first time: [docs/web-interface.md](docs/web-interface.md)). Windows installs read their files from a
-read-only share the program serves itself (port 445, or `-smb-port` when something else holds it; Windows' own file sharing does on a Windows host).
-After an installation restarts the PC, choose "Boot from this PC's own disk" (or start the server with `-menu-local -menu-timeout 5`).
-`tools/lab.ps1` builds and starts a Hyper-V test bench; see its header.
+Everything is one Go program (`cmd/bootlace`), with the iPXE binaries and a small helper (`cmd/bootlace-nbd`, a static Linux program that runs in the PC's initramfs) built in.
 
-## Building
+1. **The menu.** For every file of the ISO folder the server decides *what it is* and writes the iPXE commands that start it (`internal/httpd`, `internal/family`). A file it does not
+   know is handed to the PC as a CD or disk over iSCSI.
+2. **Starting a Linux.** iPXE loads the kernel and start-up disk *from inside the ISO* (`/fs/...`, read without unpacking by the `iso9660`, `udf`, `fat` and `partition` packages),
+   plus an **extra initramfs archive** that the kernel unpacks over the ISO's own. The kernel is told where the ISO is, and the start-up disk mounts it as a network block disk, so a PC
+   needs no memory for the ISO.
+3. **What the extra archive adds** depends on how the start-up disk is made: a stand-in for the `nfsmount` command (casper, live-boot), a handler for `netroot=nbd:` (dracut), a hook (mkinitcpio),
+   a changed copy of the start-up script (Proxmox), network card drivers it lacks (read out of the ISO's own squashfs), a script run before `/init` (`rdinit=`).
+4. **Starting Windows.** wimboot loads the ISO's `boot.wim` (WinPE); a small command file connects the share and runs the real `setup.exe` from it. With Secure Boot on, Windows' own boot
+   manager is used instead.
+5. **Systems that are not known by name.** `family.DetectGeneric` reads the ISO's boot menus (`internal/bootcfg`: isolinux, GRUB, systemd-boot), looks into the start-up disk to say what it is
+   (casper, live-boot, archiso, dracut) and applies the strategy of that make, in the background so the menu is not held up.
+6. **Disk images and packed files.** `.img`/`.raw` are shown as hard disks (or started from the files on their partitions when they hold a system Bootlace knows, e.g. Tails, Lakka); packed
+   (`.xz`, `.gz`, `.zst`, `.bz2`) and `.zip` files are unpacked once, on request, into a cache folder.
 
-You need Go (see `go.mod` for the version).
+The model is **locator → strategy → extra archive**, with four **transports** (network disk, iSCSI, HTTP, memory). It is written up, with a table of the injection techniques, the pitfalls that
+shaped the code, and a recipe for adding a system, in **[docs/architecture.md](docs/architecture.md)**.
+
+### Layout
+
+| Path | What is in it |
+|---|---|
+| `cmd/bootlace` | the server; `bootlace serve`, and `bootlace inspect <iso>` which says how the server would start an ISO |
+| `cmd/bootlace-nbd` | the network disk client that runs in the PC's initramfs |
+| `internal/family`, `bootcfg` | recognising systems and how to start them; reading boot menus |
+| `internal/initrd`, `initread` | writing the extra archive; reading initramfs files and kernel modules |
+| `internal/httpd`, `admin`, `menu` | the web server, the management page, the boot menu |
+| `internal/nbd`, `iscsi`, `smbshare`, `tftp`, `dhcp` | the network services |
+| `internal/disc`, `iso9660`, `udf`, `fat`, `partition`, `diskimg`, `isos` | reading ISOs, images and archives |
+| `internal/winpe`, `handoff` | Windows set-up, and the chains that need the PC's own firmware (FreeBSD, Secure Boot) |
+| `tools/` | the lab: Proxmox and Hyper-V scripts that boot ISOs in virtual machines and take pictures; the iPXE build |
+| `docs/` | architecture, compatibility results, Secure Boot, Proxmox, the web interface |
+
+### Building and testing
+
+You need Go (see `go.mod`). Windows boot with Secure Boot needs `wimlib-imagex` on the path.
 
 ```
 go build ./cmd/bootlace
-go test ./...
+go vet ./... && go test ./...
 ```
+
+Two sets of tests need real files and are skipped without them: `BOOTLACE_TEST_ISODIR=<folder of ISOs> go test ./internal/family` checks that every ISO that was tried is still recognised the
+same way (by name and by the generic path) and that its archive still builds, and `BOOTLACE_TEST_DISK=<an image>` reads a disk image's partitions. The lab scripts in `tools/proxmox` and
+`tools/*.ps1` boot ISOs in virtual machines (`pve_run.sh` and `lab_run.ps1`), BIOS and UEFI, and keep a screenshot of each.
+
+Build for a Linux server or container: `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o bootlace-linux-amd64 ./cmd/bootlace`. The helper is rebuilt with `tools/build_helper.sh`.
+
+### Teaching it a new system
+
+Add a function to the file of its group in `internal/family`, list it in `detectors`, test it with a fake tree and (if you have the ISO) in `real_test.go`, try it in the lab, and write
+the result in `docs/compatibility.md`. [docs/architecture.md](docs/architecture.md) has the details.
+
+---
 
 ## Licence
 

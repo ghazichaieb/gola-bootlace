@@ -177,3 +177,29 @@ sent every UEFI PC to the failure screen for pfSense and OPNsense; it now ends w
 | **Qubes R4.3.2** | Needs Xen. | Not started. |
 
 A DHCP client inside the helper (so that a start-up disk without BusyBox or `ip=` support can get an address) would be the shared piece for Garuda and NixOS: say if they are worth it.
+
+## Systems that are not known by name: the generic recognition (2026-10-23)
+
+An ISO that no family is known by is recognised from its own boot menu and from what its start-up disk is made of (see [architecture.md](architecture.md)). It was tried the only way
+possible with the ISOs at hand, which are all known by name: with the recognition by name switched off for them (`BOOTLACE_GENERIC_ONLY`), so that the generic path alone chose how to
+start each one. All eleven were recognised as the right make **and started** (BIOS, Proxmox test server):
+
+| ISO | Recognised as | Result |
+|---|---|---|
+| Linux Mint 22.3 | Ubuntu-style (casper) | desktop |
+| Ubuntu Server 26.04 | Ubuntu-style (casper) | installer's language page |
+| Pop!_OS 24.04 | Ubuntu-style (casper), its live folder read from the menu | installer's language page |
+| Debian live 13 (GNOME) | Debian-style live | welcome screen |
+| Tails 7.15 (disk image) | Debian-style live, its own arguments from its GRUB menu, network card drivers brought | greeter |
+| Clonezilla Live | Debian-style live | language page |
+| VyOS | Debian-style live (no `nbd` driver in its start-up disk: only the system image is fetched, its own options kept) | login prompt |
+| TrueNAS SCALE 25.10.7 | Debian-style live (kernel at the top of the ISO: system image fetched) | console setup menu |
+| Arch Linux | Arch-style (archiso, with the network hooks) | root prompt |
+| ChimeraOS | Arch-style (archiso without network hooks: a hook and drivers of its own) | installer |
+| Fedora Workstation 44 | dracut live (network disk handler present) | welcome screen |
+
+Along the way the generic reading of menus found and fixed: tabs between `linux` and its path (Ubuntu's GRUB menu), a kernel called `vmlinuz.efi` (Pop!_OS), menus in `/EFI/<name>/grub.cfg` (Tails), and
+`filesystem.packages` taken for a system image (VyOS). Not covered: start-up disks of other makes (Manjaro's and Garuda's `miso`, NixOS, Void, Slax and the like): they stay "as a disk".
+
+After the reorganisation of the code the ISOs that were tested before were started again by name (BIOS, Proxmox test server): see the line below.
+

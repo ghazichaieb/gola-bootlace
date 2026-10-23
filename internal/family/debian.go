@@ -45,9 +45,9 @@ func (c *Context) casper(family string, f files, dir string, server bool, args s
 		if server {
 			cloudInit = ""
 		}
-		return newBoot(family, f, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+livePath+cloudInit+args+" console=tty0").withExtra(u, extra)
+		return newBoot(family, f, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+livePath+cloudInit+" console=tty0"+args).withExtra(u, extra)
 	}
-	return newBoot(family, f, "ip=dhcp url="+u.ISO+" boot=casper"+livePath+" cloud-init=disabled"+args+" console=tty0")
+	return newBoot(family, f, "ip=dhcp url="+u.ISO+" boot=casper"+livePath+" cloud-init=disabled"+" console=tty0"+args)
 }
 
 // casperDir finds the folder of a casper live system and its kernel: /casper, or a folder whose name starts with casper (Pop!_OS: casper_pop-os_24.04_..., kernel vmlinuz.efi).
@@ -99,9 +99,9 @@ func debianLive(c *Context) (Boot, bool) {
 func (c *Context) liveBoot(family string, f files, image, args string, network bool, extra ExtraBuilder) Boot {
 	u := c.URLs
 	if network && u.has(NBD) {
-		return newBoot(family, f, "boot=live components netboot=nfs nfsroot="+u.NBD+args+" console=tty0").withExtra(u, extra)
+		return newBoot(family, f, "boot=live components netboot=nfs nfsroot="+u.NBD+" console=tty0"+args).withExtra(u, extra)
 	}
-	return newBoot(family, f, "boot=live components ip=dhcp fetch="+u.FS+image+args+" console=tty0")
+	return newBoot(family, f, "boot=live components ip=dhcp fetch="+u.FS+image+" console=tty0"+args)
 }
 
 // isVyOS says whether a live folder is VyOS's (its kernel and initramfs files carry "vyos" in their names).

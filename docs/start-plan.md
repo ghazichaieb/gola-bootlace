@@ -1,5 +1,8 @@
 # Gola Bootlace: how to start
 
+> **This is the plan the project started from** (2026-10-19), kept for the reasoning. It is not how the program works today: for example, Linux ISOs are not downloaded into RAM any more but
+> read over the network a piece at a time. For what was built see [architecture.md](architecture.md), and for what was tested [compatibility.md](compatibility.md).
+
 Written 2026-10-19 from a read of Ventoy's source (https://github.com/ventoy/Ventoy, GPLv3) and its build notes.
 Goal: an open source (GPL-3.0-or-later) server that PXE-boots any unmodified Windows or Linux ISO (and BSD where possible)
 straight from an ISO folder. Runs in a Proxmox LXC or in Docker Compose.
