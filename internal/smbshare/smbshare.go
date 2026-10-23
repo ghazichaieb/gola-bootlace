@@ -35,7 +35,8 @@ const (
 
 // Options of the share.
 type Options struct {
-	Addr     string // where to listen, for example 192.168.88.1:445
+	Addr     string       // where to listen, for example 192.168.88.1:445
+	Listener net.Listener // when not nil it is used instead of listening on Addr (the caller can then see and close the connections)
 	ISODir   string
 	User     string
 	Password string
@@ -69,9 +70,11 @@ func Serve(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	front, err := net.Listen("tcp", o.Addr)
-	if err != nil {
-		return err
+	front := o.Listener
+	if front == nil {
+		if front, err = net.Listen("tcp", o.Addr); err != nil {
+			return err
+		}
 	}
 	go func() {
 		<-ctx.Done()

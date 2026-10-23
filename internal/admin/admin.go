@@ -20,7 +20,9 @@ import (
 
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
+	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
+	"github.com/ghazichaieb/gola-bootlace/internal/service"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
 )
 
@@ -39,12 +41,13 @@ type Backend interface {
 
 // Options for New.
 type Options struct {
-	Store   *config.Store
-	Log     *logbuf.Buffer
-	Backend Backend
-	Facts   [][2]string // what the status page shows besides the numbers: name and value, in order (addresses, ports, DHCP mode ...)
-	ISODir  string
-	Logf    func(format string, args ...any)
+	Store    *config.Store
+	Log      *logbuf.Buffer
+	Backend  Backend
+	Facts    [][2]string // what the status page shows besides the numbers: name and value, in order (addresses, ports, DHCP mode ...)
+	Library  *library.Library
+	Services *service.Supervisor
+	Logf     func(format string, args ...any)
 }
 
 // Admin serves the pages and the API.
@@ -93,6 +96,14 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("POST /api/rules", a.authed(a.ruleSet))
 	api.HandleFunc("DELETE /api/rules/{mac}", a.authed(a.ruleDelete))
 	api.HandleFunc("GET /api/log", a.authed(a.logLines))
+	api.HandleFunc("GET /api/library", a.authed(a.libraryInfo))
+	api.HandleFunc("GET /api/library/browse", a.authed(a.libraryBrowse))
+	api.HandleFunc("GET /api/library/inspect", a.authed(a.libraryInspect))
+	api.HandleFunc("PUT /api/library", a.authed(a.librarySelect))
+	api.HandleFunc("GET /api/services", a.authed(a.servicesReport))
+	api.HandleFunc("POST /api/services/start", a.authed(a.servicesStart))
+	api.HandleFunc("POST /api/services/stop", a.authed(a.servicesStop))
+	api.HandleFunc("PUT /api/services/autostart", a.authed(a.servicesAutoStart))
 
 	pages := http.NewServeMux()
 	pages.HandleFunc("GET /admin/{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +330,7 @@ func (a *Admin) status(w http.ResponseWriter, _ *http.Request) {
 	started := a.o.Backend.StartedAt()
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version": version.Version, "started": started, "uptimeSeconds": int(time.Since(started).Seconds()),
-		"isoDir": a.o.ISODir, "isoCount": len(infos), "isoHidden": hidden, "isoBytes": size,
+		"isoDir": a.o.Library.Path(), "isoCount": len(infos), "isoHidden": hidden, "isoBytes": size,
 		"configFile": a.o.Store.Path(), "facts": facts, "pcs": len(a.o.Backend.Clients()),
 	})
 }

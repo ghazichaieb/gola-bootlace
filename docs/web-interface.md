@@ -20,6 +20,7 @@ minutes. Anyone on the network can reach the login page, so use a password you w
 | Page | What it does |
 |---|---|
 | Dashboard | ISOs, PCs seen, how long the server has run, the addresses PCs use, recent activity |
+| Server | the library (the folder with the ISOs): choose it with a folder picker, see its state and free space; the services PCs talk to (boot menu, Windows file share, iSCSI, network disk, TFTP, PXE) with their state and any error, start and stop them (with a warning when PCs are using the server), and whether they start by themselves when the program starts |
 | ISOs | (also lists disk images: .img and .raw, packed or not) rename an ISO in the menu, hide it, choose what starts by itself (one of the ISOs, the PC's own disk or nothing), look inside the ISOs again |
 | PCs | every PC that asked for a menu (name from its firmware, MAC, address, UEFI or BIOS, what it did last) and a rule for each: show the menu, boot from its own disk, or start one ISO without a menu. Rules can also be added by MAC address for a PC that has not started yet |
 | Menu | heading, seconds before the default choice starts, what starts by itself (nothing, the PC's own disk, an ISO), with a preview |
@@ -55,3 +56,17 @@ A UEFI PC shows the Gola Bootlace logo with the menu on top of it (iPXE's graphi
 ## Long menus
 
 The menu on the PC is shown a page at a time when there are more ISOs than fit: 12 per page on a UEFI PC (the picture leaves 24 text lines) and 8 on a BIOS PC (80 x 25), with "Previous page" and "Next page" lines and "page 2 of 3" in the heading. Flipping pages is not counted as a new start in the PCs list, a timeout never fires while someone is looking through the pages, and the menu opens on the page that holds the entry that starts by itself. A BIOS PC gets a minimal list on black instead: the ASCII lace mark with the name beside it, a line "ISO Boot Menu", one row per ISO (size, name, kind of start), a line "Tools" and the three fixed lines, with Gola's red for the logo, the lines and the chosen row. 8 ISOs fit a page. iPXE's BIOS build cannot draw a picture in the VMs tried (the VESA picture path failed in Hyper-V's BIOS VM), block characters and large letters showed badly on a BIOS text screen, and the blanks that line things up are the byte 0xFF, because iPXE joins words with single spaces.
+
+## The library and the services
+
+The ISOs live in the **library**: one folder that has to be readable and writable (a folder on the computer, or a network drive mounted on it). Choose it under
+**Server**. A folder that is not a library yet becomes one when you say so: Bootlace puts a hidden folder `.bootlace` in it, with a small marker file, and
+writes nothing else without being asked. `-iso-dir <folder>` on the command line adds the library the first time the program starts; after that the one chosen
+in the web interface is used.
+
+The marker is what makes the folder *the* library. When the folder is not there, or has no marker (a network drive that is not mounted is just an empty folder
+on the computer's own disk), the library counts as not available: nothing is served and nothing is written there. The server stops after 30 seconds of that (a
+network drive that stalls for a moment does not end the installs that are running) and starts again by itself when the library is back.
+
+The server is the group of services the PCs talk to. **Stop the server** closes them all (the web page stays up); the page lists who is connected and asks
+before it interrupts anyone. A service that cannot start (another program holds its port) is shown with the reason and the others keep running.

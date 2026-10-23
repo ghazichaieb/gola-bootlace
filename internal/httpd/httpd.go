@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -21,13 +23,18 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/gfx"
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
+	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
 	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
 )
 
 // Server builds the handler. ISODir is read at every request, so an ISO copied into the folder shows up in the next menu without a restart.
 type Server struct {
-	ISODir      string
+	ISODir string
+	// Library, when set, is the folder the ISOs are in and replaces ISODir; it can be changed while the server runs.
+	Library *library.Library
+	// Active, when set, says whether PCs are served: while it is false everything but the web interface answers "stopped".
+	Active      func() bool
 	Base        string // how PCs reach this server, for example http://192.168.88.1:8080 (no trailing slash)
 	Logf        func(format string, args ...any)
 	Menu        menu.Options // which entry is chosen when nobody chooses, and after how many seconds
@@ -53,6 +60,8 @@ type Server struct {
 	Mount map[string]http.Handler
 
 	started     time.Time
+	busyMu      sync.Mutex
+	busy        map[string]int // PCs with a request in progress, by address
 	clientsMu   sync.Mutex
 	clients     map[string]*Client
 	saveMu      sync.Mutex
@@ -102,7 +111,59 @@ func (s *Server) Handler() http.Handler {
 		mux.Handle(path, h)
 	}
 	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprintln(w, "ok") })
-	return mux
+	return s.gated(mux)
+}
+
+// isoDir is the folder the ISOs are in now.
+func (s *Server) isoDir() string {
+	if s.Library != nil {
+		return s.Library.Path()
+	}
+	return s.ISODir
+}
+
+// gated lets the web interface through always, and everything else only while the server is running; the PCs that are being served right now are counted.
+func (s *Server) gated(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if p == "/" || p == "/health" || strings.HasPrefix(p, "/admin/") || strings.HasPrefix(p, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if s.Active != nil && !s.Active() {
+			http.Error(w, "Gola Bootlace is stopped", http.StatusServiceUnavailable)
+			return
+		}
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err == nil {
+			s.busyMu.Lock()
+			if s.busy == nil {
+				s.busy = map[string]int{}
+			}
+			s.busy[host]++
+			s.busyMu.Unlock()
+			defer func() {
+				s.busyMu.Lock()
+				if s.busy[host]--; s.busy[host] <= 0 {
+					delete(s.busy, host)
+				}
+				s.busyMu.Unlock()
+			}()
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Sessions are the PCs that are fetching something over the web port right now, once each.
+func (s *Server) Sessions() []string {
+	s.busyMu.Lock()
+	defer s.busyMu.Unlock()
+	out := make([]string, 0, len(s.busy))
+	for h := range s.busy {
+		out = append(out, h)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // find is isos.Find with the unpacked files taken into account (see scan).

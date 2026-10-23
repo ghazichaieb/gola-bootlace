@@ -90,6 +90,16 @@ input[type=text].inline,input[type=search].inline,select.inline{min-height:38px;
 .menu-preview .in{position:absolute;left:6.25%;right:6.25%;top:35.2%;bottom:5%;overflow:hidden}
 .menu-preview .h{font-weight:700;margin-bottom:1.2em}
 .menu-preview .sel{background:#c10016;color:#fff;margin:0 -.6em;padding:0 .6em}
+.banner{border-radius:10px;padding:10px 14px;margin:0 0 14px;background:var(--warn-soft);color:var(--warn);font-weight:600}
+.banner.bad{background:var(--accent-soft);color:var(--accent)}
+.banner a{color:inherit}
+.modal-back{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:var(--panel);color:var(--text);border-radius:14px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+.modal h2{font-size:18px}
+.dirs{border:1px solid var(--line);border-radius:10px;max-height:260px;overflow:auto;margin:10px 0}
+.dirs button{display:flex;width:100%;gap:8px;align-items:center;justify-content:space-between;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:10px 12px;min-height:44px;cursor:pointer}
+.dirs button:last-child{border-bottom:0}
+.dirs button:hover{background:var(--panel2)}
 .steps{margin:0;padding-left:20px}
 .steps li{margin:4px 0}
 .empty{padding:26px;text-align:center;color:var(--muted)}
@@ -116,7 +126,7 @@ td.k{color:var(--muted);white-space:nowrap}
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const state = { view: "dash", isos: [], defaultAction: "", pcs: [], status: null, settings: null, logLast: 0, logLines: [], timers: [], authed: false, version: "" };
-const views = [["dash", "Dashboard"], ["isos", "ISOs"], ["pcs", "PCs"], ["menu", "Menu"], ["log", "Log"], ["account", "Account"]];
+const views = [["dash", "Dashboard"], ["server", "Server"], ["isos", "ISOs"], ["pcs", "PCs"], ["menu", "Menu"], ["log", "Log"], ["account", "Account"]];
 
 async function api(path, method = "GET", body) {
   const opt = { method, headers: { "X-Bootlace": "1" }, credentials: "same-origin" };
@@ -125,7 +135,7 @@ async function api(path, method = "GET", body) {
   let data = {};
   try { data = await res.json(); } catch (e) { /* no body */ }
   if (res.status === 401 && path !== "/api/login") { state.authed = false; render(); throw new Error("log in again"); }
-  if (!res.ok) throw new Error(data.error || ("error " + res.status));
+  if (!res.ok) { const e = new Error(data.error || ("error " + res.status)); e.status = res.status; e.data = data; throw e; }
   return data;
 }
 
@@ -181,7 +191,7 @@ function render() {
   app.querySelectorAll("nav button").forEach(b => b.onclick = () => { state.view = b.dataset.v; location.hash = state.view; render(); });
   $("#theme").onclick = toggleTheme;
   $("#out").onclick = guard(async () => { await api("/api/logout", "POST", {}); state.authed = false; render(); });
-  ({ dash: pageDash, isos: pageISOs, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
+  ({ dash: pageDash, server: pageServer, isos: pageISOs, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
 }
 
 function toggleTheme() {
@@ -218,22 +228,151 @@ async function pageDash() {
   page.innerHTML = `<h1>Dashboard</h1><div id="dstats" class="grid stats"></div><div class="grid two" style="margin-top:14px"><div class="card"><h2>How PCs reach this server</h2><div id="facts" class="small"></div></div><div class="card"><h2>Start a PC from the network</h2>
   <ol class="steps"><li>Plug the PC into the same network (a cable: Wi‑Fi cannot network-boot).</li><li>Turn Secure Boot off in its firmware (not supported yet).</li><li>Start it and open the boot menu (F12, F8, F11 or Esc), pick the network entry (<em>UEFI: IPv4</em> / PXE).</li><li>The Gola Bootlace menu appears; pick an ISO.</li></ol></div></div>
   <div class="card" style="margin-top:14px"><h2>Recent activity</h2><div id="recent" class="small mono"></div></div>`;
+  page.insertAdjacentHTML("afterbegin", `<div id="dbanner"></div>`);
   const draw = async () => {
-    const [st, log] = await Promise.all([api("/api/status"), api("/api/log?limit=8")]);
+    const [st, log, lib, svc] = await Promise.all([api("/api/status"), api("/api/log?limit=8"), api("/api/library"), api("/api/services")]);
+    $("#dbanner").innerHTML = serverBanner(lib.library, svc);
+    page.querySelectorAll("#dbanner [data-go]").forEach(a => a.onclick = e => { e.preventDefault(); state.view = a.dataset.go; location.hash = state.view; render(); });
     $("#dstats").innerHTML = [[st.isoCount, "ISOs in the menu" + (st.isoHidden ? ` (${st.isoHidden} hidden)` : "")], [st.pcs, "PCs seen"], [bytes(st.isoBytes), "of ISOs"], [uptime(st.uptimeSeconds), "running"]]
       .map(([n, l]) => `<div class="card stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join("");
-    $("#facts").innerHTML = `<table>${st.facts.map(f => `<tr><td class="k">${esc(f.name)}</td><td class="mono">${esc(f.value)}</td></tr>`).join("")}<tr><td class="k">ISO folder</td><td class="mono">${esc(st.isoDir)}</td></tr><tr><td class="k">Settings file</td><td class="mono">${esc(st.configFile)}</td></tr></table>`;
+    $("#facts").innerHTML = `<table>${st.facts.map(f => `<tr><td class="k">${esc(f.name)}</td><td class="mono">${esc(f.value)}</td></tr>`).join("")}<tr><td class="k">Library</td><td class="mono">${esc(st.isoDir || "(none chosen)")}</td></tr><tr><td class="k">Settings file</td><td class="mono">${esc(st.configFile)}</td></tr></table>`;
     $("#recent").innerHTML = (log.lines || []).length ? (log.lines || []).map(l => `<div>${esc(l.text)}</div>`).join("") : `<span class="muted">Nothing yet.</span>`;
   };
   await guard(draw)();
   every(4000, draw);
 }
 
+// ---- server: the library and the services
+function modal(html) {
+  const back = document.createElement("div"); back.className = "modal-back";
+  back.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`;
+  const prev = document.activeElement;
+  const onKey = e => { if (e.key === "Escape" && [...document.querySelectorAll(".modal-back")].pop() === back) close(); };
+  const close = () => { back.remove(); document.removeEventListener("keydown", onKey); if (prev && prev.focus) prev.focus(); };
+  document.addEventListener("keydown", onKey);
+  back.addEventListener("mousedown", e => { if (e.target === back) close(); });
+  document.body.appendChild(back);
+  const first = back.querySelector("input, button"); if (first) first.focus();
+  return { el: back.firstElementChild, close };
+}
+// ask puts a question to the person and answers true or false
+function ask(title, bodyHTML, yes) {
+  return new Promise(resolve => {
+    const m = modal(`<h2>${esc(title)}</h2><div class="small">${bodyHTML}</div><div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn" id="no">Cancel</button><button class="btn primary" id="yes">${esc(yes)}</button></div>`);
+    m.el.querySelector("#no").onclick = () => { m.close(); resolve(false); };
+    m.el.querySelector("#yes").onclick = () => { m.close(); resolve(true); };
+  });
+}
+function pcsText(list) { return `${list.length} PC${list.length > 1 ? "s are" : " is"} using the server right now (${esc(list.join(", "))})`; }
+
+function serverBanner(lib, svc) {
+  const r = svc.report, link = (t) => `<a href="#server" data-go="server">${t}</a>`;
+  if (!lib.path) return `<div class="banner bad" role="status">No library is chosen, so the server is stopped. ${link("Choose the library folder")}.</div>`;
+  if (r.blocked) return `<div class="banner bad" role="status">The server is stopped: ${esc(r.blocked)}. It starts again by itself when the library is back.</div>`;
+  if (!r.wanted) return `<div class="banner" role="status">The server is stopped: PCs get no menu. ${link("Start it")}.</div>`;
+  const failed = r.services.filter(s => s.state === "failed");
+  if (failed.length) return `<div class="banner bad" role="status">${failed.map(f => esc(f.title + ": " + f.error)).join("<br>")}</div>`;
+  return "";
+}
+
+async function pageServer() {
+  const page = $("#page");
+  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div>`;
+  let last = "";
+  const draw = async (force) => {
+    const [lib, svc] = await Promise.all([api("/api/library"), api("/api/services")]);
+    const key = JSON.stringify([lib, svc]);
+    if (key === last && !force) return;
+    last = key;
+    $("#sbanner").innerHTML = serverBanner(lib.library, svc);
+    drawLibrary(lib.library, () => draw(true));
+    drawServices(svc, () => draw(true));
+  };
+  await guard(draw)(true);
+  every(4000, () => draw(false));
+}
+
+function drawLibrary(lib, refresh) {
+  const space = lib.available && lib.totalBytes ? `${bytes(lib.freeBytes)} free of ${bytes(lib.totalBytes)}` : "";
+  $("#libcard").innerHTML = `<h2>Library</h2>` + (!lib.path
+    ? `<p class="muted">No library is chosen. The ISO files live in a folder that you choose here. It has to be readable and writable: a folder on this computer, or a network drive that is mounted on it. Until then the server stays stopped.</p>`
+    : `<table><tr><td class="k">Folder</td><td class="mono">${esc(lib.path)}</td></tr>
+       <tr><td class="k">State</td><td>${lib.available ? `<span class="badge ok">available</span>` : `<span class="badge red">not available</span>`}</td></tr>
+       ${lib.problem ? `<tr><td class="k">Problem</td><td>${esc(lib.problem)}</td></tr>` : ""}
+       ${space ? `<tr><td class="k">Space</td><td>${esc(space)}</td></tr>` : ""}</table>`)
+    + `<div class="row" style="margin-top:12px"><button class="btn primary" id="pick">${lib.path ? "Choose another folder" : "Choose the library folder"}</button></div>`;
+  $("#pick").onclick = () => pickFolder(lib.path, refresh);
+}
+
+function drawServices(svc, refresh) {
+  const r = svc.report;
+  const badge = s => s.state === "running" ? `<span class="badge ok">running</span>` : s.state === "failed" ? `<span class="badge red">failed</span>` : `<span class="badge">stopped</span>`;
+  const pcs = svc.sessions.length ? `<p class="small muted">${pcsText(svc.sessions)}.</p>` : "";
+  $("#svccard").innerHTML = `<h2>Services</h2>
+    <p class="small muted">What the PCs talk to. Stopping them stops the menu and everything else; this web page stays.</p>
+    <table class="rt"><tbody>${r.services.map(s => `<tr><td>${esc(s.title)}<div class="muted small">${esc(s.detail)}${s.sessions.length ? ", " + s.sessions.length + " connected" : ""}</div>${s.error ? `<div class="small" style="color:var(--bad)">${esc(s.error)}</div>` : ""}</td><td>${badge(s)}</td></tr>`).join("")}</tbody></table>
+    ${r.blocked ? `<p class="banner bad">${esc(r.blocked)}. The server starts by itself as soon as that is fixed.</p>` : ""}${pcs}
+    <div class="row" style="margin-top:12px">${r.wanted ? `<button class="btn" id="stop">Stop the server</button>${r.services.some(s => s.state === "failed") ? `<button class="btn" id="start">Try the failed ones again</button>` : ""}` : `<button class="btn primary" id="start">Start the server</button>`}
+    <label class="row small" style="margin:0 0 0 auto;font-weight:500"><span class="switch"><input type="checkbox" id="auto" ${svc.autoStart ? "checked" : ""} aria-label="Start the services when the program starts"><span></span></span> Start by itself when the program starts</label></div>`;
+  const start = $("#start"), stop = $("#stop");
+  if (start) start.onclick = guard(async () => { const d = await api("/api/services/start", "POST", {}); if (d.warning) toast(d.warning, true); else toast(r.wanted ? "Tried again" : "Started"); refresh(); });
+  if (stop) stop.onclick = guard(async () => {
+    try { await api("/api/services/stop", "POST", { force: false }); }
+    catch (e) {
+      if (e.status !== 409) throw e;
+      if (!await ask("Stop the server?", `${pcsText(e.data.sessions)}. Stopping interrupts them.`, "Stop anyway")) return;
+      await api("/api/services/stop", "POST", { force: true });
+    }
+    toast("Stopped"); refresh();
+  });
+  $("#auto").onchange = guard(async e => { await api("/api/services/autostart", "PUT", { autoStart: e.target.checked }); toast("Saved"); });
+}
+
+// pickFolder is the folder picker: it shows folders only, and asks before a folder that is not a library yet becomes one.
+function pickFolder(startPath, done) {
+  const m = modal(`<h2>Choose the library folder</h2>
+    <p class="muted small">It must be readable and writable: a folder on this computer, or a network drive that is mounted on it. Only folders are shown.</p>
+    <div class="row"><button class="btn small" id="up">Up</button><input class="inline" type="text" id="path" aria-label="Folder" style="flex:1;min-width:160px"><button class="btn small" id="go">Go</button></div>
+    <div class="dirs" id="dirs"></div><div class="small" id="info"></div><p class="err" id="perr" role="alert"></p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="cancel">Cancel</button><button class="btn primary" id="use">Use this folder</button></div>`);
+  const q = s => m.el.querySelector(s);
+  let cur = "", parent = "";
+  const load = async p => {
+    q("#perr").textContent = "";
+    try {
+      const l = await api("/api/library/browse?path=" + encodeURIComponent(p));
+      cur = l.path; parent = l.parent; q("#path").value = cur;
+      q("#up").disabled = !cur;
+      q("#dirs").innerHTML = l.dirs.length ? l.dirs.map((d, i) => `<button data-i="${i}"><span>${esc(d.name)}</span>${d.isLibrary ? `<span class="badge ok">library</span>` : ""}</button>`).join("") : `<div class="empty">No folders here.</div>`;
+      q("#dirs").querySelectorAll("button").forEach(b => b.onclick = () => load(cur ? (cur.replace(/[\\/]$/, "") + (cur.includes("\\") ? "\\" : "/") + l.dirs[+b.dataset.i].name) : l.dirs[+b.dataset.i].name));
+      q("#use").disabled = !cur;
+      q("#info").textContent = "";
+      if (cur) { const i = await api("/api/library/inspect?path=" + encodeURIComponent(cur)); q("#info").textContent = i.isLibrary ? "This folder is already a library." + (i.freeBytes ? ` ${bytes(i.freeBytes)} free.` : "") : (i.freeBytes ? `${bytes(i.freeBytes)} free on this disk.` : ""); }
+    } catch (e) { q("#perr").textContent = e.message; }
+  };
+  const choose = async (create, force) => {
+    try { await api("/api/library", "PUT", { path: cur, create, force }); m.close(); toast("Library set"); done(); }
+    catch (e) {
+      if (e.status === 409 && e.data && e.data.needsCreate) {
+        if (await ask("Make this folder the library?", `Bootlace will add a hidden folder <code>.bootlace</code> inside <code>${esc(cur)}</code> and use the folder for the ISO files. Nothing else in it is changed.`, "Make it the library")) choose(true, force);
+      } else if (e.status === 409 && e.data && e.data.sessions) {
+        if (await ask("Change the library?", `${pcsText(e.data.sessions)}. The server restarts on the new folder and interrupts them.`, "Change anyway")) choose(create, true);
+      } else q("#perr").textContent = e.message;
+    }
+  };
+  q("#up").onclick = () => load(parent);
+  q("#go").onclick = () => load(q("#path").value.trim());
+  q("#path").onkeydown = e => { if (e.key === "Enter") load(q("#path").value.trim()); };
+  q("#cancel").onclick = m.close;
+  q("#use").onclick = () => choose(false, false);
+  load(startPath || "");
+}
+
 // ---- ISOs
 async function pageISOs() {
   const page = $("#page");
   page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>ISOs</h1><button class="btn" id="rescan">Look inside the ISOs again</button></div>
-  <p class="muted small">Every <code>.iso</code> file in the ISO folder is listed here and in the menu. Rename an entry, hide it from the menu, or choose which one starts by itself.</p><div class="card tablewrap" id="isotable"></div>`;
+  <p class="muted small">Every ISO and disk image in the library is listed here and in the menu. Rename an entry, hide it from the menu, or choose which one starts by itself.</p><div class="card tablewrap" id="isotable"></div>`;
   $("#rescan").onclick = guard(async () => { await api("/api/rescan", "POST", {}); toast("Looking inside the ISOs again at the next menu"); await draw(); });
   const draw = async () => {
     await loadCommon();
@@ -246,7 +385,7 @@ async function pageISOs() {
       <div style="margin:10px"><div class="small" style="font-weight:600">What starts by itself when nobody chooses in the menu</div>
         <label class="row small" style="margin:4px 0;font-weight:500"><input type="radio" name="dflt" data-dflt-other="local" ${state.defaultAction === "local" ? "checked" : ""}> The PC's own disk (the PC carries on as if Bootlace was not there)</label>
         <label class="row small" style="margin:4px 0;font-weight:500"><input type="radio" name="dflt" data-dflt-other="" ${!state.defaultAction ? "checked" : ""}> Nothing: the menu waits for a choice</label>
-        <p class="hint" style="margin:6px 0 0">${state.defaultAction === "local" || !state.defaultAction || state.defaultAction.startsWith("iso:") ? "" : "Set on the command line now: " + esc(state.defaultAction) + ". "}It starts after the menu's timeout; set the timeout under <a href="#menu" data-go="menu">Menu</a>.</p></div>` : `<div class="empty">No ISO files found in the ISO folder yet. Copy some in: they appear here and in the menu at once.</div>`;
+        <p class="hint" style="margin:6px 0 0">${state.defaultAction === "local" || !state.defaultAction || state.defaultAction.startsWith("iso:") ? "" : "Set on the command line now: " + esc(state.defaultAction) + ". "}It starts after the menu's timeout; set the timeout under <a href="#menu" data-go="menu">Menu</a>.</p></div>` : `<div class="empty">No ISO files in the library yet. Copy some into its folder: they appear here and in the menu at once.</div>`;
     page.querySelectorAll("input[data-id]").forEach(inp => inp.onchange = guard(async () => {
       const v = inp.value.trim() === inp.dataset.orig ? "" : inp.value.trim();
       await api("/api/isos/" + inp.dataset.id, "PUT", { title: v }); toast("Saved"); await draw();

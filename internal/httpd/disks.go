@@ -21,7 +21,7 @@ func (s *Server) diskState(iso isos.ISO) diskimg.State { return s.diskManager().
 // scan lists the ISO folder like isos.Scan, but a packed file that has been unpacked is listed as the file in the cache folder (so that everything else treats it as an
 // ordinary ISO or disk image); one that has not stays as it is, with Packed set.
 func (s *Server) scan() ([]isos.ISO, error) {
-	list, err := isos.Scan(s.ISODir)
+	list, err := isos.Scan(s.isoDir())
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (s *Server) diskManager() *diskimg.Manager {
 // unpack is /unpack/<id>: a PC that chose a packed disk image asks for it to be unpacked (iPXE fetches this address, then says so on the screen).
 func (s *Server) unpack(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/unpack/")
-	list, _ := isos.Scan(s.ISODir) // (as found in the folder: the file that is packed)
+	list, _ := isos.Scan(s.isoDir()) // (as found in the folder: the file that is packed)
 	for _, iso := range list {
 		if iso.ID == id && iso.Packed != "" {
 			st := s.diskManager().Start(iso)

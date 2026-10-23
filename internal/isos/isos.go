@@ -101,6 +101,9 @@ func peekZip(path string, size int64, mod time.Time) (inner string, disk, ok boo
 // Scan lists the ISO files under dir (at most four folders deep), sorted by name. A folder that does not exist is an empty list, not an error:
 // the server can start before the first ISO is copied in.
 func Scan(dir string) ([]ISO, error) {
+	if dir == "" { // no library chosen: not the current folder, which is what an empty name would mean
+		return nil, nil
+	}
 	var found []ISO
 	root, err := filepath.Abs(dir)
 	if err != nil {
@@ -114,6 +117,12 @@ func Scan(dir string) ([]ISO, error) {
 			return err
 		}
 		rel, _ := filepath.Rel(root, path)
+		if path != root && strings.HasPrefix(d.Name(), ".") { // the library's own folder (.bootlace) and hidden files, such as the "._name" copies a Mac leaves
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		if d.IsDir() {
 			if strings.Count(filepath.ToSlash(rel), "/") >= 4 {
 				return fs.SkipDir

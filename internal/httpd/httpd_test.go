@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ghazichaieb/gola-bootlace/internal/library"
 )
 
 func server(t *testing.T) (*httptest.Server, string) {
@@ -71,5 +73,40 @@ func TestFreeBSDsLoaderConfigurationGetsTheMemoryDiskLines(t *testing.T) {
 	}
 	if !isLoaderName("boot/loader.efi") || !isLoaderName("boot/pxeboot") || isLoaderName("boot/kernel/kernel") {
 		t.Error("only the two loaders say which ISO a PC chose")
+	}
+}
+
+// While the server is stopped the PCs get "stopped", the web interface and the health check still answer, and with no library nothing is listed.
+func TestAStoppedServerAnswersOnlyTheWebInterface(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "a.iso"), []byte("0123456789"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	active := true
+	s := &Server{ISODir: dir, Base: "http://10.0.0.1:8080", Active: func() bool { return active },
+		Mount: map[string]http.Handler{"/admin/": http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { io.WriteString(w, "page") })}}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	if code, _ := get(t, ts.URL+"/iso/a.iso", nil); code != 200 {
+		t.Fatalf("running: %d", code)
+	}
+	active = false
+	for _, p := range []string{"/iso/a.iso", "/boot.ipxe", "/menu"} {
+		if code, _ := get(t, ts.URL+p, nil); code != 503 {
+			t.Errorf("%s while stopped: %d", p, code)
+		}
+	}
+	if code, body := get(t, ts.URL+"/admin/", nil); code != 200 || body != "page" {
+		t.Errorf("the web interface while stopped: %d %q", code, body)
+	}
+	if code, _ := get(t, ts.URL+"/health", nil); code != 200 {
+		t.Errorf("health while stopped: %d", code)
+	}
+}
+
+func TestNoLibraryListsNothing(t *testing.T) {
+	s := &Server{Library: library.New("", ""), Base: "http://10.0.0.1:8080"}
+	if list, err := s.scan(); err != nil || len(list) != 0 {
+		t.Fatalf("%v %v", list, err)
 	}
 }

@@ -36,6 +36,14 @@ type Config struct {
 	Rules       []Rule            `json:"rules"`
 	AdminHash   string            `json:"adminHash"`   // see package admin
 	SMBPassword string            `json:"smbPassword"` // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
+	Library     Library           `json:"library"`     // the folder with the ISOs; empty until one is chosen
+	NoAutoStart bool              `json:"noAutoStart"` // the services stay stopped when the program starts, until they are started in the web interface
+}
+
+// Library is the folder the ISOs are in, as it was added (see package library): its path and the id that was written into its marker.
+type Library struct {
+	Path string `json:"path"`
+	ID   string `json:"id"`
 }
 
 // DefaultPCDays is how long a PC stays in the list after it was last seen, unless changed.
@@ -78,6 +86,9 @@ func (c *Config) Validate() error {
 	}
 	if !defaultAction.MatchString(c.Default) {
 		return errors.New("the default entry is not valid")
+	}
+	if (c.Library.Path == "") != (c.Library.ID == "") || strings.ContainsAny(c.Library.Path, "\r\n\x00") || len(c.Library.Path) > 4096 {
+		return errors.New("the library setting is not valid")
 	}
 	for id, t := range c.Titles {
 		if !idPattern.MatchString(id) {

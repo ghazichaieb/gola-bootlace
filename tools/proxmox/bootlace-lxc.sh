@@ -20,7 +20,7 @@
 #   CT_GW           gateway, only with a fixed address
 #   ROOTFS_STORAGE  storage for the container's disk   (default: the first that can hold containers)
 #   TEMPLATE_STORAGE storage for the Debian template   (default: the first that can hold templates)
-#   ISO_PATH        folder of the Proxmox host with the ISOs, shown to the container read-only at /srv/isos
+#   ISO_PATH        folder of the Proxmox host with the ISOs, shown to the container, read and write, at /srv/isos: it becomes the library (Bootlace adds a hidden .bootlace folder to it)
 #                   (default: /var/lib/vz/template/iso, where the Proxmox web interface keeps uploaded ISOs)
 #   BOOTLACE_ARGS   more options for "bootlace serve"  (default: none; see "bootlace serve -h")
 #   BOOTLACE_BASE   where the program is downloaded from: <BOOTLACE_BASE>/bootlace-linux-amd64 and a .sha256 file next to it
@@ -132,7 +132,7 @@ net="name=eth0,bridge=$BRIDGE,firewall=0,ip=$CT_IP"
 args=(--hostname "$CT_HOSTNAME" --cores "$CT_CORES" --memory "$CT_MEMORY" --swap 0 --rootfs "$ROOTFS_STORAGE:$CT_DISK"
 	--net0 "$net" --unprivileged 1 --features nesting=1 --onboot 1 --ostype debian --description "Gola Bootlace network boot server (made by bootlace-lxc.sh)")
 if [ -d "$ISO_PATH" ]; then
-	args+=(--mp0 "$ISO_PATH,mp=/srv/isos,ro=1")
+	args+=(--mp0 "$ISO_PATH,mp=/srv/isos,ro=0")
 else
 	say "(no folder $ISO_PATH: the container gets an empty /srv/isos; put ISOs there, or set ISO_PATH=...)"
 fi
@@ -150,6 +150,13 @@ for _ in $(seq 1 30); do
 done
 [ -n "$addr" ] || die "the container got no address (is the bridge $BRIDGE connected to the network?)"
 pct exec "$CTID" -- mkdir -p /srv/isos
+# The library has to be writable from inside the container. An unprivileged container's root is user 100000 on the host, so a folder that only the host's
+# root can write to is read-only for it: say what to do, but never change the owner of the person's own folder from here.
+if [ -d "$ISO_PATH" ] && ! pct exec "$CTID" -- sh -c 'f=/srv/isos/.bootlace-write-test-$$; : > "$f" && rm -f "$f"' 2>/dev/null; then
+	printf '\033[33m%s\033[0m\n' "The container cannot write to $ISO_PATH, and the library must be writable. On this host, either give the container's root user (100000) access:" \
+		"    chown 100000:100000 '$ISO_PATH'      (or: setfacl -m u:100000:rwx '$ISO_PATH')" \
+		"and then restart the container's service (pct exec $CTID -- systemctl restart bootlace), or choose another folder in the web page."
+fi
 pct exec "$CTID" -- sh -c 'apt-get update -qq && apt-get install -y -qq wimtools >/dev/null' || echo "wimtools could not be installed: Windows cannot be started with Secure Boot on until it is (apt install wimtools in the container)"
 
 say "Installing Bootlace in the container ..."
@@ -171,7 +178,7 @@ Gola Bootlace is running in container $CTID at $addr.
   web page    http://$addr:8080/admin/   (ISOs, PCs and their rules, menu settings, live log)
   password    ${password:-"set earlier: see Account in the web page, or: pct exec $CTID -- journalctl -u bootlace | grep -i password"}
 
-  ISOs        put them in $ISO_PATH on this host (shown to the container read-only), then they appear in the menu at once
+  ISOs        put them in $ISO_PATH on this host (the library: the container reads and writes it), then they appear in the menu at once
   menu        http://$addr:8080/boot.ipxe
   log         pct exec $CTID -- journalctl -u bootlace -f
   settings    kept in the container: /var/lib/bootlace/config.json (changed in the web page)

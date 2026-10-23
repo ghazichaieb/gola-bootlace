@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"flag"
@@ -12,19 +11,20 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
-	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/admin"
-	"github.com/ghazichaieb/gola-bootlace/internal/assets"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/dhcp"
 	"github.com/ghazichaieb/gola-bootlace/internal/handoff"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
+	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
+	"github.com/ghazichaieb/gola-bootlace/internal/service"
 	"github.com/ghazichaieb/gola-bootlace/internal/smbshare"
-	"github.com/ghazichaieb/gola-bootlace/internal/tftp"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
 	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
 )
@@ -67,7 +67,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 func serve(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("bootlace serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	isoDir := fs.String("iso-dir", "isos", "the folder with the ISO files (looked at again for every menu)")
+	isoDir := fs.String("iso-dir", "", "the library, the folder with the ISO files, which must be readable and writable: only used the first time, to add it (after that the library is the one chosen in the web interface)")
 	ipFlag := fs.String("ip", "", "this server's address as the PCs reach it (default: the first private address of this computer)")
 	httpPort := fs.Int("http-port", 8080, "port of the web server")
 	mode := fs.String("dhcp", "proxy", `"proxy": answer PXE PCs only, next to the network's own DHCP server; "full": also hand out addresses (only on a network without a DHCP server); "off": no DHCP at all`)
@@ -142,8 +142,10 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			logf("cannot keep the share's password in the settings file: %v", err)
 		}
 	}
+	lib := openLibrary(store, *isoDir, logf)
+	sup := &service.Supervisor{Gate: lib.Check, Grace: 30 * time.Second, Logf: logf}
 	dataDir := filepath.Dir(*configPath)
-	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, ISODir: *isoDir, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
+	web := &httpd.Server{Handoff: registry, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
 		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort, ISCSIPort: *iscsiPort}
 	if winpe.Wimlib(*wimlibFlag) == "" {
 		logf("wimlib-imagex was not found: Windows cannot be started with UEFI Secure Boot on (install wimtools)")
@@ -162,103 +164,122 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		}
 		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
 			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}
-		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, ISODir: *isoDir, Logf: logf}).Mount()
+		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Logf: logf}).Mount()
 		logf("web interface: %s/admin/", base)
 	}
-	errs := make(chan error, 4)
-
 	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
 	if err != nil {
 		fmt.Fprintf(stderr, "bootlace: cannot open web port %d: %v\n", *httpPort, err)
 		return 1
 	}
-	go func() { errs <- http.Serve(httpListener, web.Handler()) }()
+	webErr := make(chan error, 1)
+	go func() { webErr <- http.Serve(httpListener, web.Handler()) }()
 
-	go func() {
-		errs <- smbshare.Serve(context.Background(), smbshare.Options{Addr: fmt.Sprintf("%s:%d", ip, *smbPort), Forward: *smbForward, ISODir: *isoDir, User: "bootlace", Password: smbPassword, Logf: logf, Debug: *debugSMB})
-	}()
-	logf(`Windows set-up share: \\%s\%s on port %d`, ip, smbshare.ShareName, *smbPort)
-
-	if *iscsiPort != 0 {
-		iscsiListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, *iscsiPort))
-		if err != nil {
-			fmt.Fprintf(stderr, "bootlace: cannot open the iSCSI port %d: %v\n", *iscsiPort, err)
-			return 1
-		}
-		logf("iSCSI target on %s:%d (an ISO that is not started piece by piece is read from it as a CD-ROM)", ip, *iscsiPort)
-		go func() { errs <- web.ServeISCSI(iscsiListener) }()
-	}
-	if *nbdPort != 0 {
-		nbdListener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", ip, *nbdPort))
-		if err != nil {
-			fmt.Fprintf(stderr, "bootlace: cannot open the network disk port %d: %v\n", *nbdPort, err)
-			return 1
-		}
-		logf("network disk server on %s:%d (a live Linux reads its ISO from it instead of copying it into memory)", ip, *nbdPort)
-		go func() { errs <- web.ServeNBD(nbdListener) }()
-	}
-	tftpConn, err := net.ListenPacket("udp4", ":69")
+	responder, err := dhcpResponder(*mode, ip, base, registry, web, dhcpOptions{first: *first, last: *last, mask: *mask, router: *router, dns: *dnsIP, pxeOnly: *pxeOnly}, logf)
 	if err != nil {
-		fmt.Fprintf(stderr, "bootlace: cannot open TFTP port 69: %v\n", err)
-		return 1
+		fmt.Fprintf(stderr, "bootlace: %v\n", err)
+		return 2
 	}
-	go func() {
-		errs <- (&tftp.Server{FS: assets.IPXE(), Logf: logf, LocalIP: ip, Lookup: web.TFTPLookup}).Serve(tftpConn)
+	addServices(sup, serverPlan{ip: ip, web: web, lib: lib, httpPort: *httpPort, smbPort: *smbPort, nbdPort: *nbdPort, iscsiPort: *iscsiPort,
+		smbUser: "bootlace", smbPassword: smbPassword, smbForward: *smbForward, debugSMB: *debugSMB, dhcp: responder, logf: logf})
+	go func() { // follows the library: no library, no server
+		for range time.Tick(5 * time.Second) {
+			sup.Reconcile()
+		}
 	}()
-
-	if *mode != "off" {
-		handoffFile := func(mac string, efi bool) (string, bool) { // a hand-off in progress first, then a rule that wants the firmware's own boot manager
-			if f, ok := registry.BootFile(mac, efi); ok {
-				return f, true
-			}
-			return web.NativeBootFile(mac, efi)
-		}
-		boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Handoff: handoffFile, Seen: web.NoteDHCP, Files: map[dhcp.Arch]string{
-			dhcp.ArchBIOS: "undionly.kpxe", dhcp.ArchX64EFI: "ipxe.efi",
-		}}
-		var responder dhcp.Responder = boot
-		if *mode == "full" {
-			m := net.IPMask(net.ParseIP(*mask).To4())
-			if m == nil {
-				fmt.Fprintf(stderr, "bootlace: %q is not a network mask\n", *mask)
-				return 2
-			}
-			start, end := net.ParseIP(*first), net.ParseIP(*last)
-			if start == nil || end == nil {
-				network := ip.Mask(m).To4()
-				start, end = net.IPv4(network[0], network[1], network[2], 100), net.IPv4(network[0], network[1], network[2], 200)
-			}
-			responder = &dhcp.Full{PXEOnly: *pxeOnly, Boot: boot, First: start, Last: end, Mask: m, Router: net.ParseIP(*router), DNS: net.ParseIP(*dnsIP), Lease: time.Hour}
-			logf("DHCP: handing out %s to %s", start, end)
-		} else if *mode != "proxy" {
-			fmt.Fprintf(stderr, "bootlace: -dhcp must be proxy, full or off, not %q\n", *mode)
-			return 2
-		}
-		for _, port := range []int{67, 4011} {
-			conn, err := net.ListenUDP("udp4", &net.UDPAddr{IP: dhcpBindIP(ip), Port: port})
-			if err != nil {
-				fmt.Fprintf(stderr, "bootlace: cannot open DHCP port %d (another DHCP server on this computer?): %v\n", port, err)
-				return 1
-			}
-			go func() { errs <- dhcp.Serve(conn, responder, logf) }()
-		}
+	logf("Gola Bootlace %s: menu at %s/boot.ipxe, library %q, DHCP mode %s", version.Version, base, lib.Path(), *mode)
+	if store.Get().NoAutoStart {
+		logf("the services are stopped (start them in the web interface)")
+	} else if err := sup.Start(); err != nil {
+		logf("the services wait: %v", err)
 	}
-	logf("Gola Bootlace %s: menu at %s/boot.ipxe, ISO folder %q, DHCP mode %s", version.Version, base, *isoDir, *mode)
-	if err := <-errs; err != nil {
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	select {
+	case err := <-webErr:
+		sup.Stop()
 		fmt.Fprintf(stderr, "bootlace: %v\n", err)
 		return 1
+	case <-stop:
+		logf("stopping")
+		sup.Stop()
+		return 0
 	}
-	return 0
 }
 
-// dhcpBindIP is the address the DHCP sockets bind to. On Windows a socket bound to this server's own address still hears the broadcasts that arrive on
-// that network, and its answers leave on it (a socket bound to every address sends a broadcast out of whichever network Windows prefers, and a PC
-// with a second network card never gets the answer). Elsewhere the sockets hear every network.
-func dhcpBindIP(server net.IP) net.IP {
-	if runtime.GOOS == "windows" {
-		return server
+// openLibrary is the library saved in the settings. On the very first start, a folder given on the command line is added as the library: giving it is the person's
+// own act, and it is the only time a command line adds one.
+func openLibrary(store *config.Store, flagDir string, logf func(string, ...any)) *library.Library {
+	saved := store.Get().Library
+	lib := library.New(saved.Path, saved.ID)
+	if flagDir == "" {
+		return lib
 	}
-	return nil
+	dir, err := library.Clean(flagDir)
+	if err != nil {
+		logf("-iso-dir %q cannot be the library: %v", flagDir, err)
+		return lib
+	}
+	if saved.Path != "" {
+		if dir != saved.Path {
+			logf("-iso-dir %q is not used: the library is %q (change it in the web interface)", flagDir, saved.Path)
+		}
+		return lib
+	}
+	id, err := library.Prepare(dir)
+	if err != nil {
+		logf("-iso-dir %q cannot be the library: %v", flagDir, err)
+		return lib
+	}
+	if err := store.Update(func(c *config.Config) error { c.Library = config.Library{Path: dir, ID: id}; return nil }); err != nil {
+		logf("cannot keep the library in the settings file: %v", err)
+		return lib
+	}
+	lib.Set(dir, id)
+	logf("library: %s (added from -iso-dir)", dir)
+	return lib
+}
+
+// dhcpOptions are the settings of the DHCP server in full mode.
+type dhcpOptions struct {
+	first, last, mask, router, dns string
+	pxeOnly                        bool
+}
+
+// dhcpResponder is what answers PCs that ask for a network boot: nil when DHCP is off. A setting that is wrong is an error here, at the start of the program,
+// not later when the services are started.
+func dhcpResponder(mode string, ip net.IP, base string, registry *handoff.Registry, web *httpd.Server, o dhcpOptions, logf func(string, ...any)) (dhcp.Responder, error) {
+	switch mode {
+	case "off":
+		return nil, nil
+	case "proxy", "full":
+	default:
+		return nil, fmt.Errorf("-dhcp must be proxy, full or off, not %q", mode)
+	}
+	handoffFile := func(mac string, efi bool) (string, bool) { // a hand-off in progress first, then a rule that wants the firmware's own boot manager
+		if f, ok := registry.BootFile(mac, efi); ok {
+			return f, true
+		}
+		return web.NativeBootFile(mac, efi)
+	}
+	boot := dhcp.Boot{ServerIP: ip, Script: base + "/boot.ipxe", Handoff: handoffFile, Seen: web.NoteDHCP, Files: map[dhcp.Arch]string{
+		dhcp.ArchBIOS: "undionly.kpxe", dhcp.ArchX64EFI: "ipxe.efi",
+	}}
+	if mode == "proxy" {
+		return boot, nil
+	}
+	m := net.IPMask(net.ParseIP(o.mask).To4())
+	if m == nil {
+		return nil, fmt.Errorf("%q is not a network mask", o.mask)
+	}
+	start, end := net.ParseIP(o.first), net.ParseIP(o.last)
+	if start == nil || end == nil {
+		network := ip.Mask(m).To4()
+		start, end = net.IPv4(network[0], network[1], network[2], 100), net.IPv4(network[0], network[1], network[2], 200)
+	}
+	logf("DHCP: handing out %s to %s", start, end)
+	return &dhcp.Full{PXEOnly: o.pxeOnly, Boot: boot, First: start, Last: end, Mask: m, Router: net.ParseIP(o.router), DNS: net.ParseIP(o.dns), Lease: time.Hour}, nil
 }
 
 // randomPassword is what Windows set-up logs in to the share with: new for every start of the server.

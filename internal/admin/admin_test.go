@@ -13,7 +13,9 @@ import (
 
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
+	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/logbuf"
+	"github.com/ghazichaieb/gola-bootlace/internal/service"
 )
 
 type fakeBackend struct {
@@ -55,6 +57,9 @@ type rig struct {
 	backend *fakeBackend
 	log     *logbuf.Buffer
 	cookie  *http.Cookie
+	lib     *library.Library
+	sup     *service.Supervisor
+	probe   *probeService
 }
 
 func newRig(t *testing.T) *rig {
@@ -72,14 +77,29 @@ func newRig(t *testing.T) *rig {
 	}
 	lg := logbuf.New(100)
 	lg.Add("first line")
-	a := New(Options{Store: store, Log: lg, Backend: b, ISODir: "/isos", Facts: [][2]string{{"Server address", "10.0.0.1"}}})
+	lib := library.New("", "")
+	sup := &service.Supervisor{Gate: lib.Check}
+	probe := &probeService{}
+	sup.Add(service.Def{ID: "probe", Title: "Probe", Start: probe.start})
+	a := New(Options{Store: store, Log: lg, Backend: b, Library: lib, Services: sup, Facts: [][2]string{{"Server address", "10.0.0.1"}}})
 	mux := http.NewServeMux()
 	for p, h := range a.Mount() {
 		mux.Handle(p, h)
 	}
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
-	return &rig{t: t, ts: ts, store: store, backend: b, log: lg}
+	return &rig{t: t, ts: ts, store: store, backend: b, log: lg, lib: lib, sup: sup, probe: probe}
+}
+
+// probeService counts its starts and stops, and has the PCs it is told it has.
+type probeService struct {
+	starts, stops int
+	sessions      []string
+}
+
+func (p *probeService) start() (service.Instance, error) {
+	p.starts++
+	return service.Instance{Stop: func() { p.stops++ }, Sessions: func() []string { return p.sessions }}, nil
 }
 
 func (r *rig) do(method, path string, body any, headers map[string]string) (int, map[string]any) {

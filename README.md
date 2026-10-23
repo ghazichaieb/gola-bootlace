@@ -41,7 +41,7 @@ You get:
 ### Using it, step by step
 
 1. **Get the program** (`bootlace`, one file; build it as described in [For developers](#for-developers), or use the Proxmox script below).
-2. **Make a folder** for the ISOs and copy them in. (They can be in sub-folders. `.iso` files, disk images `.img`, and packed ones such as `.iso.xz` or `.zip` are all accepted.)
+2. **Make a folder** for the ISOs and copy them in. It becomes the **library**: Bootlace needs to read *and* write it (it adds a hidden `.bootlace` folder), and you can choose another folder later in the web interface. (ISOs can be in sub-folders. `.iso` files, disk images `.img`, and packed ones such as `.iso.xz` or `.zip` are all accepted.)
 3. **Start it** on the server:
    ```
    bootlace serve -iso-dir /path/to/the/isos

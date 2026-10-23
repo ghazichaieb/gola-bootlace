@@ -31,6 +31,27 @@ func TestScanListsIsoFilesSortedAndSkipsOthers(t *testing.T) {
 	}
 }
 
+// The library's own folder (partial files, the cache inside the library) and hidden files are never offered.
+func TestScanSkipsHiddenFoldersAndFiles(t *testing.T) {
+	dir := t.TempDir()
+	write(t, filepath.Join(dir, "a.iso"), 1)
+	write(t, filepath.Join(dir, ".bootlace", "cache", "images", "b.img"), 1)
+	write(t, filepath.Join(dir, ".bootlace", "incoming", "c.iso"), 1)
+	write(t, filepath.Join(dir, "sub", "._a.iso"), 1)
+	list, err := Scan(dir)
+	if err != nil || len(list) != 1 || list[0].Name != "a.iso" {
+		t.Fatalf("got %+v, %v", list, err)
+	}
+}
+
+func TestNoFolderIsNotTheCurrentFolder(t *testing.T) {
+	t.Chdir(t.TempDir())
+	write(t, "x.iso", 1)
+	if list, err := Scan(""); err != nil || len(list) != 0 {
+		t.Fatalf("Scan(\"\") listed the current folder: %v, %v", list, err)
+	}
+}
+
 func TestAMissingFolderIsAnEmptyListAndNamesCannotLeaveTheFolder(t *testing.T) {
 	list, err := Scan(filepath.Join(t.TempDir(), "nothing-here"))
 	if err != nil || len(list) != 0 {
