@@ -230,8 +230,7 @@ fi
 # ---- a new container: the questions
 say "Gola Bootlace: a network boot server in a Proxmox container"
 [ "$INTERACTIVE" = 1 ] && echo "Press Enter to take the answer in brackets."
-if [ -z "${CTID:-}" ]; then CTID=$(pvesh get /cluster/nextid); fi
-ask CTID "Container number" "$CTID"
+if [ -z "${CTID:-}" ]; then ask CTID "Container number" "$(pvesh get /cluster/nextid)"; fi # (ask does nothing for a variable that has a value: the default is its argument)
 [[ $CTID =~ ^[0-9]+$ ]] || die "the container number must be a number"
 pct status "$CTID" >/dev/null 2>&1 && die "container or VM $CTID already exists"
 ask CT_HOSTNAME "Name of the container" bootlace
@@ -421,7 +420,7 @@ Gola Bootlace is running in container $CTID at $addr.
   log         pct exec $CTID -- journalctl -u bootlace -f
   settings    kept in the container: /var/lib/bootlace/config.json (changed in the web page)
   update      type "update" in the container's console (or: pct exec $CTID update): it checks, asks, replaces the program and goes back if the new one does not answer
-  update (the script itself, the library or the unit)   CTID=$CTID bash -c "$(curl -fsSL https://raw.githubusercontent.com/$BOOTLACE_REPO/main/tools/proxmox/bootlace-lxc.sh)"
+  set up again (the unit, the update command)   CTID=$CTID bash -c "\$(curl -fsSL https://raw.githubusercontent.com/$BOOTLACE_REPO/main/tools/proxmox/bootlace-lxc.sh)"
   remove      pct stop $CTID && pct destroy $CTID
 
 DONE
