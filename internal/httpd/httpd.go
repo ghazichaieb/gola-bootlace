@@ -67,6 +67,9 @@ type Server struct {
 	started      time.Time
 	useMu        sync.Mutex
 	using        map[string]int // ISOs that PCs are reading, by name in the library
+	cacheFullMu  sync.Mutex
+	cacheFull    string // why the cache could not make room, and when
+	cacheFullAt  time.Time
 	libCacheMu   sync.Mutex
 	libCacheDir  string
 	libCachePath string

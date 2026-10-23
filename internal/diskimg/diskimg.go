@@ -43,6 +43,8 @@ type Manager struct {
 	// copies made earlier may be. Without them everything is in Dir. They let the cache spill over from a small disk to a bigger one.
 	Place func(need int64) string
 	Also  func() []string
+	// Used, when set, is told about every use of a finished copy (the cache removes the least recently used ones when it is full).
+	Used func(path string)
 
 	mu   sync.Mutex
 	jobs map[string]*job // by the name of the cache file
@@ -81,6 +83,9 @@ func (m *Manager) existing(iso isos.ISO) (path string, size int64, ok bool) {
 	for _, dir := range m.dirs() {
 		p := filepath.Join(dir, name)
 		if st, err := os.Stat(p); err == nil {
+			if m.Used != nil {
+				m.Used(p)
+			}
 			return p, st.Size(), true
 		}
 	}

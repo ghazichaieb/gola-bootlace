@@ -40,7 +40,7 @@ func (s *Server) diskManager() *diskimg.Manager {
 	s.mu.Lock()
 	if s.disks == nil {
 		dir := s.localCache()
-		s.disks = &diskimg.Manager{Dir: filepath.Join(dir, "images"), Logf: s.logf,
+		s.disks = &diskimg.Manager{Dir: filepath.Join(dir, "images"), Logf: s.logf, Used: touchCache,
 			Place: func(need int64) string { return filepath.Join(s.cachePlace(need), "images") },
 			Also: func() []string {
 				var d []string
