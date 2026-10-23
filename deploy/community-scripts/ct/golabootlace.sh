@@ -53,3 +53,6 @@ msg_ok "Completed successfully!\n"
 echo -e "${CREATING}${GN}${APP} setup has been successfully initialized!${CL}"
 echo -e "${INFO}${YW} Access it using the following URL:${CL}"
 echo -e "${TAB}${GATEWAY}${BGN}http://${IP}:8080/admin/${CL}"
+_pw=$(pct exec "$CTID" -- journalctl -u bootlace --no-pager 2>/dev/null | sed -n 's/.*the password was made up: \([^ ]*\) .*/\1/p' | tail -n 1)
+echo -e "${INFO}${YW} Password of the web interface (made up now, shown only once - change it under Account):${CL}"
+echo -e "${TAB}${BGN}${_pw:-not found: pct exec ${CTID} -- journalctl -u bootlace | grep -i password}${CL}"

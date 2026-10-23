@@ -4,6 +4,7 @@
 #   bootlace-<version>-linux-amd64.tar.gz     the program for Linux (also what the Proxmox scripts install)
 #   bootlace-<version>-linux-arm64.tar.gz     the same for ARM (a Raspberry Pi, an ARM Proxmox host)
 #   bootlace-<version>-windows-amd64.zip      the program for Windows
+#   bootlace-<version>-third-party-sources.tar  the source of the GPL programs inside the program (iPXE, wimboot, GRUB), see NOTICE
 #   SHA256SUMS                                the checksums of the files above
 #
 # Each archive holds the program (bootlace or bootlace.exe), README.md, CHANGELOG.md, LICENSE, ADDITIONAL-TERMS.md and NOTICE.
@@ -53,6 +54,7 @@ for target in linux/amd64 linux/arm64 windows/amd64; do
 	echo "made dist/$name.$ext"
 done
 rm -rf dist/stage
+sh tools/third_party_sources.sh "dist/bootlace-$VERSION-third-party-sources.tar" >/dev/null && echo "made dist/bootlace-$VERSION-third-party-sources.tar (the source of the GPL programs inside)"
 (cd dist && sha256sum bootlace-* >SHA256SUMS)
 echo
 cat dist/SHA256SUMS
@@ -74,7 +76,7 @@ case $VERSION in
 	[ "$major" != 0 ] && tags="$tags $major"
 	;;
 esac
-image=ghcr.io/ghazichaieb/gola-bootlace
+image=${DOCKER_IMAGE:-ghazichaieb/gola-bootlace} # on Docker Hub
 opts=""
 for t in $tags; do opts="$opts -t $image:$t"; done
 echo "version $VERSION. To publish it (not done by this script):"

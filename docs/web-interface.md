@@ -5,11 +5,16 @@ start from the network never need it; they only use the boot menu.
 
 ## Password
 
-The first time the server starts without a password it makes one and writes it once in its log:
+The first time the server starts without a password it makes one and writes it once in its log, in a line `web interface: the password was made up: ...`. Where to look:
 
-```
-journalctl -u bootlace | grep -i password
-```
+| Installed as | Where the password is |
+|---|---|
+| Proxmox container (the community-scripts script or `tools/proxmox/bootlace-lxc.sh`) | shown at the end of the installation; later `pct exec <number> -- journalctl -u bootlace \| grep -i password` |
+| Docker | `docker logs bootlace 2>&1 \| grep -i password` |
+| A service on a Linux machine | `journalctl -u bootlace \| grep -i password` |
+| Started by hand | printed in the terminal |
+
+Change it under **Account** as soon as you are in. **If it is lost**, give a new one at the start: set `BOOTLACE_ADMIN_PASSWORD` (or start with `-admin-password`) and restart the server; a password given at the start replaces the saved one. In a Proxmox container, add the line `BOOTLACE_ADMIN_PASSWORD=<new password>` to `/etc/default/bootlace` (`/etc/bootlace.env` if it was made by the community-scripts script) and run `systemctl restart bootlace`.
 
 It is kept only as a salted PBKDF2 hash in the settings file. Change it under **Account**, or set it from the command line (`-admin-password`, or the
 environment variable `BOOTLACE_ADMIN_PASSWORD`; the one given at the start wins). Five wrong passwords from one address lock that address out for five

@@ -49,6 +49,14 @@ While the share is not there Bootlace waits ("the library is not available" in t
 
 A wrong password is tried at each access (systemd limits how often): give a NAS that locks accounts after a few failures the right password first.
 
+### Starting small, moving the ISOs later
+
+Keeping the library "inside the container" closes no door. To move to a host folder or a share later:
+
+1. Give the container the folder: in the Proxmox web page, the container's **Resources > Add > Mount Point** (a storage), or on the host `pct set <number> -mp0 /host/folder,mp=/mnt/isos`. For a network share, mount it on the host first (the lines the script writes for a share in `/etc/fstab` show how), then bind its folder the same way. The folder must be writable for user 100000 (see above). A new mount point takes effect when the container restarts.
+2. In Bootlace's web interface choose it under **Server > Library > Choose another folder** (`/mnt/isos`). The services restart on the new library (the page asks first if PCs are connected).
+3. The ISOs that were in the container stay in `/srv/library`: copy them over (`cp -a /srv/library/. /mnt/isos/` in the container's console) and then delete them from the old place, or upload or import them again.
+
 ### Updating
 
 Type `update` in the container's console (or `pct exec <number> update` on the host). It says which version is installed and which is the latest, asks before restarting the
@@ -61,7 +69,7 @@ To change how the container is set up (the unit, the library), run the script ag
 
 ### Other things
 
-- The web page is `http://<container address>:8080/admin/`; the password was made up at the first start and is in the log (`pct exec <number> -- journalctl -u bootlace | grep -i password`). Change it under Account.
+- The web page is `http://<container address>:8080/admin/`; the password was made up at the first start. The script shows it at the end of the installation; it is also in the log (`pct exec <number> -- journalctl -u bootlace | grep -i password`), and written there only once. Change it under Account. If it is lost, add a line `BOOTLACE_ADMIN_PASSWORD=<new password>` to `/etc/default/bootlace` in the container (`/etc/bootlace.env` if it was made by the community-scripts script) and run `systemctl restart bootlace`.
 - The container must be on the same network (bridge) as the PCs to install. Bootlace answers PCs that ask to network-boot (proxy DHCP) and leaves the network's own DHCP server alone; it answers the local network only.
 - Remove: `pct stop <number> && pct destroy <number>` (and, for a share, the two lines of `/etc/fstab`).
 - Secure Boot has to be off on the PCs to install, except for Windows and Ubuntu (issue #10).

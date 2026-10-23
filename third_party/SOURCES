@@ -1,0 +1,9 @@
+# The source code of the GPL programs that Gola Bootlace ships inside itself, pinned: sha256, file name, address.
+# tools/third_party_sources.sh downloads these, checks them against this list and packs them into every release as bootlace-<version>-third-party-sources.tar.
+# Update this list (and NOTICE) the day one of those programs is replaced.
+
+88358146ea68b76ac7c3e1e5cc8f785f31ac913658384e4c2b4f7c9100042772  ipxe-a5eed98d964bc48790041aed41a8876fa0b7eba5.tar.gz  https://github.com/ipxe/ipxe/archive/a5eed98d964bc48790041aed41a8876fa0b7eba5.tar.gz
+3b83be6d55cf49a4a997189dbbb048024c5232b0d7f8a45fc864b290dc04a4e5  wimboot-2.9.0.tar.gz  https://github.com/ipxe/wimboot/archive/refs/tags/v2.9.0.tar.gz
+f3c97391f7c4eaa677a78e090c7e97e6dc47b16f655f04683ebd37bef7fe0faa  grub2_2.12.orig.tar.xz  https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/grub2/2.12-1ubuntu7.3/grub2_2.12.orig.tar.xz
+1e78cbb97d86461e8cb4789658cdeffeef32a784a006253dcc3b1b97d7056338  grub2_2.12-1ubuntu7.3.debian.tar.xz  https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/grub2/2.12-1ubuntu7.3/grub2_2.12-1ubuntu7.3.debian.tar.xz
+e23bd4184ea731a890c338fbc8b73e18d53cf4c47b0e8dffd6a55b0d13798ffa  grub2_2.12-1ubuntu7.3.dsc  https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/grub2/2.12-1ubuntu7.3/grub2_2.12-1ubuntu7.3.dsc

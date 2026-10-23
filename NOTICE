@@ -1,40 +1,47 @@
 Gola Bootlace, by Gola Services
 Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later (see LICENSE and ADDITIONAL-TERMS.md).
 
-Third-party software this project reuses or ships. Keep every entry's copyright headers and licence texts when you copy files.
+Third-party software this project ships or uses. Keep every entry's copyright headers and licence texts when you copy files, and update this list the day
+something is copied or bundled.
 
-Shipped or planned (update this list the day something is copied or bundled):
+## Source code of the GPL programs inside the program (written offer)
 
-- Ventoy (https://github.com/ventoy/Ventoy), Copyright (c) longpanda, GPL-3.0-or-later.
-  Planned reuse: the per-distribution initramfs helper scripts (IMG/cpio/ventoy/hook/*) and ideas from vtoyjump. Files copied from it must keep
-  their original headers and be listed here by path.
+iPXE, wimboot and Canonical's signed GRUB (below) are GPL programs that are part of the Gola Bootlace program as files. Their source code, exactly as it was when they
+were shipped, is attached to every release as `bootlace-<version>-third-party-sources.tar` (the files and where each comes from are listed, with checksums, in
+`third_party/SOURCES`). Whoever has received the program in any other way can ask for it: open an issue in the repository, or write to Gola Services through https://gola.tn.
+This offer is valid for at least three years after the version in question was last offered.
+
+## Shipped
+
 - iPXE (https://ipxe.org), GPL-2.0-or-later with some files under compatible licences. SHIPPED in internal/assets/ipxe, built from the unchanged source
   at https://github.com/ipxe/ipxe commit a5eed98d964bc48790041aed41a8876fa0b7eba5 (iPXE 2.0.0+) with only the build options in tools/ipxe/config
   (console command, PNG pictures, colour commands, VESA console for BIOS); tools/ipxe/build.sh makes the files. ipxe.efi (SHA-256
   78354cdf81434498aabfad6fb5c1177691ee1daaf1489cd9dbdd1ccd199409b4), snponly.efi (SHA-256
   a94d1db7f1b2cfa10b87faef67d95572618ba04bce286a3da003609a3c0dca90), undionly.kpxe (SHA-256
   7391a65312f9719374e4d872c60c6eaebabfbea5d69edaa16e7d23701a27e9d5). They are unsigned: UEFI Secure Boot must be off for them (see issue #10).
-- GRUB 2.12 as built and signed by Canonical for Ubuntu, GPL-3.0-or-later: internal/assets/ubuntu/grubnetx64.efi.signed is the file of the package grub-efi-amd64-signed
-  1.202.5+2.12-1ubuntu7.3 (noble-updates), unchanged (source: https://packages.ubuntu.com/source/noble/grub2 and https://git.launchpad.net/ubuntu/+source/grub2). UEFI Secure Boot
-  accepts it because Canonical signed it; the shim that starts it comes from the Ubuntu ISO that is being booted. Used only for Ubuntu started with Secure Boot on.
-- wimlib (https://wimlib.net), LGPL-3.0-or-later: NOT shipped; the server runs the wimlib-imagex that is installed on the computer (Debian/Ubuntu: package wimtools) to put two files into a copy of a Windows boot.wim.
 - wimboot 2.9.0 (https://ipxe.org/wimboot), GPL-2.0-or-later, source at https://github.com/ipxe/wimboot. SHIPPED unchanged in internal/assets/ipxe/wimboot (downloaded 2026-10-21
   from the project's release, SHA-256 5f067ccdc4d084d5bf77b6c853bd0f8402dfc2b4cd1b103d358993ae97fae8e3). Starts Windows setup images.
+- GRUB 2.12 as built and signed by Canonical for Ubuntu, GPL-3.0-or-later: internal/assets/ubuntu/grubnetx64.efi.signed is the file of the package grub-efi-amd64-signed
+  1.202.5+2.12-1ubuntu7.3 (noble-updates), unchanged (built from the source package grub2 2.12-1ubuntu7.3: https://packages.ubuntu.com/source/noble/grub2 and
+  https://git.launchpad.net/ubuntu/+source/grub2). UEFI Secure Boot accepts it because Canonical signed it; the shim that starts it comes from the Ubuntu ISO that is being
+  booted. Used only for Ubuntu started with Secure Boot on.
 - go-smb-server (https://github.com/sonroyaalmerol/go-smb-server), MIT, Copyright (c) its authors. SHIPPED in third_party/go-smb-server with our changes: the SMB 2
   server that shows an ISO to Windows' set-up environment. Changes (so that Windows 11 can use it): a security blob in the negotiate answer and real times and sizes,
   the NTLM challenge with a full target information and a version, more file and file system information classes, the directory listing classes Windows asks for
   with listings that continue over several requests, shorter minimum request sizes, and the volume and file system answers laid out as Windows reads them, as many credits as the client asks for (one per answer
   made Windows' set-up environment stop at its first folder listing), no oplocks, and no "no caching" share flag.
-- Samba (https://www.samba.org), GPL-3.0-or-later. Not used: the built-in share above replaces it.
-- 7-Zip (https://www.7-zip.org), LGPL and BSD parts. Planned: listing ISO contents, run as a separate program.
-
 - Go libraries linked into the program (go.mod): github.com/CalebQ42/squashfs (MIT, Copyright (c) 2020 Caleb Gardner: reads the system image inside a Proxmox VE ISO), github.com/klauspost/compress
   (BSD-3-Clause, Copyright (c) 2012 The Go Authors, 2019 Klaus Post: zstd), github.com/ulikunitz/xz (BSD-3-Clause, Copyright (c) 2014-2022 Ulrich Kunitz), github.com/pierrec/lz4 (BSD-3-Clause,
   Copyright (c) 2015 Pierre Curto), github.com/mikelolasagasti/xz (0BSD-style, Copyright (C) 2015-2017 Michael Cross) and golang.org/x/crypto (BSD-3-Clause). The squashfs library would also pull in
   github.com/rasky/go-lzo (GPL-2.0, an LZO port): it is replaced by an empty stand-in (third_party/go-lzo-stub) that only returns an error, so no LZO code is in the program.
-
 - Geist (https://vercel.com/font), Copyright (c) Vercel, SIL Open Font License 1.1. The word "Bootlace" in the logo files is set in Geist Bold,
   converted to outlines by tools/make_logo.py. The font file itself is not in this repository.
-- The Gola logo and its GOLA lettering (branding/source/GolaLogo.svg) belong to Gola Services SUARL: see ADDITIONAL-TERMS.md (names and logos).
+- The Gola logo and its GOLA lettering (branding/source/GolaLogo.svg) belong to Gola Services SUARL: see TRADEMARKS.md (names and logos).
+
+## Used, not shipped in the program
+
+- wimlib (https://wimlib.net), LGPL-3.0-or-later: not in the program. The server runs the `wimlib-imagex` that is installed on the computer (Debian and Ubuntu: package
+  `wimtools`) to put two files into a copy of a Windows boot.wim. The Docker image contains Alpine's package `wimlib`, and the Proxmox scripts install Debian's `wimtools`.
+- The Docker image is based on Alpine Linux (https://alpinelinux.org); its packages, and their source, are Alpine's.
 
 No Microsoft software is included or redistributed. Windows files come from the user's own ISO.

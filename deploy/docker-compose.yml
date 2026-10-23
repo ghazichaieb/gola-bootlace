@@ -11,7 +11,7 @@ name: bootlace
 
 services:
   bootlace:
-    image: ghcr.io/ghazichaieb/gola-bootlace:${BOOTLACE_VERSION:-latest}
+    image: ghazichaieb/gola-bootlace:${BOOTLACE_VERSION:-latest}
     # To build the image from this source instead of pulling it:
     # build: { context: .., args: { VERSION: dev } }
     container_name: bootlace

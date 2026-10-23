@@ -5,12 +5,12 @@
 #   tools/proxmox/pve_run.sh OUTDIR 'ubuntu-22:3:240' 'Fedora:4:300:uefi' ...      (BIOS VMs, or UEFI with :uefi)
 #
 # A test is <part of the ISO's name>:<memory in GB>:<seconds to wait>[:uefi]. A UEFI VM has no network boot of its own on Proxmox (its OVMF has no PXE), so it starts iPXE
-# from a small EFI disk (/root/espdisk.img on the host: a 64 MB GPT disk with EFI/BOOT/BOOTX64.EFI = Bootlace's ipxe.efi) and the rest is the usual way. The container's admin password and the Proxmox host are the test server's (see the memory notes);
+# from a small EFI disk (/root/espdisk.img on the host: a 64 MB GPT disk with EFI/BOOT/BOOTX64.EFI = Bootlace's ipxe.efi) and the rest is the usual way. The Proxmox host, the Bootlace address and its web interface password come from PVE_HOST, BOOTLACE_URL and BOOTLACE_PW;
 # the VMs are 9201 upwards (PVE_VMID_BASE=9301 for a second run at the same time: two runs must never share VM numbers) and are destroyed at the end, with their rules. Needs: ssh to the host, curl, python with Pillow (to turn the screen dump into a PNG).
 set -u
-HOST=${PVE_HOST:-root@192.168.1.71}
-BASE=${BOOTLACE_URL:-http://192.168.1.201:8080}
-PW=${BOOTLACE_PW:-change-me}
+HOST=${PVE_HOST:?set PVE_HOST to the Proxmox host to test on, like root@192.168.1.10}
+BASE=${BOOTLACE_URL:?set BOOTLACE_URL to the Bootlace under test, like http://192.168.1.50:8080}
+PW=${BOOTLACE_PW:?set BOOTLACE_PW to the password of its web interface}
 OUT=$1; shift
 mkdir -p "$OUT"
 JAR=$(mktemp)

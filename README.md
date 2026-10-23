@@ -40,13 +40,13 @@ You get:
 
 ### Using it, step by step
 
-1. **Get the program** (`bootlace`, one file; build it as described in [For developers](#for-developers), or use the Proxmox script below).
+1. **Get the program** (`bootlace`, one file): download it for Linux or Windows from the [Releases page](https://github.com/ghazichaieb/gola-bootlace/releases) (check it against `SHA256SUMS`), use the Proxmox script or Docker image below, or build it as described in [For developers](#for-developers).
 2. **Make a folder** for the ISOs and copy them in. It becomes the **library**: Bootlace needs to read *and* write it (it adds a hidden `.bootlace` folder), and you can choose another folder later in the web interface. You can also add ISOs from the web interface (**Library**): upload them, or give a web address and the server downloads the file itself, checks it and keeps it. (ISOs can be in sub-folders. `.iso` files, disk images `.img`, and packed ones such as `.iso.xz` or `.zip` are all accepted.)
 3. **Start it** on the server:
    ```
    bootlace serve -iso-dir /path/to/the/isos
    ```
-   The first time it prints a password for the management page.
+   The first time it makes up a password for the management page and prints it **once** (look for "the password was made up" in its output or log; see [docs/web-interface.md](docs/web-interface.md#password) if you miss it).
 4. **On the PC you want to install**: switch it on and choose **boot from network** (often F12, F11 or Esc at the start; or set the boot order). It gets a boot screen with the
    Bootlace logo and a menu of your ISOs.
 5. **Choose one with the arrow keys and Enter.** It starts. Install as you always would.
@@ -57,14 +57,14 @@ That is all. Stop the program and nothing is left on the PCs.
 
 ### The management page
 
-Open `http://<server address>:8080/admin/` in a browser (the password is in the server's log the first time, or set it with `-admin-password`). There you can see the PCs that
+Open `http://<server address>:8080/admin/` in a browser (the password is in the server's log the first time, shown once, or set it yourself with `-admin-password`). There you can see the PCs that
 asked for a menu, rename or hide an ISO, choose what starts by itself after some seconds, give one PC a rule ("always boot from your own disk", "start this ISO without
 asking"), and watch what is happening. It is described in [docs/web-interface.md](docs/web-interface.md).
 
 ### Running it for good
 
 - **Proxmox:** one command on the host makes a small container with Bootlace in it ([docs/proxmox.md](docs/proxmox.md)). What a container, Docker or a PC needs: [docs/requirements.md](docs/requirements.md).
-- **Docker:** `docker compose -f deploy/docker-compose.yml up -d` on a Linux host ([docs/docker.md](docs/docker.md)). It needs host networking, because network boot uses broadcast traffic that Docker's own networks do not pass.
+- **Docker:** `docker compose -f deploy/docker-compose.yml up -d` on a Linux host ([docs/docker.md](docs/docker.md); the image is on Docker Hub). It needs host networking, because network boot uses broadcast traffic that Docker's own networks do not pass.
 - **On a PC or laptop** for a quick job: just run it, as above. Windows needs one extra thing: its own file sharing must not hold port 445 (see below).
 
 ### Good to know
@@ -126,16 +126,18 @@ shaped the code, and a recipe for adding a system, in **[docs/architecture.md](d
 
 | Path | What is in it |
 |---|---|
-| `cmd/bootlace` | the server; `bootlace serve`, and `bootlace inspect <iso>` which says how the server would start an ISO |
+| `cmd/bootlace` | the server; `bootlace serve`, `bootlace inspect <iso>` which says how the server would start an ISO, and `bootlace health` |
 | `cmd/bootlace-nbd` | the network disk client that runs in the PC's initramfs |
 | `internal/family`, `bootcfg` | recognising systems and how to start them; reading boot menus |
 | `internal/initrd`, `initread` | writing the extra archive; reading initramfs files and kernel modules |
 | `internal/httpd`, `admin`, `menu` | the web server, the management page, the boot menu |
+| `internal/library`, `importer`, `service`, `access` | the library (folder, checks, index), uploads and downloads, starting and stopping the services, the local-network-only rule |
 | `internal/nbd`, `iscsi`, `smbshare`, `tftp`, `dhcp` | the network services |
 | `internal/disc`, `iso9660`, `udf`, `fat`, `partition`, `diskimg`, `isos` | reading ISOs, images and archives |
 | `internal/winpe`, `handoff` | Windows set-up, and the chains that need the PC's own firmware (FreeBSD, Secure Boot) |
-| `tools/` | the lab: Proxmox and Hyper-V scripts that boot ISOs in virtual machines and take pictures; the iPXE build |
-| `docs/` | architecture, compatibility results, Secure Boot, Proxmox, the web interface |
+| `tools/` | the lab: Proxmox and Hyper-V scripts that boot ISOs in virtual machines and take pictures; the iPXE build; `release.sh` and the Proxmox container script |
+| `deploy/` | the Docker Compose file and the community-scripts files for Proxmox |
+| `docs/` | architecture, compatibility results, Secure Boot, Proxmox, Docker, requirements, the web interface |
 
 ### Building and testing
 
@@ -162,8 +164,8 @@ the result in `docs/compatibility.md`. [docs/architecture.md](docs/architecture.
 ## Licence
 
 Gola Bootlace is free software under the **GNU General Public License, version 3 or (at your option) any later version**; see
-[LICENSE](LICENSE). Additional terms about attribution and the project's name are in [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md) (draft).
-Third-party code and credits are in [NOTICE](NOTICE).
+[LICENSE](LICENSE). Additional terms about attribution and the project's name are in [ADDITIONAL-TERMS.md](ADDITIONAL-TERMS.md); the rules for the names are in [TRADEMARKS.md](TRADEMARKS.md).
+Third-party code and credits are in [NOTICE](NOTICE), together with the offer of the source code of the GPL programs inside the release (it is also a file of every release).
 
 "Gola" and "Gola Bootlace" are names of Gola Services SUARL. The licence gives you the code, not the right to use the names for a modified version.
 

@@ -32,7 +32,7 @@
   },
   "notes": [
     {
-      "text": "The password of the web interface is made up at the first start and written once in the log: journalctl -u bootlace | grep -i password. Change it under Account.",
+      "text": "The password of the web interface is made up at the first start, shown at the end of the installation and written once in the log: journalctl -u bootlace | grep -i password. Change it under Account. If it is lost, set a new one: add BOOTLACE_ADMIN_PASSWORD=<new password> to /etc/bootlace.env and run systemctl restart bootlace.",
       "type": "info"
     },
     {

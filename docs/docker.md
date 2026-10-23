@@ -7,6 +7,8 @@ docker compose -f deploy/docker-compose.yml logs bootlace     # the password of 
 
 Then open `http://<address of the host>:8080/admin/`.
 
+**The password.** The first time it starts, Bootlace makes up a password for the web interface and writes it **once** in the container's log, in a line like `web interface: the password was made up: ...`. Find it again with `docker compose -f deploy/docker-compose.yml logs bootlace | grep -i password` (or `docker logs bootlace 2>&1 | grep -i password`); the log is lost when the container is removed, so change it right away under **Account**. If you do not want a made-up one, set `BOOTLACE_ADMIN_PASSWORD` in the compose file. If it is lost, set `BOOTLACE_ADMIN_PASSWORD` to a new password and restart the container: the one given at the start replaces the saved one (take the line out afterwards if you do not want the password in the file).
+
 ## What you need
 
 - **A Linux host.** Network boot uses broadcast traffic, which Docker's own networks do not pass, so the container uses the host's network (`network_mode: host`). Docker Desktop on Windows and macOS cannot reach the network the PCs are on: use a Linux machine, a virtual machine with a bridged network, or a [Proxmox container](proxmox.md).

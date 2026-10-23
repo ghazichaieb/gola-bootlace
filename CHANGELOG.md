@@ -3,8 +3,12 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Unreleased
+## 0.1.0 - 2026-10-23
 
+The first release. What the program does is listed at the end of this section.
+
+- **Legal and publishing.** The additional terms are now final: attribution, modified versions must say they are modified, and no rights to the names; the rules for the names are in `TRADEMARKS.md`. `NOTICE` carries a written offer of the source code of the GPL programs inside the release (iPXE, wimboot, GRUB), and every release has them as `bootlace-<version>-third-party-sources.tar`. `SECURITY.md` says how to report a problem privately.
+- **The first password is easy to find.** It is made up at the first start and written once in the log; the Proxmox scripts now show it at the end of the installation, and the Docker, Proxmox and web interface documentation say where to look and how to set a new one if it is lost.
 - **Docker.** A `Dockerfile` (42 MB image, Alpine, with wimlib for Windows with Secure Boot) and a real `deploy/docker-compose.yml` (host networking, a volume for the settings, a folder for the library). Every option of `bootlace serve` can be set as an environment variable `BOOTLACE_<NAME>`, and `bootlace health` is the container's health check. The server's address is now the one of the computer's default route, not the first private address (inside Docker that was the Docker bridge). (#11)
 - **Release files.** `tools/release.sh` makes the archives for Linux (amd64, arm64) and Windows, a `SHA256SUMS` file and the Docker tags of a version. The archives are made by `tools/archive`, the same on every computer: owner 0 (an archive that names the builder's user cannot be unpacked by root in an unprivileged container), the program executable, one fixed time, so the same sources give the same archive. (#11)
 - **Proxmox, own script rewritten.** It asks a few questions (container, network, and where the ISOs are: in the container, a host folder, or an SMB or NFS share), takes the program from the release files and checks its checksum, and writes the container's Notes with a link to gola.tn. A share is mounted on the host with an automount, so it does not matter whether the NAS starts before or after the container; the container follows it, and Bootlace waits for it. Tested on Proxmox VE 9.2, including a hard NFS mount that disappears and comes back. (#11)
@@ -19,7 +23,7 @@ program is not yet in its final form and any release may change how it is set up
 - Hidden folders and files (`.bootlace`, `._name.iso`) are never offered as ISOs.
 - The Proxmox script now mounts the ISO folder read and write, and says what to do when the container cannot write to it.
 
-Nothing has been released yet. What the program does so far:
+What the program does:
 
 - PXE network boot server in one program: proxy DHCP, TFTP, a web server, a network disk (NBD) server, an iSCSI target and a Windows file share, with iPXE for
   BIOS and UEFI built in.

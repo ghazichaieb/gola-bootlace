@@ -32,7 +32,7 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / 'branding'
-SOURCE = OUT / 'source' / 'GolaLogo.svg'          # the Gola logo as the owner supplied it: the GOLA lettering is taken from it untouched
+SOURCE = OUT / 'source' / 'GolaLogo.svg'          # the Gola logo as Gola Services supplied it: the GOLA lettering is taken from it untouched
 EDGE = Path(r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe')
 
 RED, OUTLINE = '#bf2126', '#231f20'          # the Gola red and its dark outline
