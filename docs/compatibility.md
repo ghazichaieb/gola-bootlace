@@ -213,3 +213,7 @@ Along the way the generic reading of menus found and fixed: tabs between `linux`
 After the reorganisation of the code, Tails, Linux Mint, Debian live, Arch Linux, Fedora Workstation, Ubuntu Server and VyOS were started again by name (BIOS, Proxmox test server) and all reach the screens in
 the tables above; Alpine, Proxmox VE, ChimeraOS and Lakka were started again after the first stage of the reorganisation, with the same results as before.
 
+
+## Windows Setup in a Proxmox VM (2026-10-24)
+
+Windows 11 (a custom-built English ISO, build 26300.9711, 7.9 GB) started from the network in a UEFI Proxmox VM (OVMF, 6 GB, a 64 MB EFI disk with Bootlace's `ipxe.efi`) and **reached the first page of Windows Setup** (language, time and keyboard) with the **Intel e1000 network card** (`PVE_NIC=e1000` for `tools/proxmox/pve_run.sh`). The card matters: Setup's own environment has no driver for QEMU's e1000e (the earlier "installation files could not be reached" in these VMs), and Proxmox's virtio card needs a driver that is not in Setup either. Not run to the end of an installation here (the Hyper-V runs above did that). A new UEFI VM also waits at its firmware's boot manager for a key: `pve_run.sh` now presses Enter twice, 80 and 120 seconds after the start.

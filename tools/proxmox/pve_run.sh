@@ -17,7 +17,7 @@ JAR=$(mktemp)
 api() { curl -s -b "$JAR" -H 'X-Bootlace: 1' -H 'Content-Type: application/json' "$@"; }
 curl -s -c "$JAR" -H 'X-Bootlace: 1' -H 'Content-Type: application/json' -d "{\"password\":\"$PW\"}" "$BASE/api/login" > /dev/null
 ISOS=$(api "$BASE/api/isos")
-vms=(); macs=(); names=(); waits=(); starts=()
+vms=(); macs=(); names=(); waits=(); starts=(); modes=()
 n=0
 for t in "$@"; do
   IFS=: read -r pat mem wait mode <<< "$t"
@@ -34,18 +34,20 @@ print(m[0]['id'] if len(m) == 1 else 'AMBIGUOUS:%d' % len(m))" "$pat")
   # the same test always gets the same MAC: a router hands out a lease to every new address and its pool runs dry after many runs
   mac=$(echo -n "$vmname" | md5sum | sed 's/^\(..\)\(..\)\(..\).*/BC:24:11:\1:\2:\3/' | tr a-f A-F)
   if [ "$mode" = uefi ]; then
-    ssh "$HOST" "bash -s $vmid $mem $mac $vmname" < "$(dirname "$0")/pve_uefi_vm.sh" || { echo "could not create the UEFI VM for $pat"; continue; }
+    ssh "$HOST" "bash -s $vmid $mem $mac $vmname ${PVE_NIC:-virtio}" < "$(dirname "$0")/pve_uefi_vm.sh" || { echo "could not create the UEFI VM for $pat"; continue; }
   else
-    ssh "$HOST" "qm stop $vmid >/dev/null 2>&1; qm destroy $vmid --purge >/dev/null 2>&1; qm create $vmid --name $vmname --memory $((mem * 1024)) --cores 2 --cpu host --net0 e1000e=$mac,bridge=vmbr0 --bios seabios --boot order=net0 --vga std --ostype l26 --scsihw virtio-scsi-pci --serial0 socket >/dev/null" || { echo "could not create VM for $pat"; continue; }
+    ssh "$HOST" "qm stop $vmid >/dev/null 2>&1; qm destroy $vmid --purge >/dev/null 2>&1; qm create $vmid --name $vmname --memory $((mem * 1024)) --cores 2 --cpu host --net0 ${PVE_NIC:-e1000e}=$mac,bridge=vmbr0 --bios seabios --boot order=net0 --vga std --ostype l26 --scsihw virtio-scsi-pci --serial0 socket >/dev/null" || { echo "could not create VM for $pat"; continue; }
   fi
   api -d "{\"mac\":\"$(echo $mac | tr A-Z a-z)\",\"action\":\"iso:$id\",\"note\":\"pve_run\"}" "$BASE/api/rules" > /dev/null
-  vms+=($vmid); macs+=($(echo $mac | tr A-Z a-z)); names+=("$pat"); waits+=($wait); starts+=(0)
+  vms+=($vmid); macs+=($(echo $mac | tr A-Z a-z)); names+=("$pat"); waits+=($wait); starts+=(0); modes+=("${mode:-bios}")
   echo "$pat: VM $vmid $mac -> iso:$id"
 done
 # start them one after the other (the container reads the ISOs from the NAS), then take pictures until every test has had its time
 t0=$(date +%s)
 for i in "${!vms[@]}"; do
   ssh "$HOST" "qm start ${vms[$i]}" > /dev/null; starts[$i]=$(date +%s)
+  # a new UEFI VM stops at its firmware's boot manager until a key is pressed (the key is lost if it comes before the menu is up): press Enter twice, late
+  [ "${modes[$i]:-}" = uefi ] && ( sleep 80; ssh "$HOST" "qm sendkey ${vms[$i]} ret" > /dev/null; sleep 40; ssh "$HOST" "qm sendkey ${vms[$i]} ret" > /dev/null ) &
   # PVE_SERIAL=1 also keeps what the VM writes to its serial port (a test can add "console=ttyS0,115200n8" as extra kernel arguments in the web interface)
   [ -n "${PVE_SERIAL:-}" ] && ssh "$HOST" "rm -f /tmp/serial${vms[$i]}.log; (timeout $(( ${waits[$i]} + 60 )) socat -u UNIX-CONNECT:/var/run/qemu-server/${vms[$i]}.serial0 - > /tmp/serial${vms[$i]}.log 2>&1 &)" > /dev/null
   sleep 15
