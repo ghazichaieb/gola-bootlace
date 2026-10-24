@@ -140,3 +140,15 @@ func TestPageButtonsKeepTheHighlightWhateverTheDefault(t *testing.T) {
 		}
 	}
 }
+
+// The picture is set up once and a later page finds the console as it is: changing pages must not blank the screen and download the picture again.
+func TestThePictureIsSetUpOnlyOnce(t *testing.T) {
+	s := ScriptWith("x", []Entry{{Name: "a.iso", Commands: []string{"echo a"}}}, Options{Picture: "http://s/bg.png", Width: 1024, Height: 768, Pages: 2, Page: 2, Prev: "http://s/menu"})
+	skip, console := strings.Index(s, "isset ${gfx-ready} && goto gfx\n"), strings.Index(s, "console --x")
+	if skip < 0 || console < 0 || skip > console {
+		t.Fatalf("the console command must be skipped once the picture is up:\n%s", s)
+	}
+	if !strings.Contains(s, "&& set gfx-ready 1 && goto gfx || goto plain\n") {
+		t.Errorf("a successful console command must record that the picture is up, and a failed one still falls back to the text menu:\n%s", s)
+	}
+}

@@ -258,7 +258,10 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 			b.WriteString(cpairs(o.Accent))
 		}
 		// the picture carries the logo, so the menu's own heading only says what to do; a PC that cannot show it falls back to the text menu with the name
-		fmt.Fprintf(&b, "console --x %d --y %d --picture %s --left 64 --right 64 --top %d --bottom 40 && goto gfx || goto plain\n", o.Width, o.Height, o.Picture, o.Top)
+		// the picture is set up once: a later page (reached with chain) finds the console as it is, so changing pages only redraws the list instead of blanking the
+		// screen and downloading the picture again
+		b.WriteString("isset ${gfx-ready} && goto gfx\n")
+		fmt.Fprintf(&b, "console --x %d --y %d --picture %s --left 64 --right 64 --top %d --bottom 40 && set gfx-ready 1 && goto gfx || goto plain\n", o.Width, o.Height, o.Picture, o.Top)
 		fmt.Fprintf(&b, ":gfx\nmenu Choose what to start%s\n", pageNote(o, " - "))
 		gap("")
 		items(false)
