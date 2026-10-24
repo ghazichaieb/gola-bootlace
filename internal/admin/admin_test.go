@@ -465,7 +465,11 @@ func TestSelfTestRunsTheStepsAndReportsFailures(t *testing.T) {
 	defer web.Close()
 	host, port, _ := net.SplitHostPort(web.Listener.Addr().String())
 	p, _ := strconv.Atoi(port)
-	r.admin.o.SelfTest = func() selftest.Target { return selftest.Target{IP: host, HTTP: p} }
+	closed, _ := net.ListenPacket("udp4", "127.0.0.1:0") // a UDP port with nothing behind it (not 69: another computer program may use that one)
+	_, cport, _ := net.SplitHostPort(closed.LocalAddr().String())
+	closed.Close()
+	tp, _ := strconv.Atoi(cport)
+	r.admin.o.SelfTest = func() selftest.Target { return selftest.Target{IP: host, HTTP: p, TFTP: tp} }
 	code, out := r.do("POST", "/api/selftest", map[string]any{}, nil)
 	results, _ := out["results"].([]any)
 	if code != 200 || len(results) != 6 {
