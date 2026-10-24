@@ -5,6 +5,8 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **The .deb and .rpm make the library folder.** The package settings name `/srv/library` for the ISOs, but nothing created it, so the service started and then waited ("this folder cannot be opened") until a folder was chosen in the web page. Found by installing 0.2.0 in a fresh Debian 13 container: the package now makes `/srv/library` and its message says where to put the ISOs.
+
 ## 0.2.0 - 2026-10-24
 
 - **A log file, and a button to download the log (#46).** `-log-file PATH` (or `BOOTLACE_LOG_FILE`) also writes the log to a file that keeps to `-log-size` MB (default 5): when it is full it becomes `PATH.1` (the one older file that is kept) and a new one starts, so a restart of a container or of Windows no longer loses the log. The password made up at the first start is shown on the console and in the web log but never written to the file. The Log page has a "Download the log" button.
