@@ -21,8 +21,12 @@ const sector = 2048
 // Image is an opened ISO.
 type Image struct {
 	r    io.ReaderAt
+	size int64 // the length of the file: a hostile image can name a folder or an area that is far longer than the image
 	root *node
 }
+
+// maxFolder is the largest folder that is read (a real one is a few kilobytes to a few megabytes).
+const maxFolder = 64 << 20
 
 type extent struct {
 	start  int64 // byte offset in the image
@@ -55,7 +59,7 @@ func Open(r io.ReaderAt, size int64) (*Image, error) {
 		if pvd[0] != 1 {
 			continue
 		}
-		img := &Image{r: r}
+		img := &Image{r: r, size: size}
 		root, err := img.record(pvd[156:190], true)
 		if err != nil || root == nil {
 			return nil, errors.New("iso9660: the root folder is unreadable")
@@ -128,6 +132,9 @@ func (img *Image) rockRidgeName(area []byte) string {
 					block := int64(binary.LittleEndian.Uint32(area[i+4:]))
 					off := int64(binary.LittleEndian.Uint32(area[i+12:]))
 					n := int64(binary.LittleEndian.Uint32(area[i+20:]))
+					if n > 1<<20 || n < 0 || block*sector+off >= img.size { // (a continuation area is a few hundred bytes; this one is not inside the image)
+						break
+					}
 					buf := make([]byte, n)
 					if _, err := img.r.ReadAt(buf, block*sector+off); err == nil || err == io.EOF {
 						next = buf
@@ -148,8 +155,12 @@ func (n *node) load() error {
 	if n.loaded || !n.dir {
 		return nil
 	}
-	data := make([]byte, n.size)
-	if _, err := n.img.r.ReadAt(data, n.extents[0].start); err != nil && err != io.EOF {
+	start := n.extents[0].start
+	if n.size > maxFolder || start >= n.img.size {
+		return errors.New("iso9660: a folder that is too big or outside the image")
+	}
+	data := make([]byte, min(n.size, n.img.size-start)) // (not more than the image has: a folder that says 4 GB in a 100 KB file)
+	if _, err := n.img.r.ReadAt(data, start); err != nil && err != io.EOF {
 		return err
 	}
 	var last *node
