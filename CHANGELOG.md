@@ -3,6 +3,12 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **Kernel options for one PC (#28).** The PCs page has a *Kernel options* button: extra kernel arguments plus the *verbose start-up* and *serial console* switches for that PC only, added after the ISO's own on the kernel line of every ISO it starts from its files (also on the later pages of the menu and when a rule starts the ISO). For a PC whose graphics need `nomodeset`, or whose serial port is being recorded, without touching the ISO for every other PC. Kept in the settings under `pcOptions` (in backups too); `PUT /api/pcs/{mac}/options`.
+- **Verbose start-up adds the debug words of the kind of system (#28).** Besides `loglevel=7 ignore_loglevel debug`: `rd.debug` for dracut systems (Fedora and its relatives, Red Hat's installers, openSUSE, Gentoo), `systemd.show_status=1` for systemd live systems (Fedora, openSUSE, Arch, SystemRescue, Debian, Ubuntu), `debug_init` for Alpine and `proxdebug` for Proxmox VE (its debug shell opens before the installer starts). Systems with no word of their own (Tiny Core, ShredOS, Tails, Debian's installer, Windows, FreeBSD) get only the general ones.
+- **The `.rpm` recommends the right package (#49).** The RPM named `wimtools`, which is the Debian name; on Fedora, RHEL and openSUSE the tool that Windows with Secure Boot needs is `wimlib-utils`, which `dnf` now installs along with it. The Debian package is unchanged. Tested in a Fedora 44 container: install, files, the unit file (`systemd-analyze verify`), `/srv/library` made by the package, the service started under systemd and answering on `/boot.ipxe`, removal stopping and disabling it, an upgrade keeping an edited `/etc/default/bootlace`; the arm64 package has the `aarch64` architecture.
+
 ## 0.2.3 - 2026-10-24
 
 - **Unpacking preserves free disk space (#34).** Packed images check the actual cache disk before each write and stop before using its reserve (1 % of the disk, between 512 MB and 5 GB). A failed unpack removes its partial output; unknown or misleading compressed sizes can no longer make unpacking run unchecked until the disk is full. Thanks to @omar-akermi (#56).

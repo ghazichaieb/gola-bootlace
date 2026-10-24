@@ -148,6 +148,7 @@ type Counts struct {
 	Titles      int  `json:"titles"`
 	Hidden      int  `json:"hidden"`
 	Args        int  `json:"args"`
+	PCOptions   int  `json:"pcOptions"`
 	HidePattern int  `json:"hidePatterns"`
 	PCs         int  `json:"pcs"`
 	Networks    int  `json:"networks"` // extra networks that may use the server
@@ -156,5 +157,5 @@ type Counts struct {
 
 // CountsOf counts what a set of settings holds; pcs is the number of PCs in the list that goes with it.
 func CountsOf(c config.Config, pcs int) Counts {
-	return Counts{Rules: len(c.Rules) + len(c.GroupRules), PCNames: len(c.PCNames), Titles: len(c.Titles), Hidden: len(c.Hidden), Args: len(c.Args), HidePattern: len(c.HidePatterns), PCs: pcs, Networks: len(c.Access.Networks), Open: c.Access.AllowPublic}
+	return Counts{Rules: len(c.Rules) + len(c.GroupRules), PCNames: len(c.PCNames), Titles: len(c.Titles), Hidden: len(c.Hidden), Args: len(c.Args), PCOptions: len(c.PCOptions), HidePattern: len(c.HidePatterns), PCs: pcs, Networks: len(c.Access.Networks), Open: c.Access.AllowPublic}
 }

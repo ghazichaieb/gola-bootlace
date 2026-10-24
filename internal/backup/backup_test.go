@@ -20,6 +20,7 @@ func sample() config.Config {
 		Hidden:    map[string]bool{"0123456789": true},
 		Titles:    map[string]string{"0123456789": "Windows 11"},
 		PCNames:   map[string]string{"aa:bb:cc:dd:ee:01": "Front desk"},
+		PCOptions: map[string]config.PCOptions{"aa:bb:cc:dd:ee:01": {Args: "nomodeset", Debug: config.DebugMode{Serial: true}}},
 		Rules:     []config.Rule{{MAC: "aa:bb:cc:dd:ee:01", Action: "local", Note: "desk"}},
 		AdminHash: "pbkdf2$secret", SMBPassword: "share-secret",
 		Library: config.Library{Path: "/srv/isos", ID: "lib-1"}, LibrarySync: "abc",
@@ -44,7 +45,7 @@ func TestABackupHoldsNoSecretsOrLibraryUnlessAskedAndComesBackWhole(t *testing.T
 	if c.AdminHash != "" || c.SMBPassword != "" || c.Library.Path != "" || c.LibrarySync != "" || got.Manifest.Secrets {
 		t.Fatalf("secrets or the machine's library leaked into the backup: %+v", c)
 	}
-	if len(c.Rules) != 1 || c.PCNames["aa:bb:cc:dd:ee:01"] != "Front desk" || c.Titles["0123456789"] != "Windows 11" || !c.Hidden["0123456789"] || string(got.PCs) == "" {
+	if len(c.Rules) != 1 || c.PCNames["aa:bb:cc:dd:ee:01"] != "Front desk" || c.PCOptions["aa:bb:cc:dd:ee:01"].Args != "nomodeset" || !c.PCOptions["aa:bb:cc:dd:ee:01"].Debug.Serial || c.Titles["0123456789"] != "Windows 11" || !c.Hidden["0123456789"] || string(got.PCs) == "" {
 		t.Fatalf("settings lost: %+v", got)
 	}
 	withSecrets, err := ReadZip(zipOf(t, sample(), "", true))

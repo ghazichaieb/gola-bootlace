@@ -76,6 +76,7 @@ type Config struct {
 	Rules           []Rule               `json:"rules"`
 	GroupRules      []GroupRule          `json:"groupRules"`      // rules for every PC of a kind (model, manufacturer, platform); a rule for one PC wins
 	PCNames         map[string]string    `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
+	PCOptions       map[string]PCOptions `json:"pcOptions"`       // MAC address -> extra kernel arguments and debug switches for every ISO that PC starts from its files (see PCOptions)
 	AdminHash       string               `json:"adminHash"`       // see package admin
 	SMBPassword     string               `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
 	Library         Library              `json:"library"`         // the folder with the ISOs; empty until one is chosen
@@ -187,6 +188,28 @@ func glob(p, s string) bool {
 type DebugMode struct {
 	Verbose bool `json:"verbose,omitempty"`
 	Serial  bool `json:"serial,omitempty"`
+}
+
+// PCOptions are how one PC is started when it needs it (a graphics card that wants `nomodeset`, a PC whose serial port is being recorded): the arguments come after the ones
+// of the ISO itself and the switches work like those of an ISO (see DebugMode), on the kernel line of every ISO that PC starts from its own files.
+type PCOptions struct {
+	Args  string    `json:"args,omitempty"`
+	Debug DebugMode `json:"debug,omitempty"`
+}
+
+// Empty says that nothing is set: such an entry is not kept.
+func (o PCOptions) Empty() bool { return o.Args == "" && !o.Debug.Verbose && !o.Debug.Serial }
+
+// MaxArgs is the longest extra kernel arguments line.
+const MaxArgs = 300
+
+// CleanArgs checks a line of extra kernel arguments (one line, MaxArgs characters at most) and returns it without the spaces around it.
+func CleanArgs(a string) (string, error) {
+	a = strings.TrimSpace(a)
+	if strings.ContainsAny(a, "\r\n") || len(a) > MaxArgs {
+		return "", fmt.Errorf("extra kernel arguments must be one line of at most %d characters", MaxArgs)
+	}
+	return a, nil
 }
 
 // Library is the folder the ISOs are in, as it was added (see package library): its path and the id that was written into its marker.
@@ -318,6 +341,22 @@ func (c *Config) Validate() error {
 			delete(c.Debug, id)
 		}
 	}
+	pcOptions := map[string]PCOptions{}
+	for mac, o := range c.PCOptions {
+		key, ok := NormalizeMAC(mac)
+		if !ok {
+			return fmt.Errorf("%q is not a MAC address", mac)
+		}
+		args, err := CleanArgs(o.Args)
+		if err != nil {
+			return err
+		}
+		o.Args = args
+		if !o.Empty() {
+			pcOptions[key] = o
+		}
+	}
+	c.PCOptions = pcOptions
 	seen := map[string]bool{}
 	rules := []Rule{}
 	for _, r := range c.Rules {
@@ -417,6 +456,10 @@ func (c Config) clone() Config {
 	d.PCNames = map[string]string{}
 	for k, v := range c.PCNames {
 		d.PCNames[k] = v
+	}
+	d.PCOptions = map[string]PCOptions{}
+	for k, v := range c.PCOptions {
+		d.PCOptions[k] = v
 	}
 	d.Rules = append([]Rule(nil), c.Rules...)
 	d.GroupRules = append([]GroupRule(nil), c.GroupRules...)

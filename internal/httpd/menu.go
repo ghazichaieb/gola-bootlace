@@ -66,7 +66,7 @@ func addArgs(commands []string, extra string) []string {
 
 // debugArgs changes the kernel command of an ISO's start for finding faults: the quiet start-up words go, the kernel's messages are turned up and, if asked, the console
 // goes to the first serial port as well (the last console= is the one the kernel treats as its main console).
-func debugArgs(commands []string, d config.DebugMode) []string {
+func debugArgs(commands []string, d config.DebugMode, fam string) []string {
 	if !d.Verbose && !d.Serial {
 		return commands
 	}
@@ -88,8 +88,9 @@ func debugArgs(commands []string, d config.DebugMode) []string {
 			words = append(words, w)
 		}
 		if d.Verbose {
-			for _, w := range []string{"loglevel=7", "ignore_loglevel", "debug"} {
+			for _, w := range append([]string{"loglevel=7", "ignore_loglevel", "debug"}, family.DebugWords(fam)...) { // (and the words of the kind of system, see family.DebugWords)
 				if !have[w] {
+					have[w] = true
 					words = append(words, w)
 				}
 			}
@@ -101,6 +102,15 @@ func debugArgs(commands []string, d config.DebugMode) []string {
 		break
 	}
 	return out
+}
+
+// forPC is the entry as one PC gets it: the PC's own extra arguments and debug switches come after the ISO's, on the kernel line of every ISO that is started from its files.
+func forPC(e menu.Entry, o config.PCOptions) menu.Entry {
+	if o.Args == "" && !o.Debug.Verbose && !o.Debug.Serial {
+		return e
+	}
+	e.Commands = debugArgs(addArgs(e.Commands, o.Args), o.Debug, e.Kind)
+	return e
 }
 
 func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
@@ -128,7 +138,7 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 			}
 			e.Boot, e.Known = b, true
 			e.Display = fmt.Sprintf("%s  [%s, %s]", e.Title, where, size)
-			e.Entry = menu.Entry{Name: e.Display, Commands: debugArgs(addArgs(b.Commands, cfg.Args[iso.ID]), cfg.Debug[iso.ID]), Title: e.Title, Kind: b.Family, Size: size}
+			e.Entry = menu.Entry{Name: e.Display, Commands: debugArgs(addArgs(b.Commands, cfg.Args[iso.ID]), cfg.Debug[iso.ID], b.Family), Title: e.Title, Kind: b.Family, Size: size}
 		} else if iso.Disk {
 			e.Display, e.Entry, e.Known, e.Boot = s.diskEntry(iso, e.Title, size)
 		} else {
@@ -235,7 +245,9 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	paged := page > 0 // a later page of a menu already shown: not a new start, and the PC's rule was applied at the first
+	paged := page > 0                                                     // a later page of a menu already shown: not a new start, and the PC's rule was applied at the first
+	pcMAC, _ := config.NormalizeMAC(queryValue(r.URL.Query(), "mac", 17)) // (the pages carry it too: the PC's own kernel arguments go with every ISO it starts)
+	pc := cfg.PCOptions[pcMAC]
 	var client Client
 	if paged {
 		client = Client{MAC: "page", IP: r.RemoteAddr, Platform: queryValue(r.URL.Query(), "plat", 20)}
@@ -276,7 +288,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			if "iso:"+e.ISO.ID == rule.Action || "native:"+e.ISO.ID == rule.Action { // (a native rule that reaches iPXE: Secure Boot is off, the usual way does)
 				s.logf("%s: its rule starts %s", s.who(client), e.Title)
 				s.setAction(client.MAC, "rule: "+e.Title)
-				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", e.Entry, s.menuURL(1)))
+				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", forPC(e.Entry, pc), s.menuURL(1)))
 				return
 			}
 		}
@@ -288,7 +300,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 	for _, e := range infos {
 		if !e.Hidden {
 			visible = append(visible, e)
-			entries = append(entries, e.Entry)
+			entries = append(entries, forPC(e.Entry, pc))
 		}
 	}
 	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout, Again: s.menuURL(1), Accent: cfg.MenuAccent}
