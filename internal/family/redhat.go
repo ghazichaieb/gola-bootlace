@@ -13,11 +13,11 @@ func (c *Context) dracutLive(family string, f files, extra string) Boot {
 	switch u.pick(NBD, ISCSI, Memory) {
 	case NBD:
 		args := "ip=dhcp rd.neednet=1 netroot=nbd:" + u.NBDHost + ":" + u.nbdPort() + ":" + u.NBDName + " root=live:/dev/nbd0 rd.live.image console=tty0" + extra
-		return newBoot(family, f, args).withExtra(u, nil)
+		return newBoot(family, f, args).withVerbose("rd.debug").withExtra(u, nil)
 	case ISCSI:
-		return newBoot(family, f, dracutISCSI(u)+" rd.live.image console=tty0"+extra)
+		return newBoot(family, f, dracutISCSI(u)+" rd.live.image console=tty0"+extra).withVerbose("rd.debug")
 	}
-	return newBoot(family, f, "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"+extra)
+	return newBoot(family, f, "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"+extra).withVerbose("rd.debug")
 }
 
 // dracutISCSI is how a dracut live system is told to find its ISO as a network CD-ROM: it logs in over iSCSI and looks for the disk by its path.
@@ -48,7 +48,7 @@ func fedoraLike(c *Context) (Boot, bool) {
 		// (Bazzite's own boot menu passes enforcing=0: with SELinux enforcing its live system stops at the first thing it labels. A live session loses nothing by it.)
 		return c.dracutLive("Fedora (live)", f, " enforcing=0"), true
 	}
-	return newBoot("Red Hat family (installer)", f, "ip=dhcp inst.repo="+c.URLs.FS+" console=tty0"), true
+	return newBoot("Red Hat family (installer)", f, "ip=dhcp inst.repo="+c.URLs.FS+" console=tty0").withVerbose("rd.debug"), true
 }
 
 // Gentoo's live ISOs (minimal install CD, LiveGUI): a dracut live system with its kernel and initramfs in /boot and the system in /image.squashfs.

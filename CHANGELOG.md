@@ -3,6 +3,10 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **Verbose start-up includes the installer's diagnostics (#28).** Dracut live systems and Red Hat installers get `rd.debug`; Proxmox VE gets `proxdebug` (its debug shells pause installation: type `exit` to continue). Verbose mode also removes `splash=silent` and replaces lower kernel log levels. The extra diagnostics apply only when the ISO's verbose switch is on.
+
 ## 0.2.3 - 2026-10-24
 
 - **Unpacking preserves free disk space (#34).** Packed images check the actual cache disk before each write and stop before using its reserve (1 % of the disk, between 512 MB and 5 GB). A failed unpack removes its partial output; unknown or misleading compressed sizes can no longer make unpacking run unchecked until the disk is full. Thanks to @omar-akermi (#56).

@@ -106,8 +106,9 @@ func (c *Context) volumeWith(path string) (Volume, bool) {
 
 // Boot is how to start one ISO.
 type Boot struct {
-	Family   string   // "Alpine Linux", "Debian live" ...
-	Commands []string // iPXE commands: kernel, initrd, boot
+	Family      string   // "Alpine Linux", "Debian live" ...
+	Commands    []string // iPXE commands: kernel, initrd, boot
+	VerboseArgs []string // family-specific arguments added only when verbose start-up is enabled
 
 	// For a kernel that GRUB (signed by the distribution, so that UEFI Secure Boot can stay on) starts instead of iPXE: the files inside the ISO and the kernel's
 	// arguments. Empty for the kinds that cannot be started that way.
@@ -115,6 +116,11 @@ type Boot struct {
 
 	ExtraInitrd string       // an address: a second initramfs archive to load after the ISO's own
 	extra       ExtraBuilder // how that archive is made; nil for the usual one
+}
+
+func (b Boot) withVerbose(args ...string) Boot {
+	b.VerboseArgs = args
+	return b
 }
 
 // ExtraEnv is what an extra archive is made from besides the files: where the network disk is, and the helper program that attaches it.

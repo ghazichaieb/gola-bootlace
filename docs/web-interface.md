@@ -36,6 +36,8 @@ minutes. Anyone on the network can reach the login page, so use a password you w
 
 Everything applies at the next start of a PC: the menu is made again for each one.
 
+**Verbose start-up** on the ISOs page removes `quiet`, `splash` (including `splash=silent`) and `rhgb`, and sets `loglevel=7 ignore_loglevel debug`. It also enables the detected system's own diagnostics: `rd.debug` for dracut live systems (including ones recognised by their boot menu) and Red Hat installers; `proxdebug` for Proxmox VE. **Proxmox debug mode pauses at debug shells: type `exit` or press Ctrl+D to continue.** The *Show the commands a PC gets* fold-out includes these arguments. Turning verbose off restores the normal commands; enabling only the serial console does not enable family diagnostics. These switches affect the iPXE kernel commands; the separate Secure Boot/GRUB path is unchanged.
+
 ## Settings file
 
 Settings made in the interface are kept in the file given by `-config` (default `bootlace.json`; `/var/lib/bootlace/config.json` in the Proxmox

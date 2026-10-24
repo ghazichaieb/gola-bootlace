@@ -66,7 +66,7 @@ func addArgs(commands []string, extra string) []string {
 
 // debugArgs changes the kernel command of an ISO's start for finding faults: the quiet start-up words go, the kernel's messages are turned up and, if asked, the console
 // goes to the first serial port as well (the last console= is the one the kernel treats as its main console).
-func debugArgs(commands []string, d config.DebugMode) []string {
+func debugArgs(commands []string, d config.DebugMode, verboseArgs ...string) []string {
 	if !d.Verbose && !d.Serial {
 		return commands
 	}
@@ -78,7 +78,7 @@ func debugArgs(commands []string, d config.DebugMode) []string {
 		var words []string
 		have := map[string]bool{}
 		for _, w := range strings.Fields(c) {
-			if d.Verbose && (w == "quiet" || w == "splash" || w == "rhgb") {
+			if d.Verbose && (w == "quiet" || w == "splash" || w == "rhgb" || strings.HasPrefix(w, "splash=") || (strings.HasPrefix(w, "loglevel=") && w != "loglevel=7")) {
 				continue
 			}
 			if d.Serial && strings.HasPrefix(w, "console=") {
@@ -88,9 +88,10 @@ func debugArgs(commands []string, d config.DebugMode) []string {
 			words = append(words, w)
 		}
 		if d.Verbose {
-			for _, w := range []string{"loglevel=7", "ignore_loglevel", "debug"} {
+			for _, w := range append([]string{"loglevel=7", "ignore_loglevel", "debug"}, verboseArgs...) {
 				if !have[w] {
 					words = append(words, w)
+					have[w] = true
 				}
 			}
 		}
@@ -128,7 +129,7 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 			}
 			e.Boot, e.Known = b, true
 			e.Display = fmt.Sprintf("%s  [%s, %s]", e.Title, where, size)
-			e.Entry = menu.Entry{Name: e.Display, Commands: debugArgs(addArgs(b.Commands, cfg.Args[iso.ID]), cfg.Debug[iso.ID]), Title: e.Title, Kind: b.Family, Size: size}
+			e.Entry = menu.Entry{Name: e.Display, Commands: debugArgs(addArgs(b.Commands, cfg.Args[iso.ID]), cfg.Debug[iso.ID], b.VerboseArgs...), Title: e.Title, Kind: b.Family, Size: size}
 		} else if iso.Disk {
 			e.Display, e.Entry, e.Known, e.Boot = s.diskEntry(iso, e.Title, size)
 		} else {

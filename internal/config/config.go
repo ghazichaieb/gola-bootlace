@@ -183,7 +183,7 @@ func glob(p, s string) bool {
 }
 
 // DebugMode is how an ISO is started when it does not start well: Verbose takes out the quiet start-up (no `quiet`, `splash`, `rhgb`) and turns the kernel's messages
-// up; Serial also sends the console to the first serial port (115200 baud), for a PC or a virtual machine whose serial port is being recorded.
+// up and enables the detected family's diagnostics; Serial also sends the console to the first serial port (115200 baud), for a PC or a virtual machine whose serial port is being recorded.
 type DebugMode struct {
 	Verbose bool `json:"verbose,omitempty"`
 	Serial  bool `json:"serial,omitempty"`
