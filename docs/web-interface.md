@@ -106,4 +106,6 @@ The files of the library, managed from the web page. Everything here works on th
 
 ## The cache
 
+While unpacking a compressed image, the server checks free space on the disk that holds the chosen cache folder before each write. It stops and removes the partial copy if the write would use the disk's reserve (1 % of the disk, at least 512 MB and at most 5 GB), or if free space cannot be checked. The error is shown in the menu and the server log. This protects the disk even when a packed image expands far beyond its compressed size; it does not enforce the container cache's configured size limit during unpacking or move an unfinished copy to another cache folder.
+
 What the server makes once and keeps: the unpacked copies of packed disk images, and the copies of Windows' `boot.wim` with Bootlace's files in them. Under **Server > Cache**, the container's own folder is used while it has room (2 GB by default); after that new entries go to `<library>/.bootlace/cache`. An entry is looked for in both places. The size of the container's folder bounds how many different installs can be prepared at once; the library is slower (it may be a network drive) but roomy. A copy of `boot.wim` contains the share's password, so anyone who can read the library's folder can read it.
