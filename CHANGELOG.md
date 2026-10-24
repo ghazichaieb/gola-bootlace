@@ -5,7 +5,7 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
-- **Unpacking preserves free disk space (#34).** Packed images check the actual cache disk before each write and stop before using its reserve (1 % of the disk, between 512 MB and 5 GB). A failed unpack removes its partial output; unknown or misleading compressed sizes can no longer make unpacking run unchecked until the disk is full.
+- **Unpacking preserves free disk space (#34).** Packed images check the actual cache disk before each write and stop before using its reserve (1 % of the disk, between 512 MB and 5 GB). A failed unpack removes its partial output; unknown or misleading compressed sizes can no longer make unpacking run unchecked until the disk is full. Thanks to @omar-akermi (#56).
 
 ## 0.2.2 - 2026-10-24
 
