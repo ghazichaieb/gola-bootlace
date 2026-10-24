@@ -4,15 +4,137 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/ulikunitz/xz"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
+	"github.com/ghazichaieb/gola-bootlace/internal/library"
 )
+
+func TestUnpackingChecksSpaceBeforeWriting(t *testing.T) {
+	const total = uint64(10 << 30)
+	reserve := library.Reserve(total)
+	for _, tc := range []struct {
+		name string
+		free uint64
+		err  error
+		want string
+	}{
+		{"below reserve", reserve - 1, nil, "not enough room"},
+		{"at reserve", reserve, nil, "not enough room"},
+		{"write would enter reserve", reserve + 2, nil, "not enough room"},
+		{"write fits exactly", reserve + 3, nil, ""},
+		{"space unavailable", 0, errors.New("disk disconnected"), "disk disconnected"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := os.Create(filepath.Join(t.TempDir(), "image.part"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer out.Close()
+			err = copySynced(out, strings.NewReader("abc"), func(path string) (uint64, uint64, error) {
+				if path != filepath.Dir(out.Name()) {
+					t.Fatalf("checked wrong disk: %q", path)
+				}
+				return tc.free, total, tc.err
+			})
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want %q", err, tc.want)
+			}
+			st, statErr := out.Stat()
+			if statErr != nil {
+				t.Fatal(statErr)
+			}
+			wantSize := int64(0)
+			if tc.want == "" {
+				wantSize = 3
+			}
+			if st.Size() != wantSize {
+				t.Fatalf("wrote %d bytes, want %d", st.Size(), wantSize)
+			}
+		})
+	}
+}
+
+func TestExpandingImagesStopAndRemovePartialOutputWhenSpaceRunsLow(t *testing.T) {
+	data := bytes.Repeat([]byte{0}, 2<<20)
+	for _, packing := range []string{"gz", "zip"} {
+		t.Run(packing, func(t *testing.T) {
+			var packed bytes.Buffer
+			if packing == "gz" {
+				w := gzip.NewWriter(&packed)
+				if _, err := w.Write(data); err != nil {
+					t.Fatal(err)
+				}
+				if err := w.Close(); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				w := zip.NewWriter(&packed)
+				inner, err := w.Create("disk.img")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := inner.Write(data); err != nil {
+					t.Fatal(err)
+				}
+				if err := w.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			dir := t.TempDir()
+			path := filepath.Join(dir, "disk.img."+packing)
+			if err := os.WriteFile(path, packed.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			spill := filepath.Join(dir, "spill")
+			checks := 0
+			m := &Manager{Dir: filepath.Join(dir, "local"), Place: func(int64) string { return spill }, turn: make(chan struct{}, 1)}
+			m.diskSpace = func(path string) (uint64, uint64, error) {
+				checks++
+				if path != spill {
+					t.Fatalf("checked %q instead of spillover disk %q", path, spill)
+				}
+				const total = uint64(10 << 30)
+				reserve := library.Reserve(total)
+				if checks == 1 {
+					return reserve + 1<<20, total, nil
+				}
+				// Another writer consumed the remaining room during unpacking.
+				return reserve, total, nil
+			}
+			iso := isos.ISO{ID: "a", Name: filepath.Base(path), Path: path, Size: int64(packed.Len()), Packed: packing, Inner: "disk.img", Disk: true}
+			dst := m.target(iso)
+			j := &job{dst: dst}
+			m.jobs = map[string]*job{fileName(iso): j}
+			m.unpack(iso, dst, j)
+			if checks != 2 || j.err == nil || !strings.Contains(j.err.Error(), "not enough room") {
+				t.Fatalf("checks=%d, error=%v", checks, j.err)
+			}
+			if st := m.Status(iso); st.Ready || st.Err == nil {
+				t.Fatalf("failure not reported: %+v", st)
+			}
+			for _, path := range []string{dst, dst + ".part"} {
+				if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("partial output remains: %s: %v", path, err)
+				}
+			}
+			if got, err := os.ReadFile(iso.Path); err != nil || !bytes.Equal(got, packed.Bytes()) {
+				t.Fatalf("source changed: %v", err)
+			}
+		})
+	}
+}
 
 func TestAnImageThatIsNotPackedIsUsedWhereItIs(t *testing.T) {
 	m := &Manager{Dir: t.TempDir()}

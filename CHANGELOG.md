@@ -3,6 +3,10 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **Unpacking preserves free disk space (#34).** Packed images check the actual cache disk before each write and stop before using its reserve (1 % of the disk, between 512 MB and 5 GB). A failed unpack removes its partial output; unknown or misleading compressed sizes can no longer make unpacking run unchecked until the disk is full.
+
 ## 0.2.1 - 2026-10-24
 
 - **The keyboard works in the UEFI menu on an ASUS X299 (#52).** On an ASUS ROG X299-E Gaming II (AMI firmware) the USB keyboard worked in the BIOS and the F12 menu but was completely dead as soon as iPXE started, in the stock iPXE too. The cause is iPXE's own USB controller drivers (EHCI, XHCI, UHCI) taking the controller from the firmware's keyboard driver. The UEFI builds (`ipxe.efi`, `snponly.efi`) now leave USB to the firmware; the BIOS build is unchanged. A USB network adapter is then only usable through the firmware's own driver; built-in and PCIe network cards are not affected.

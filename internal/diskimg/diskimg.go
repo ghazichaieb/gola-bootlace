@@ -23,6 +23,7 @@ import (
 	"github.com/ulikunitz/xz"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
+	"github.com/ghazichaieb/gola-bootlace/internal/library"
 )
 
 // State is how far an image is.
@@ -46,9 +47,10 @@ type Manager struct {
 	// Used, when set, is told about every use of a finished copy (the cache removes the least recently used ones when it is full).
 	Used func(path string)
 
-	mu   sync.Mutex
-	jobs map[string]*job // by the name of the cache file
-	turn chan struct{}   // one unpacking at a time
+	mu        sync.Mutex
+	jobs      map[string]*job                      // by the name of the cache file
+	turn      chan struct{}                        // one unpacking at a time
+	diskSpace func(string) (uint64, uint64, error) // nil uses the destination disk; tests simulate low space
 }
 
 type job struct {
@@ -241,7 +243,7 @@ func (m *Manager) unpack(iso isos.ISO, dst string, j *job) {
 		fail(err)
 		return
 	}
-	if err := copySynced(out, r); err != nil {
+	if err := copySynced(out, r, m.diskSpace); err != nil {
 		out.Close()
 		os.Remove(part)
 		fail(err)
@@ -267,12 +269,25 @@ func (m *Manager) unpack(iso isos.ISO, dst string, j *job) {
 
 // copySynced copies and writes the data out to the disk every 32 MB, so that the pages waiting to be written do not pile up in the memory of a small server (a container with
 // a memory limit counts them, and is killed for it).
-func copySynced(out *os.File, r io.Reader) error {
+func copySynced(out *os.File, r io.Reader, diskSpace func(string) (uint64, uint64, error)) error {
+	if diskSpace == nil {
+		diskSpace = library.DiskSpace
+	}
 	buf := make([]byte, 1<<20)
 	var since int
 	for {
 		n, err := r.Read(buf)
 		if n > 0 {
+			// Packed sizes (and ZIP size fields) do not bound the output. Check the
+			// actual destination before every write, including spillover caches.
+			free, total, serr := diskSpace(filepath.Dir(out.Name()))
+			if serr != nil {
+				return fmt.Errorf("cannot check free space in the cache: %w", serr)
+			}
+			reserve := library.Reserve(total)
+			if free < reserve || free-reserve < uint64(n) {
+				return fmt.Errorf("not enough room to unpack into the cache: %s free, %s is kept in reserve", library.Size(free), library.Size(reserve))
+			}
 			if _, werr := out.Write(buf[:n]); werr != nil {
 				return werr
 			}
