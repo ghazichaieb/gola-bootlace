@@ -97,7 +97,7 @@ Then `docker compose up -d`, and `docker compose logs bootlace | grep -i passwor
 **3. Linux, as a service (a PC, a mini PC, a Raspberry Pi, a virtual machine).** The simplest way on Debian, Ubuntu, Raspberry Pi OS and Proxmox hosts is the package: download
 `bootlace-<version>-linux-amd64.deb` (or `arm64`) from the [Releases page](https://github.com/ghazichaieb/gola-bootlace/releases) and `apt install ./bootlace-*.deb`
 (`dnf install ./bootlace-*.rpm` on Fedora and RHEL). It installs the program, a systemd service that it starts, the folder `/srv/library` for your ISOs, and `/etc/default/bootlace` for the settings (kept when you
-upgrade); `journalctl -u bootlace | grep -i password` shows the password. Or install it by hand from the archive: download `bootlace-<version>-linux-amd64.tar.gz` (or `arm64`),
+upgrade); `journalctl -u bootlace | grep -i password` shows the password. The `.rpm` was installed and run under systemd in a Fedora 44 container (install, start, remove, upgrade with an edited settings file); it recommends `wimlib-utils` (the Debian package recommends `wimtools`). A host firewall such as firewalld can keep PCs out depending on its zone: the ports are 8080/tcp (web), 445/tcp, 3260/tcp, 10809/tcp, and 67/udp, 69/udp and 4011/udp (not covered by the package, and not tested against a real firewalld). Or install it by hand from the archive: download `bootlace-<version>-linux-amd64.tar.gz` (or `arm64`),
 then, as root (Debian or Ubuntu shown; install `wimtools` with your system's package manager otherwise):
 
 ```
