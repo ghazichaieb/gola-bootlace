@@ -9,6 +9,7 @@
 # The version is the one tools/build.sh puts in the program (VERSION from the environment, or the latest tag).
 # Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
 set -eu
+export MSYS_NO_PATHCONV=1 # Git Bash on Windows would otherwise turn "-w /work" into a Windows path for Docker
 cd "$(dirname "$0")/.."
 command -v docker >/dev/null 2>&1 || { echo "package: Docker is needed (nfpm runs in a container)" >&2; exit 1; }
 if [ -z "${VERSION:-}" ]; then
