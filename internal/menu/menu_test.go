@@ -119,3 +119,24 @@ func TestTheAccentColourIsTheChosenLineAndTheHeadings(t *testing.T) {
 		t.Error("an unknown name falls back to red")
 	}
 }
+
+// A page reached with the page buttons keeps the highlight on the button that goes on, whatever the PC's default is, on a BIOS PC (text frame) as on a UEFI PC.
+func TestPageButtonsKeepTheHighlightWhateverTheDefault(t *testing.T) {
+	entries := []Entry{{Name: "a.iso", Commands: []string{"echo a"}}, {Name: "b.iso", Commands: []string{"echo b"}}}
+	for _, ascii := range []bool{false, true} {
+		for _, def := range []int{-1, 0, 1} { // own disk, nothing, the first ISO
+			middle := ScriptWith("Gola Bootlace", entries, Options{Default: def, Prev: "http://x/menu?page=1", Next: "http://x/menu?page=3", Focus: "next", Ascii: ascii, Pages: 3, Page: 2})
+			if !strings.Contains(middle, "set menu-default next\n") {
+				t.Errorf("ascii=%v default=%d: a middle page reached with the buttons does not highlight Next page:\n%s", ascii, def, middle[:200])
+			}
+			last := ScriptWith("Gola Bootlace", entries, Options{Default: def, Prev: "http://x/menu?page=2", Focus: "next", Ascii: ascii, Pages: 3, Page: 3})
+			if !strings.Contains(last, "set menu-default prev\n") {
+				t.Errorf("ascii=%v default=%d: the last page does not highlight Previous page:\n%s", ascii, def, last[:200])
+			}
+		}
+		first := ScriptWith("Gola Bootlace", entries, Options{Default: -1, Next: "http://x/menu?page=2", Ascii: ascii, Pages: 2, Page: 1})
+		if !strings.Contains(first, "set menu-default local\n") {
+			t.Errorf("ascii=%v: the first page of a menu whose default is the PC's own disk must still highlight that:\n%s", ascii, first[:200])
+		}
+	}
+}

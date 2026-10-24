@@ -187,14 +187,16 @@ func plainRow(text string) string { return blank + blank + cell(text, lineLen-2,
 func ScriptWith(title string, entries []Entry, o Options) string {
 	var b strings.Builder
 	b.WriteString("#!ipxe\n")
-	if o.Default < 0 {
-		b.WriteString("set menu-default local\n")
-	} else if o.Default >= 1 && o.Default <= len(entries) {
-		fmt.Fprintf(&b, "set menu-default %s\n", label(entries[o.Default-1].Name, o.Default-1))
-	} else if o.Focus == "next" && o.Next != "" {
+	// a page reached with the page buttons keeps the highlight on the button that goes on (Previous on the last page); it comes before the PC's default, otherwise the
+	// usual default "start from the PC's own disk" would pull the highlight back to that line on every page
+	if o.Focus == "next" && o.Next != "" {
 		b.WriteString("set menu-default next\n")
 	} else if o.Focus != "" && o.Prev != "" {
 		b.WriteString("set menu-default prev\n")
+	} else if o.Default < 0 {
+		b.WriteString("set menu-default local\n")
+	} else if o.Default >= 1 && o.Default <= len(entries) {
+		fmt.Fprintf(&b, "set menu-default %s\n", label(entries[o.Default-1].Name, o.Default-1))
 	} else {
 		b.WriteString("set menu-default shell\n")
 	}

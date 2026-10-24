@@ -5,6 +5,7 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **"Next page" stays highlighted on the next page again.** After pressing Next page the highlight is meant to land on Next page of the page that opens (Previous page on the last one), so pressing Enter again walks through the pages. Since the default became "Boot from this PC's own disk" (#53), that default took the highlight first on every page, on BIOS (text menu) and UEFI (picture menu) alike. The page buttons now win over the default.
 - **The .deb and .rpm make the library folder.** The package settings name `/srv/library` for the ISOs, but nothing created it, so the service started and then waited ("this folder cannot be opened") until a folder was chosen in the web page. Found by installing 0.2.0 in a fresh Debian 13 container: the package now makes `/srv/library` and its message says where to put the ISOs.
 
 ## 0.2.0 - 2026-10-24
