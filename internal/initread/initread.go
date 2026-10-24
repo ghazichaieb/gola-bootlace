@@ -222,6 +222,9 @@ func walkCPIO(r io.Reader, fn func(name string, size int64, body io.Reader) erro
 		}
 		size := hexNum(hdr[54:62])
 		nsize := hexNum(hdr[94:102])
+		if nsize > 4096 { // a path in an initramfs is a few dozen characters
+			return errors.New("cpio: a file name that is far too long")
+		}
 		nb := make([]byte, nsize)
 		if _, err := io.ReadFull(br, nb); err != nil {
 			return err

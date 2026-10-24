@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,4 +36,16 @@ func FuzzInitramfs(f *testing.F) {
 			t.Fatalf("took %v for %d bytes", d, len(data))
 		}
 	})
+}
+
+func TestACpioFileNameOfFourGigabytesIsRefusedNotAllocated(t *testing.T) {
+	fields := make([]string, 13)
+	for i := range fields {
+		fields[i] = "00000000"
+	}
+	fields[11] = "FFFFFFFF" // the length of the file name
+	err := initread.Walk(bytes.NewReader([]byte("070701"+strings.Join(fields, ""))), func(string, int64, io.Reader) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "too long") {
+		t.Fatalf("%v", err)
+	}
 }

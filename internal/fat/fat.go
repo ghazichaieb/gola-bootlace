@@ -52,6 +52,9 @@ type node struct {
 // maxFAT is the largest allocation table that is read into memory (a FAT32 of 2 TB with 32 KB clusters has 16 MB of it).
 const maxFAT = 64 << 20
 
+// maxFolder is the largest folder that is read.
+const maxFolder = 64 << 20
+
 // Open reads the boot sector and the allocation table of a FAT volume.
 func Open(r io.ReaderAt) (*Volume, error) {
 	b := make([]byte, 512)
@@ -193,6 +196,9 @@ func (v *Volume) readChain(first uint32) ([]byte, error) {
 	}
 	var out []byte
 	for _, r := range runs {
+		if r.length < 0 || r.length > maxFolder || int64(len(out))+r.length > maxFolder {
+			return nil, errors.New("fat: a folder that is too big")
+		}
 		buf := make([]byte, r.length)
 		if _, err := v.r.ReadAt(buf, r.disk); err != nil && !errors.Is(err, io.EOF) {
 			return nil, err

@@ -19,6 +19,9 @@ import (
 
 const sector = 2048
 
+// maxRead is the most a folder or a descriptor area may be: a hostile image can claim gigabytes.
+const maxRead = 64 << 20
+
 // Tag identifiers of the descriptors read here (ECMA-167).
 const (
 	tagAVDP     = 2
@@ -198,6 +201,9 @@ func (img *Image) readBlocks(ad longAD, n int64) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if n < 0 || n > maxRead {
+		return nil, errors.New("udf: an area that is too big")
+	}
 	b := make([]byte, n)
 	if _, err := img.r.ReadAt(b, off); err != nil && err != io.EOF {
 		return nil, err
@@ -279,6 +285,9 @@ func (img *Image) readICB(ad longAD) (*node, error) {
 func (n *node) load() error {
 	if n.loaded || !n.dir {
 		return nil
+	}
+	if n.size < 0 || n.size > maxRead {
+		return errors.New("udf: a folder that is too big")
 	}
 	data := make([]byte, n.size)
 	if _, err := n.readAt(data, 0); err != nil && err != io.EOF {
