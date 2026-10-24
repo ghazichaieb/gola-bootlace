@@ -168,3 +168,41 @@ func TestOpenUploadsAreKeptForTheCleanUpAndExpire(t *testing.T) {
 		t.Fatalf("an id with a path: %v", err)
 	}
 }
+
+func TestResumeDoesNotReuseADifferentChecksum(t *testing.T) {
+	r := newRig(t)
+	content := isoBytes(64<<10, 'a')
+	u := UploadRequest{Name: "same.iso", Size: int64(len(content))}
+	first, _, err := r.m.StartUpload(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.SHA256 = sha(content)
+	second, _, err := r.m.StartUpload(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == second.ID || second.Request.SHA256 != u.SHA256 {
+		t.Fatal("the new checksum must not be silently discarded")
+	}
+	u.SHA256 = strings.ToUpper(u.SHA256)
+	again, _, err := r.m.StartUpload(u)
+	if err != nil || again.ID != second.ID {
+		t.Fatalf("equivalent checksums should resume: %+v %v", again, err)
+	}
+}
+
+func TestUploadSpaceCheckCountsOnlyBytesStillNeeded(t *testing.T) {
+	r := newRig(t)
+	free, _, err := library.DiskSpace(r.dir)
+	if err != nil {
+		t.Skip(err)
+	}
+	u := UploadRequest{Name: "large.iso", Size: int64(free) + 1}
+	if c := r.m.CheckUpload(u); len(c.Problems) == 0 {
+		t.Fatal("a new upload larger than free space must fail")
+	}
+	if c := r.m.checkUpload(u, u.Size); len(c.Problems) != 0 {
+		t.Fatalf("already received bytes need no additional space: %v", c.Problems)
+	}
+}

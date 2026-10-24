@@ -24,6 +24,11 @@ type UploadRequest struct {
 
 // CheckUpload looks at an upload before it is sent: the name, the place, the room, and what it would repeat.
 func (m *Manager) CheckUpload(u UploadRequest) Check {
+	return m.checkUpload(u, 0)
+}
+
+// received bytes already occupy space in the incoming folder.
+func (m *Manager) checkUpload(u UploadRequest, received int64) Check {
 	c := Check{Size: u.Size, Problems: []string{}, Matches: []library.Match{}}
 	problem := func(s string) Check { c.Problems = append(c.Problems, s); return c }
 	if err := m.Lib.Check(); err != nil {
@@ -46,7 +51,7 @@ func (m *Manager) CheckUpload(u UploadRequest) Check {
 	if u.Size <= 0 {
 		return problem("the size of the file is needed")
 	}
-	if err := m.Lib.EnoughSpace(u.Size); err != nil {
+	if err := m.Lib.EnoughSpace(max(u.Size-received, 0)); err != nil {
 		return problem(err.Error())
 	}
 	c.Name, c.Dest = name, strings.TrimPrefix(folder+"/"+name, "/")

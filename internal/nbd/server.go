@@ -241,7 +241,7 @@ func (s *Server) transmit(c net.Conn, r *bufio.Reader, e Export) error {
 		}
 		switch q.Type {
 		case cmdRead:
-			if int64(q.Offset)+int64(q.Length) > e.Size || q.Length > maxRead {
+			if e.Size < 0 || q.Offset > uint64(e.Size) || uint64(q.Length) > uint64(e.Size)-q.Offset || q.Length > maxRead {
 				respond(q.Handle, errInval, nil)
 				continue
 			}
@@ -250,7 +250,7 @@ func (s *Server) transmit(c net.Conn, r *bufio.Reader, e Export) error {
 			go func(handle, off uint64, n uint32) {
 				defer func() { <-slots; wg.Done() }()
 				buf := make([]byte, n)
-				if _, err := e.R.ReadAt(buf, int64(off)); err != nil && !(errors.Is(err, io.EOF) && int64(off)+int64(n) == e.Size) {
+				if got, err := e.R.ReadAt(buf, int64(off)); got != len(buf) || (err != nil && !errors.Is(err, io.EOF)) {
 					respond(handle, errIO, nil)
 					return
 				}

@@ -1,12 +1,55 @@
 package iscsi
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"io"
 	"net"
 	"testing"
 )
+
+func TestReadRejectsOverflowAndTruncatedMedia(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		lba  uint64
+	}{
+		{"overflowing LBA", ^uint64(0)},
+		{"truncated medium", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			reader := &shortReader{}
+			s := &conn{w: bufio.NewWriter(&out), disc: Disc{R: reader, Size: BlockSize}, maxRecv: 4096}
+			p := &pdu{}
+			p.bhs[0] = opSCSICmd
+			p.bhs[32] = 0x88 // READ(16)
+			binary.BigEndian.PutUint64(p.bhs[34:], tc.lba)
+			binary.BigEndian.PutUint32(p.bhs[42:], 1)
+			binary.BigEndian.PutUint32(p.bhs[20:], BlockSize)
+			if err := s.command(p); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.w.Flush(); err != nil {
+				t.Fatal(err)
+			}
+			r, err := readPDU(&out)
+			if err != nil || r.opcode() != opSCSIResp || r.bhs[3] != statusCheckCondition {
+				t.Fatalf("invalid read must return check condition (read error: %v)", err)
+			}
+			if tc.lba != 0 && reader.calls != 0 {
+				t.Fatal("an overflowing LBA reached the backing reader")
+			}
+		})
+	}
+}
+
+type shortReader struct{ calls int }
+
+func (r *shortReader) ReadAt(p []byte, off int64) (int, error) {
+	r.calls++
+	return 0, io.EOF
+}
 
 type initiator struct {
 	t  *testing.T
