@@ -33,6 +33,7 @@ var AnswerKinds = []AnswerKind{
 	{ID: "autoinstall", Label: "Ubuntu autoinstall (cloud-init user-data)", Hint: "Ubuntu Server's live installer", Files: []string{"user-data", "meta-data", "vendor-data"}},
 	{ID: "kickstart", Label: "Red Hat kickstart", Hint: "the installers of Fedora, Alma, Rocky, CentOS and Red Hat", Files: []string{"ks.cfg"}},
 	{ID: "autoyast", Label: "openSUSE AutoYaST", Hint: "the installers of openSUSE and SUSE", Files: []string{"autoinst.xml"}},
+	{ID: "unattend", Label: "Windows autounattend.xml", Hint: "Windows 10, Windows 11 and Windows Server Setup (the Windows set-up environment fetches it from the share)", Files: []string{"autounattend.xml"}},
 }
 
 // AnswerKindOf finds a kind by its id.
@@ -98,6 +99,9 @@ func (c *Config) validateAnswers() error {
 			return fmt.Errorf("%q is not a kind of answer file", a.Kind)
 		}
 		if err := CleanAnswerContent(a.Content); err != nil {
+			return err
+		}
+		if err := cleanXMLContent(a.Kind, a.Content); err != nil {
 			return err
 		}
 		a.Name = name
@@ -191,27 +195,43 @@ func maskLine(l string) string {
 	return l
 }
 
-// MaskAnswer is the text of an answer file with the values that look like secrets hidden.
-func MaskAnswer(text string) string {
+// maskText is the lines of an answer file with the values that look like secrets hidden (the carriage returns stay). Most secrets are found line by line; the <Value> of a Windows
+// answer file's <Password> needs to know that it is inside one.
+func maskText(text string) []string {
 	lines := strings.Split(text, "\n")
+	inValue := map[int]bool{}
+	for _, i := range unattendValues(lines) {
+		inValue[i] = true
+	}
+	out := make([]string, len(lines))
 	for i, l := range lines {
 		cr := strings.HasSuffix(l, "\r")
-		l = maskLine(strings.TrimSuffix(l, "\r"))
+		l = strings.TrimSuffix(l, "\r")
+		if inValue[i] {
+			l = unattendValue.ReplaceAllString(l, "${1}"+Masked+"${3}")
+		} else {
+			l = maskLine(l)
+		}
 		if cr {
 			l += "\r"
 		}
-		lines[i] = l
+		out[i] = l
 	}
-	return strings.Join(lines, "\n")
+	return out
 }
+
+// MaskAnswer is the text of an answer file with the values that look like secrets hidden.
+func MaskAnswer(text string) string { return strings.Join(maskText(text), "\n") }
 
 // RestoreMasked takes the old line back for each line of `edited` that still shows the mask in place of a value that was in `old`, so that saving a file that was shown masked keeps
 // its secrets. A masked line that matches no old line stays as it is.
 func RestoreMasked(old, edited string) string {
 	byMasked := map[string][]string{}
-	for _, l := range strings.Split(old, "\n") {
-		if m := maskLine(strings.TrimSuffix(l, "\r")); strings.Contains(m, Masked) {
-			byMasked[m] = append(byMasked[m], l)
+	oldLines := strings.Split(old, "\n")
+	for i, m := range maskText(old) {
+		m = strings.TrimSuffix(m, "\r")
+		if strings.Contains(m, Masked) {
+			byMasked[m] = append(byMasked[m], oldLines[i])
 		}
 	}
 	lines := strings.Split(edited, "\n")
@@ -228,4 +248,20 @@ func RestoreMasked(old, edited string) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+// cleanXMLContent refuses, in the kinds that are XML (AutoYaST, Windows), the control characters that XML 1.0 does not allow (a stray form feed or vertical tab, from a paste or
+// from a "\v" in a path that was typed into a script): Windows Setup then stops with "an internal error while loading or searching for an unattend answer file", which says nothing
+// about the cause.
+func cleanXMLContent(kind, s string) error {
+	if kind != "unattend" && kind != "autoyast" {
+		return nil
+	}
+	for i, r := range s {
+		if r < 0x20 && r != '\t' && r != '\n' && r != '\r' {
+			line := 1 + strings.Count(s[:i], "\n")
+			return fmt.Errorf("line %d holds a control character (code %d) that XML does not allow: remove it", line, r)
+		}
+	}
+	return nil
 }

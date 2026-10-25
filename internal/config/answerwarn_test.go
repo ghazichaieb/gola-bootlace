@@ -52,3 +52,40 @@ func TestTheShippedTemplatesHoldNoPlainPassword(t *testing.T) {
 		}
 	}
 }
+
+const unattendText = `<settings>
+  <!-- <Password><Value>commented</Value></Password> -->
+  <Password>
+    <Value>c2VjcmV0</Value>
+    <PlainText>false</PlainText>
+  </Password>
+  <MetaData><Key>/IMAGE/NAME</Key><Value>Windows 11 Pro</Value></MetaData>
+  <AdministratorPassword><Value>{{serial}}</Value></AdministratorPassword>
+  <Password><Value>  </Value></Password>
+  <Password><Value>one-line</Value></Password>
+</settings>
+`
+
+func TestAWindowsAnswerFileWithAPasswordIsWarnedAboutAndMaskedAndTheMaskIsRestoredOnSave(t *testing.T) {
+	if got := lines(PlainPasswords("unattend", unattendText)); got != "line 4: Password Value (Windows keeps it as base64, not as a hash); line 10: Password Value (Windows keeps it as base64, not as a hash)" {
+		t.Fatalf("%s", got)
+	}
+	masked := MaskAnswer(unattendText)
+	if strings.Contains(masked, "c2VjcmV0") || strings.Contains(masked, "one-line") || !strings.Contains(masked, "<Value>********</Value>") {
+		t.Fatalf("%s", masked)
+	}
+	if !strings.Contains(masked, "<Value>Windows 11 Pro</Value>") || !strings.Contains(masked, "commented") || !strings.Contains(masked, "{{serial}}") {
+		t.Fatalf("what is not a password stays:\n%s", masked)
+	}
+	// saving the masked text with another edit keeps the passwords
+	edited := strings.Replace(masked, "<PlainText>false", "<PlainText>true", 1)
+	back := RestoreMasked(unattendText, edited)
+	if want := strings.Replace(unattendText, "<PlainText>false", "<PlainText>true", 1); back != want {
+		t.Fatalf("%s\nwant\n%s", back, want)
+	}
+	// CR LF files
+	crlf := strings.ReplaceAll(unattendText, "\n", "\r\n")
+	if m := MaskAnswer(crlf); strings.Contains(m, "c2VjcmV0") || !strings.Contains(m, "\r\n") {
+		t.Fatalf("%q", m)
+	}
+}

@@ -29,7 +29,7 @@ func TestTheScriptLoadsWimbootWithTheBootFilesAndOurTwoFiles(t *testing.T) {
 func TestTheCommandFileConnectsToTheShareOnTheRightPortAndStartsTheSetupOfTheEnvironment(t *testing.T) {
 	c := Cmd(set)
 	for _, want := range []string{`net use Z: \\10.0.0.1\iso /user:bootlace s3cret /TCPPORT:4445`, `set IMAGE=Z:\ab\sources\install.wim`, `install.esd`,
-		`/unattend:Z:\ab\autounattend.xml`, `\sources\setup.exe %OPTIONS%`, `cd /d Z:\ab`, "wpeinit"} {
+		`set UNATTEND=Z:\ab\autounattend.xml`, `/unattend:%UNATTEND%`, `copy Z:\ab\_bootlace\%cand%\autounattend.xml`, `ipconfig /all`, `\sources\setup.exe %OPTIONS%`, `cd /d Z:\ab`, "wpeinit"} {
 		if !strings.Contains(c, want) {
 			t.Fatalf("missing %q in\n%s", want, c)
 		}
@@ -57,5 +57,39 @@ func TestTheCommandFileRemovesThePxeRecordSoThatSetupDoesNotStartInWdsMode(t *te
 	i, j := strings.Index(c, `reg delete HKLM\SYSTEM\CurrentControlSet\Control\PXE /f`), strings.Index(c, `sources\setup.exe`)
 	if i < 0 || j < 0 || i > j {
 		t.Fatalf("the PXE record must be removed before Setup starts:\n%s", c)
+	}
+}
+
+// The answer file is fetched before Setup starts, from the share, for the MAC addresses ipconfig lists, and it wins over the one in the ISO's folder.
+func TestTheCommandFileCopiesTheAnswerOfThisPCBeforeSetupAndItBeatsTheFileInTheIsoFolder(t *testing.T) {
+	c := Cmd(set)
+	iFor, iCopy, iIso, iOpt, iSetup := strings.Index(c, "ipconfig /all"), strings.Index(c, `copy Z:\ab\_bootlace\%cand%`), strings.Index(c, `if exist Z:\ab\autounattend.xml`), strings.Index(c, "/unattend:%UNATTEND%"), strings.Index(c, `sources\setup.exe`)
+	if iFor < 0 || iCopy < 0 || iIso < 0 || iOpt < 0 || iSetup < 0 {
+		t.Fatalf("pieces missing:\n%s", c)
+	}
+	if !(iFor < iIso && iIso < iOpt && iOpt < iSetup) {
+		t.Fatalf("the answer must be looked for, then the ISO's own file, then Setup started:\n%s", c)
+	}
+	if iCopy < iSetup { // (the subroutine sits after the main flow)
+		t.Fatalf("the subroutine must follow the main flow, or the script falls into it:\n%s", c)
+	}
+	if i := strings.Index(c, ":end"); i < 0 || strings.Index(c, "goto :eof") < i || strings.Index(c, "\r\n:answer\r\n") < strings.Index(c, "goto :eof") {
+		t.Fatalf("the main flow must end before the subroutine:\n%s", c)
+	}
+	// only a word shaped like aa-bb-cc-dd-ee-ff is tried
+	for _, at := range []string{"2", "5", "8", "11", "14"} {
+		if !strings.Contains(c, `if not "%cand:~`+at+`,1%"=="-" exit /b 0`) {
+			t.Errorf("no check of position %s", at)
+		}
+	}
+	if !strings.Contains(c, `if not "%cand:~17%"=="" exit /b 0`) || !strings.Contains(c, `if "%~1"=="" exit /b 0`) {
+		t.Errorf("no length check:\n%s", c)
+	}
+	if strings.Contains(c, "\x07") || strings.Contains(c, "\x08") {
+		t.Error("a control character in the command file")
+	}
+	// every line ends with CR LF
+	if strings.Contains(strings.ReplaceAll(c, "\r\n", ""), "\n") {
+		t.Error("a line without a carriage return")
 	}
 }

@@ -43,6 +43,9 @@ type Options struct {
 	Logf     func(format string, args ...any)
 	Debug    bool   // log every message and every file opening (a lot: for finding faults); without it only each new connection is logged
 	Forward  string // for finding faults: pass every connection on to another SMB server (host:port) and log what is said, instead of serving the ISOs
+	// Answer, when set, gives the file Windows set-up reads for one PC: the share shows <id>/_bootlace/<MAC with dashes>/autounattend.xml, made at the moment it is opened. commit is false for
+	// the look that only asks whether the file is there, and true when its content is first read (the caller then counts it). It says no when there is no file for that PC.
+	Answer func(isoID, mac, name string, commit bool) ([]byte, bool)
 }
 
 // Serve runs the share until ctx ends. Windows opens a connection with an SMB1 "multi-protocol negotiate" that offers SMB 2 among its dialects, and
@@ -54,7 +57,7 @@ func Serve(ctx context.Context, o Options) error {
 	if !o.Debug {
 		trace, level = nil, slog.LevelWarn
 	}
-	backend := &Backend{dir: o.ISODir, open: map[string]*opened{}, logf: trace}
+	backend := &Backend{dir: o.ISODir, open: map[string]*opened{}, logf: trace, answer: o.Answer}
 	inner, err := freeLoopbackAddr()
 	if err != nil {
 		return err
@@ -235,10 +238,11 @@ func (u oneUser) LookupNTOWFv2(_ context.Context, domain, user string) ([]byte, 
 
 // Backend is the read-only file system of the share.
 type Backend struct {
-	logf func(format string, args ...any)
-	dir  string
-	mu   sync.Mutex
-	open map[string]*opened // by ISO id: the file and its contents, kept open while the server runs
+	logf   func(format string, args ...any)
+	dir    string
+	mu     sync.Mutex
+	open   map[string]*opened // by ISO id: the file and its contents, kept open while the server runs
+	answer func(isoID, mac, name string, commit bool) ([]byte, bool)
 }
 
 type opened struct {
@@ -295,6 +299,9 @@ func (b *Backend) open_(_ context.Context, opts vfs.OpenOptions) (vfs.Handle, er
 		return &rootHandle{b: b}, nil
 	}
 	id, rest, _ := strings.Cut(p, "/")
+	if h := b.answerHandle(id, rest); h != nil {
+		return h, nil
+	}
 	o, err := b.disc(id)
 	if err != nil {
 		return nil, os.ErrNotExist
@@ -451,4 +458,97 @@ func relay(to, from net.Conn, who string, logf func(format string, args ...any))
 			return
 		}
 	}
+}
+
+// answerHandle is the file of the answer for one PC, or the folders on the way to it, when the path asks for them (<id>/_bootlace[/<MAC>[/<name>]]) and there is one: nil otherwise.
+// Windows looks at the folder that holds a file before it copies it, so the folders have to be there.
+func (b *Backend) answerHandle(id, rest string) vfs.Handle {
+	if b.answer == nil {
+		return nil
+	}
+	parts := strings.Split(rest, "/")
+	if len(parts) == 0 || len(parts) > 3 || !strings.EqualFold(parts[0], "_bootlace") {
+		return nil
+	}
+	switch len(parts) {
+	case 1:
+		return &answerDir{name: "_bootlace"}
+	case 2:
+		if _, ok := b.answer(id, parts[1], "autounattend.xml", false); !ok {
+			return nil
+		}
+		return &answerDir{name: parts[1], b: b, id: id, mac: parts[1]}
+	}
+	name := strings.ToLower(parts[2])
+	data, ok := b.answer(id, parts[1], name, false)
+	if !ok {
+		return nil
+	}
+	return &answerFile{b: b, id: id, mac: parts[1], name: name, data: data}
+}
+
+// answerDir is a folder on the way to a PC's answer file: the first lists nothing, the second lists the file.
+type answerDir struct {
+	name    string
+	b       *Backend
+	id, mac string
+}
+
+func (d *answerDir) Read(context.Context, int64, []byte) (int, error) {
+	return 0, errors.New("a folder")
+}
+func (d *answerDir) Write(context.Context, int64, []byte) (int, error) {
+	return 0, os.ErrPermission
+}
+func (d *answerDir) Close(context.Context) error { return nil }
+func (d *answerDir) Stat(context.Context) (vfs.FileInfo, error) {
+	return info(d.name, 0, true, started), nil
+}
+func (d *answerDir) Enumerate(_ context.Context, pattern string) iter.Seq2[vfs.FileInfo, error] {
+	return func(yield func(vfs.FileInfo, error) bool) {
+		if d.b == nil || !matches(pattern, "autounattend.xml") {
+			return
+		}
+		if data, ok := d.b.answer(d.id, d.mac, "autounattend.xml", false); ok {
+			yield(info("autounattend.xml", int64(len(data)), false, started), nil)
+		}
+	}
+}
+
+// answerFile is the made-up file: its text is made again, and counted, when the PC first reads it.
+type answerFile struct {
+	b       *Backend
+	id, mac string
+	name    string
+	mu      sync.Mutex
+	data    []byte
+	counted bool
+}
+
+func (a *answerFile) Read(_ context.Context, offset int64, p []byte) (int, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if !a.counted {
+		a.counted = true
+		data, ok := a.b.answer(a.id, a.mac, a.name, true)
+		if !ok {
+			return 0, os.ErrPermission
+		}
+		a.data = data
+	}
+	if offset >= int64(len(a.data)) {
+		return 0, io.EOF
+	}
+	return copy(p, a.data[offset:]), nil
+}
+
+func (a *answerFile) Write(context.Context, int64, []byte) (int, error) { return 0, os.ErrPermission }
+func (a *answerFile) Close(context.Context) error                       { return nil }
+func (a *answerFile) Stat(context.Context) (vfs.FileInfo, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return info(a.name, int64(len(a.data)), false, started), nil
+}
+func (a *answerFile) Enumerate(context.Context, string) iter.Seq2[vfs.FileInfo, error] {
+	return func(yield func(vfs.FileInfo, error) bool) { yield(vfs.FileInfo{}, errors.New("a file")) }
 }

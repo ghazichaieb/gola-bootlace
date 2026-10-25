@@ -274,7 +274,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 			}}).Mount()
 		logf("web interface: %s/admin/", base)
 	}
-	httpListener, err := net.Listen("tcp4", fmt.Sprintf(":%d", *httpPort))
+	httpListener, err := net.Listen("tcp", fmt.Sprintf(":%d", *httpPort)) // both IPv4 and IPv6: the addresses given to PCs are still IPv4 (issue #29, stage 1)
 	if err != nil {
 		fmt.Fprintf(stderr, "bootlace: cannot open web port %d: %v\n", *httpPort, err)
 		return 1

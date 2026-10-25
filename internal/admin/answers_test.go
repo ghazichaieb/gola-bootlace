@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/xml"
 	"strings"
 	"testing"
 )
@@ -229,5 +230,19 @@ func TestTheSwitchForTheSameAddressIsSavedAndNeedsASignIn(t *testing.T) {
 	}
 	if _, out := r.do("GET", "/api/answers", nil, nil); out["sameAddress"] != true {
 		t.Fatalf("%v", out)
+	}
+}
+
+func TestTheXmlTemplatesAreWellFormed(t *testing.T) {
+	for _, kind := range []string{"autoyast", "unattend"} {
+		d := xml.NewDecoder(strings.NewReader(answerTemplates[kind]))
+		for {
+			if _, err := d.Token(); err != nil {
+				if err.Error() != "EOF" {
+					t.Errorf("%s template is not well formed XML: %v", kind, err)
+				}
+				break
+			}
+		}
 	}
 }

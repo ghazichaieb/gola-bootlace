@@ -91,3 +91,21 @@ func TestServerAddress(t *testing.T) {
 		t.Errorf("a public address was not flagged: %v", err)
 	}
 }
+
+func TestHostDropsTheZoneOfALinkLocalAddress(t *testing.T) {
+	for in, want := range map[string]string{
+		"169.254.74.255%vEthernet (bootlace-lab):56582": "169.254.74.255", // what a dual-stack socket on Windows reports for a link-local IPv4 peer
+		"[fe80::1%eth0]:5000":                           "fe80::1",
+		"[2001:db8::7]:80":                              "2001:db8::7",
+		"10.0.0.5:8080":                                 "10.0.0.5",
+		"10.0.0.5":                                      "10.0.0.5",
+	} {
+		if got := Host(in); got != want {
+			t.Errorf("Host(%q) = %q, want %q", in, got, want)
+		}
+	}
+	p := New(nil)
+	if !p.AllowedAddr(&net.IPAddr{IP: net.ParseIP(Host("[fe80::1%eth0]:5000"))}) || p.AllowedAddr(&net.IPAddr{IP: net.ParseIP(Host("[2001:db8::7]:80"))}) {
+		t.Fatal("a link-local IPv6 peer is local, a global one is not")
+	}
+}

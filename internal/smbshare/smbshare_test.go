@@ -1,8 +1,12 @@
 package smbshare
 
 import (
+	"context"
 	"encoding/binary"
+	"fmt"
+	"io"
 	"net"
+	"strings"
 	"testing"
 )
 
@@ -53,5 +57,97 @@ func TestReadFrameAcceptsAFullReadAnswer(t *testing.T) {
 	got, err := readFrame(b)
 	if err != nil || len(got) != len(msg) {
 		t.Fatalf("got %d bytes, err %v", len(got), err)
+	}
+}
+
+func TestTheAnswerFileOfAPCIsAFileOfTheIsoFolderMadeWhenOpenedAndCountedWhenRead(t *testing.T) {
+	var asked []string
+	b := &Backend{answer: func(id, mac, name string, commit bool) ([]byte, bool) {
+		asked = append(asked, fmt.Sprintf("%s/%s/%s/%v", id, mac, name, commit))
+		if mac != "00-15-5D-01-02-03" {
+			return nil, false
+		}
+		return []byte("<unattend/>"), true
+	}}
+	if h := b.answerHandle("ab12", "_bootlace/AA-BB-CC-DD-EE-FF/autounattend.xml"); h != nil {
+		t.Fatal("a PC without a file got one")
+	}
+	for _, rest := range []string{"sources/boot.wim", "_bootlace/AA-BB-CC-DD-EE-FF", "_bootlace/00-15-5D-01-02-03/autounattend.xml/x", "other/00-15-5D-01-02-03/autounattend.xml"} {
+		if b.answerHandle("ab12", rest) != nil {
+			t.Errorf("%q is not an answer path", rest)
+		}
+	}
+	h := b.answerHandle("ab12", "_BootLace/00-15-5D-01-02-03/AutoUnattend.XML")
+	if h == nil {
+		t.Fatal("no handle")
+	}
+	st, _ := h.Stat(context.Background())
+	if st.IsDir || st.Size != int64(len("<unattend/>")) || st.Name != "autounattend.xml" {
+		t.Fatalf("%+v", st)
+	}
+	if got := asked[len(asked)-1]; !strings.HasSuffix(got, "/false") {
+		t.Fatalf("opening must only look: %v", asked)
+	}
+	buf := make([]byte, 100)
+	n, err := h.Read(context.Background(), 0, buf)
+	if err != nil || string(buf[:n]) != "<unattend/>" {
+		t.Fatalf("%d %v", n, err)
+	}
+	if _, err := h.Read(context.Background(), int64(n), buf); err != io.EOF {
+		t.Fatalf("%v", err)
+	}
+	h.Read(context.Background(), 0, buf)
+	commits := 0
+	for _, a := range asked {
+		if strings.HasSuffix(a, "/true") {
+			commits++
+		}
+	}
+	if commits != 1 {
+		t.Fatalf("the file is counted once per handle: %v", asked)
+	}
+	if _, err := h.Write(context.Background(), 0, []byte("x")); err == nil {
+		t.Fatal("writable")
+	}
+}
+
+// Windows opens the folders on the way before it copies a file (FindFirstFile on the parent): they must be there, and list the file for a PC that has one.
+func TestTheFoldersOnTheWayToTheAnswerAreThereAndListTheFileOnlyForAPCThatHasOne(t *testing.T) {
+	b := &Backend{answer: func(id, mac, name string, commit bool) ([]byte, bool) {
+		return []byte("<unattend/>"), mac == "00-15-5D-01-02-03"
+	}}
+	top := b.answerHandle("ab12", "_bootlace")
+	if top == nil {
+		t.Fatal("no folder")
+	}
+	if st, _ := top.Stat(context.Background()); !st.IsDir || st.Name != "_bootlace" {
+		t.Fatalf("%+v", st)
+	}
+	n := 0
+	for range top.Enumerate(context.Background(), "*") {
+		n++
+	}
+	if n != 0 {
+		t.Fatal("the folder of all PCs must list nothing")
+	}
+	if b.answerHandle("ab12", "_bootlace/AA-BB-CC-DD-EE-FF") != nil {
+		t.Fatal("a folder for a PC without a file")
+	}
+	mine := b.answerHandle("ab12", "_bootlace/00-15-5D-01-02-03")
+	if mine == nil {
+		t.Fatal("no folder for the PC")
+	}
+	var names []string
+	for fi, err := range mine.Enumerate(context.Background(), "autounattend.xml") {
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, fi.Name)
+	}
+	if strings.Join(names, ",") != "autounattend.xml" {
+		t.Fatalf("%v", names)
+	}
+	for range mine.Enumerate(context.Background(), "*.wim") {
+		t.Fatal("a pattern that does not match listed the file")
 	}
 }

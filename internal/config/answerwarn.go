@@ -101,6 +101,10 @@ func PlainPasswords(kind, text string) []PlainPassword {
 				}
 			}
 		}
+	case "unattend":
+		for _, i := range unattendValues(lines) {
+			out = append(out, PlainPassword{i + 1, "Password Value (Windows keeps it as base64, not as a hash)"})
+		}
 	case "autoyast":
 		// a password counts as plain unless its <user> block says it is encrypted
 		for i, l := range lines {
@@ -121,6 +125,43 @@ func PlainPasswords(kind, text string) []PlainPassword {
 			if !yastEncoded.MatchString(strings.Join(lines[from:to+1], "\n")) {
 				out = append(out, PlainPassword{i + 1, m[1]})
 			}
+		}
+	}
+	return out
+}
+
+var (
+	unattendOpen  = regexp.MustCompile(`(?i)<(Password|AdministratorPassword)(\s[^>]*)?>`)
+	unattendClose = regexp.MustCompile(`(?i)</(Password|AdministratorPassword)\s*>`)
+	unattendValue = regexp.MustCompile(`(?i)(<Value>)([^<]*)(</Value>)`)
+)
+
+// unattendValues finds the passwords of a Windows answer file: the <Value> inside a <Password> or <AdministratorPassword> (Windows keeps it as base64 of the password, which is
+// no protection). It returns, for each line that holds one that is not empty and not a {{word}}, the line's index. Comments are skipped.
+func unattendValues(lines []string) []int {
+	var out []int
+	in, comment := false, false
+	for i, l := range lines {
+		t := l
+		if strings.Contains(t, "<!--") {
+			comment = true
+		}
+		if comment {
+			if strings.Contains(t, "-->") {
+				comment = false
+			}
+			continue
+		}
+		if unattendOpen.MatchString(t) {
+			in = true
+		}
+		if in {
+			if m := unattendValue.FindStringSubmatch(t); m != nil && strings.TrimSpace(m[2]) != "" && !strings.Contains(m[2], "{{") && m[2] != Masked && !strings.HasPrefix(strings.TrimSpace(m[2]), "PUT-") {
+				out = append(out, i)
+			}
+		}
+		if unattendClose.MatchString(t) {
+			in = false
 		}
 	}
 	return out

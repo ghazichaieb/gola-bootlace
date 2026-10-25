@@ -109,6 +109,10 @@ type SetupChecks struct {
 	RAM        bool `json:"ram,omitempty"`
 	CPU        bool `json:"cpu,omitempty"`
 	Storage    bool `json:"storage,omitempty"`
+	// LocalAccount asks for a local account at the first sign-in instead of a Microsoft account (the network page of the first start is skipped); it applies when no Windows answer file is
+	// attached to the PC or its ISO. Drivers adds the drivers of the library's drivers folder to Windows Setup (see package winpe).
+	LocalAccount bool `json:"localAccount,omitempty"`
+	Drivers      bool `json:"drivers,omitempty"`
 }
 
 // LabConfig are the names of the values of HKLM\SYSTEM\Setup\LabConfig that skip the checks that are on.

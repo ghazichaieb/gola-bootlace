@@ -114,11 +114,7 @@ func (p *Policy) AllowedAddr(a net.Addr) bool {
 	case *net.UDPAddr:
 		ip = v.IP
 	default:
-		host, _, err := net.SplitHostPort(a.String())
-		if err != nil {
-			host = a.String()
-		}
-		ip = net.ParseIP(host)
+		ip = net.ParseIP(Host(a.String()))
 	}
 	if p.Allowed(ip) {
 		return true
@@ -199,4 +195,17 @@ func ServerAddress(ip net.IP) error {
 		return errors.New("this server's address is a public one: Bootlace is for a local network and should not be reachable from the internet")
 	}
 	return nil
+}
+
+// Host is the address of a "host:port" string without the zone that a link-local address carries (fe80::1%eth0, and on Windows an IPv4 link-local address too): the zone
+// is a local interface name, not part of the address, and net.ParseIP refuses a string that has one.
+func Host(hostport string) string {
+	host, _, err := net.SplitHostPort(hostport)
+	if err != nil {
+		host = hostport
+	}
+	if i := strings.IndexByte(host, '%'); i >= 0 {
+		host = host[:i]
+	}
+	return host
 }

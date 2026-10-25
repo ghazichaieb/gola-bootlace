@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 )
 
@@ -121,7 +122,7 @@ func (s *Server) pinnedPCs() map[string]bool {
 // noteClient records the PC behind a menu request and returns what is known of it.
 func (s *Server) noteClient(r *http.Request) Client {
 	q := r.URL.Query()
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	host := access.Host(r.RemoteAddr)
 	ip := host // where the request really came from; what iPXE says about itself is only used when that is not an address
 	if net.ParseIP(ip) == nil {
 		ip = queryValue(q, "ip", 45)
@@ -182,10 +183,7 @@ func (s *Server) setAction(mac, action string) {
 
 // noteFetch notes that the PC at this address started fetching files of an ISO.
 func (s *Server) noteFetch(remoteAddr, title string) {
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err != nil {
-		return
-	}
+	host := access.Host(remoteAddr)
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
 	for _, c := range s.clients {

@@ -22,7 +22,7 @@ func TestPatchBootWIMAddsTheFilesToEveryImage(t *testing.T) {
 	defer src.Close()
 	dst := filepath.Join(t.TempDir(), "patched.wim")
 	files := map[string][]byte{"/Windows/System32/winpeshl.ini": []byte(ShellIni()), "/Windows/System32/bootlace.cmd": []byte("@echo test\r\n")}
-	if err := PatchBootWIM(lib, src, dst, files); err != nil {
+	if err := PatchBootWIM(lib, src, dst, files, nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, image := range []string{"1", "2"} {

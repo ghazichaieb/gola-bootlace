@@ -36,6 +36,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/service"
 	"github.com/ghazichaieb/gola-bootlace/internal/speedtest"
 	"github.com/ghazichaieb/gola-bootlace/internal/version"
+	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
 )
 
 //go:embed web/index.html web/mark.svg
@@ -804,7 +805,7 @@ func (a *Admin) selfTest(w http.ResponseWriter, r *http.Request) {
 // tuningGet and tuningSet are the TFTP knobs and the patterns that keep ISOs out of the menu.
 func (a *Admin) tuningGet(w http.ResponseWriter, _ *http.Request) {
 	c := a.o.Store.Get()
-	writeJSON(w, http.StatusOK, map[string]any{"tftpBlockSize": c.Tuning.TFTPBlockSize, "tftpWindow": c.Tuning.TFTPWindow, "hidePatterns": c.HidePatterns, "menuAccent": c.MenuAccent, "accents": config.AccentNames, "setupChecks": c.SetupChecks})
+	writeJSON(w, http.StatusOK, map[string]any{"tftpBlockSize": c.Tuning.TFTPBlockSize, "tftpWindow": c.Tuning.TFTPWindow, "hidePatterns": c.HidePatterns, "menuAccent": c.MenuAccent, "accents": config.AccentNames, "setupChecks": c.SetupChecks, "driverFolders": driverFolders(a.o.Library.Path()), "driverLimitMB": winpe.MaxDriverBytes >> 20, "driversFolder": winpe.DriversFolder})
 }
 
 func (a *Admin) tuningSet(w http.ResponseWriter, r *http.Request) {

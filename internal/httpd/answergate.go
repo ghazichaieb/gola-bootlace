@@ -25,7 +25,7 @@ const (
 // the same MAC address a short while before (the PC changed address, or another host poses as it); the caller holds clientsMu.
 func (s *Server) openAnswerGrant(c *Client, ip string, now time.Time) string {
 	warn := ""
-	if c.MenuIP != "" && c.MenuIP != ip && now.Sub(c.MenuAt) < answerWindow {
+	if ip != "" && c.MenuIP != "" && c.MenuIP != ip && now.Sub(c.MenuAt) < answerWindow {
 		warn = fmt.Sprintf("%s asked for the menu from %s, and from %s %s ago: if that is not the same PC, another host poses as it", c.MAC, ip, c.MenuIP, now.Sub(c.MenuAt).Round(time.Second))
 	}
 	c.MenuIP, c.MenuAt, c.AnswersLeft = ip, now, answerFetches
@@ -54,7 +54,7 @@ func (s *Server) takeAnswer(cfg config.Config, mac, host string, now time.Time, 
 		return false, "that PC never asked for the menu"
 	case c.MenuAt.IsZero() || now.Sub(c.MenuAt) >= answerWindow:
 		return false, "that PC asked for the menu too long ago (more than " + answerWindow.String() + ")"
-	case c.MenuIP != host && cfg.AnswersSameAddress:
+	case host != "" && c.MenuIP != host && cfg.AnswersSameAddress:
 		return false, fmt.Sprintf("that PC asked for the menu from %s, not from %s (the setting for the same address is on)", c.MenuIP, host)
 	case c.AnswersLeft <= 0:
 		return false, fmt.Sprintf("that PC was already given %d files since it asked for the menu: it has to ask for the menu again", answerFetches)
@@ -63,8 +63,19 @@ func (s *Server) takeAnswer(cfg config.Config, mac, host string, now time.Time, 
 		c.AnswersLeft--
 		s.changed()
 	}
-	if c.MenuIP != host {
+	if host != "" && c.MenuIP != host {
 		return true, fmt.Sprintf("the PC asked for the menu from %s", c.MenuIP)
 	}
 	return true, ""
+}
+
+// grantAnswers is the menu request of a PC that the firmware starts by itself (a "native" rule: the DHCP answer names the boot file and there is no menu): the PC may fetch the
+// answer file of its Windows set-up from the share.
+func (s *Server) grantAnswers(mac string) {
+	now := time.Now()
+	s.clientsMu.Lock()
+	defer s.clientsMu.Unlock()
+	c := s.admitLocked(mac, now)
+	s.openAnswerGrant(c, "", now)
+	s.changed()
 }

@@ -107,6 +107,34 @@ openSUSE's AutoYaST. "New answer file" starts from a template for the kind; each
   sits in the ISO's own folder.
 - **Ubuntu Server** ISOs are now downloaded whole into the PC's memory (the PC needs about the size of the ISO and 2 GB more) instead of being read from the network disk: Ubuntu's installer stops on
   the network disk with "Invalid dep_id (disk-nbd0)".
+- **Windows (autounattend.xml, #17).** The "Windows autounattend.xml" kind works for Windows 10, Windows 11 and Windows Server ISOs. Windows Setup has no web client, so the file is read from the share: while
+  a Windows answer file is attached to the PC or to its ISO, the ISO's folder on the share shows `_bootlace\<MAC>\autounattend.xml` for that PC (made for it when it is read, with the same words
+  as the other kinds plus `{{computername}}`, the host name cut to Windows' 15 characters), and the start-up script of the Windows set-up environment (`bootlace.cmd`) finds its own MAC addresses with
+  `ipconfig`, copies the file and starts Setup with `/unattend:`. The same rules as for the web address apply (it is given only to a PC that asked for the menu, or was started by a "native" rule, in the
+  last two hours, and twelve times at most; the share cannot tell which address a PC reads from, so the "Stricter" switch does not apply to it). A file attached here wins over an `autounattend.xml`
+  that sits in the ISO's own folder, which keeps working when nothing is attached. Windows keeps a password in this kind of file as plain text (the base64 form it can hold is no protection), so the page
+  warns about any `<Password><Value>` and the template creates no account. Words put into the XML are escaped. **Checked in a real Windows 11 26H2 Setup** (Hyper-V, UEFI, 2 GB, no TPM): a PC
+  with a file attached got it through the share, Setup ran without a question (disk partitioned, edition chosen, account made, computer name `SHOP-PC-7` from the name given on the PCs page, first-logon
+  command ran). Two things the run showed: Windows reads the folder that holds a file before it copies it, so the share shows the folders `_bootlace` and `_bootlace\<MAC>` too; and the set-up image of
+  Windows has no `curl`, `getmac`, `wmic`, `powershell`, `certutil` or `findstr`, which is why the file travels over the share.
+
+## Windows Setup options
+
+On the Menu page, under Tuning, three groups of ticks change how a Windows ISO is installed through Bootlace (they apply at the next start of the PC; the ISO is never changed).
+
+- **Skip these checks (Windows 11).** `TPM 2.0`, `Secure Boot`, `4 GB of memory`, `Supported processor` and `64 GB of storage` write the matching `HKLM\SYSTEM\Setup\LabConfig` `Bypass...Check` value from the start-up script before Setup starts. Seen on Windows 11
+  26H2 (build 26300) in a VM without a TPM, with 2 GB and a 40 GB disk ([compatibility](compatibility.md#windows-11-setup-checks-answer-files-and-drivers-2026-10-25-hyper-v-gen-2-windows-11-26h2-build-26300-9457)):
+  without the TPM tick Setup stops with "This PC can't run Windows 11"; with it Setup goes on. The memory and storage ticks changed nothing visible there, and the Secure Boot and processor ticks could not be tried on that machine.
+- **Local account at the first start.** Windows 11 26H2 asks for a network at its first start and gives no way past that page (no "I don't have internet" link; the old `OOBE\BYPASSNRO` command is gone, and its registry value, written before the first start,
+  is ignored). What works is `HideWirelessSetupInOOBE` in an answer file: the first start then goes straight to "Who's going to use this device?" and asks for a name and a password for a local account. With this tick on, Bootlace gives Setup
+  a small answer file with that setting (and `HideOnlineAccountScreens`), only when no Windows answer file is attached to the PC or its ISO and the PC was not set to "No answer file"; every page of Setup is still asked as before (the answer file
+  also says the product key page is to be shown, because Setup stops with "Windows cannot read the <ProductKey> setting" when an answer file has neither a key nor that). In your own Windows answer file put
+  `<HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>` (and, to leave out the Microsoft account pages, `<HideOnlineAccountScreens>true</HideOnlineAccountScreens>`) inside `<OOBE>` of the `oobeSystem` pass.
+  Checked in a real 26H2 first start with no network: the page was skipped and a local account could be made.
+- **Drivers.** With the tick on, driver packages kept in the library are added to the copy of Windows' start-up image that the server hands out, and loaded before Setup starts, so that Setup sees a disk or a network card that Windows does not know. Put each driver
+  package (the folder with its `.inf`, `.sys` and `.cat`) in `drivers/all/` of the library for every Windows ISO, or in `drivers/<the ISO's file name without .iso>/` for one ISO; the Menu page lists what it finds. The packages are copied into the image at `\$WinPEDriver$`,
+  which Windows Setup also takes into the installation it makes (seen: after an install the driver store of the new Windows held the package, on a machine that has no such hardware). The start-up image is held in the PC's memory, so at most 1024 MB of drivers are added. The ISO itself is never changed (the copy is made with wimlib and kept in the cache; a
+  change in the folder makes a new copy). A copy is made on first use, which takes a few seconds for the 600 MB image. The same copy serves the Secure Boot start.
 
 ## Long menus
 

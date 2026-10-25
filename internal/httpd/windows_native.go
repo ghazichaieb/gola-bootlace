@@ -51,8 +51,26 @@ func (s *Server) winSettings(iso isos.ISO) (winpe.Settings, error) {
 	if err != nil {
 		return winpe.Settings{}, err
 	}
-	return winpe.Settings{Base: s.Base, FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Host: u.Hostname(), Share: smbshare.ShareName, Folder: iso.ID,
-		User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort, Hold: os.Getenv("BOOTLACE_WINPE_HOLD") != "", Bypass: s.settings().SetupChecks.LabConfig()}, nil
+	set := winpe.Settings{Base: s.Base, FS: s.Base + "/fs/" + iso.ID, Win: s.Base + "/w/" + iso.ID, Host: u.Hostname(), Share: smbshare.ShareName, Folder: iso.ID,
+		User: "bootlace", Password: s.SMBPassword, Port: s.SMBPort, Hold: os.Getenv("BOOTLACE_WINPE_HOLD") != "", Bypass: s.settings().SetupChecks.LabConfig()}
+	if use, _, _, err := s.driverPlan(iso); err != nil {
+		s.logf("drivers for %s are not used: %v", iso.Title, err)
+	} else if len(use) > 0 {
+		if winpe.Wimlib(s.Wimlib) == "" {
+			s.logf("drivers for %s are not used: wimlib-imagex is not installed (on Debian or Ubuntu: apt install wimtools), and the copy of boot.wim that holds them is made with it", iso.Title)
+		} else {
+			set.Drivers, set.PatchedWIM = true, true
+		}
+	}
+	return set, nil
+}
+
+// driverPlan is what the drivers folder of the library adds to the boot.wim copy of this ISO (nothing unless the setting is on and a folder holds driver packages).
+func (s *Server) driverPlan(iso isos.ISO) (use []winpe.Set, print string, bytes int64, err error) {
+	if !s.settings().SetupChecks.Drivers {
+		return nil, "", 0, nil
+	}
+	return winpe.Plan(winpe.SetsFor(s.isoDir(), iso.Name))
 }
 
 // patchedBootWIM is the copy of the ISO's boot.wim with Bootlace's files in it, made when it is first needed. The file's name says what it was made for (the
@@ -64,7 +82,11 @@ func (s *Server) patchedBootWIM(iso isos.ISO) (string, error) {
 	}
 	cmd := winpe.Cmd(set)
 	ini := winpe.ShellIni()
-	sum := sha1.Sum([]byte(strings.Join([]string{iso.Path, fmt.Sprint(iso.Size), iso.ModTime.String(), cmd, ini}, "\x00")))
+	use, drvPrint, drvBytes, derr := s.driverPlan(iso)
+	if derr != nil {
+		use, drvPrint, drvBytes = nil, "", 0 // (winSettings has said so; the copy is then made without them, as its command file expects)
+	}
+	sum := sha1.Sum([]byte(strings.Join([]string{iso.Path, fmt.Sprint(iso.Size), iso.ModTime.String(), cmd, ini, drvPrint}, "\x00")))
 	name := fmt.Sprintf("boot-%s-%s.wim", iso.ID, hex.EncodeToString(sum[:])[:10])
 	s.patchMu.Lock()
 	defer s.patchMu.Unlock()
@@ -89,10 +111,17 @@ func (s *Server) patchedBootWIM(iso isos.ISO) (string, error) {
 		return "", fmt.Errorf("%s has no sources/boot.wim", iso.Title)
 	}
 	start := time.Now()
-	dst := filepath.Join(s.cachePlace(wim.Size()+64<<20), name) // (the copy is about as big as the original)
+	dst := filepath.Join(s.cachePlace(wim.Size()+drvBytes+64<<20), name) // (the copy is about as big as the original)
 	s.logf("making the boot.wim of %s with Bootlace's files in it (once), in %s ...", iso.Title, filepath.Dir(dst))
 	files := map[string][]byte{"/Windows/System32/winpeshl.ini": []byte(ini), "/Windows/System32/bootlace.cmd": []byte(cmd)}
-	if err := winpe.PatchBootWIM(lib, wim.Reader(), dst, files); err != nil {
+	dirs := map[string]string{}
+	for _, d := range use {
+		dirs[d.WIM] = d.Dir
+	}
+	if len(dirs) > 0 {
+		s.logf("adding %d MB of drivers to it", drvBytes>>20)
+	}
+	if err := winpe.PatchBootWIM(lib, wim.Reader(), dst, files, dirs); err != nil {
 		return "", err
 	}
 	for _, dir := range s.cacheDirs() { // the copies made for earlier settings
@@ -199,6 +228,7 @@ func (s *Server) NativeBootFile(mac string, efi bool) (string, bool) {
 			return nil
 		})
 		s.Handoff.Pending(m, id, kind)
+		s.grantAnswers(m)
 		s.setAction(m, "native: "+e.Title)
 		s.logf("%s: its rule starts %s with the firmware's own signed boot loaders (works with Secure Boot); the rule is used up", m, e.Title)
 		return s.Handoff.BootFile(m, true)

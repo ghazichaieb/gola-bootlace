@@ -266,3 +266,50 @@ the file is read ([#64](https://github.com/ghazichaieb/gola-bootlace/issues/64))
 **What does not work or was not tried.** The iSCSI server must be on (it is by default): without it the menu entry says that the installer cannot install, and the installer stops at the first step as before.
 A server restart while an install runs cuts the CD (the initiator gives up after 120 s). The network cards are the ones in the ISO's `nic-*-modules` packages (virtio-net and e1000e were used here); a PC with a
 card those packages do not carry cannot reach the CD (the log of the start-up script is `/tmp/bootlace-iscsi.log`, shown on the installer's second console). BIOS was run to the end for Debian 13.7 (the VM started iPXE from a CD image; that CD had to be taken out once the kernel was loaded, because the installer then also looks at it as a second CD and its "configure apt from the media" step stops at a disc that is not a Debian disc: a property of that test setup).
+
+## Windows 11 Setup checks, answer files and drivers (2026-10-25, Hyper-V gen 2, Windows 11 26H2 build 26300.9457)
+
+Run on the vanilla `Windows11_Client_x64_en-us_26300_9457.iso` through a lab copy of the server, in a Hyper-V generation 2 VM with **no virtual TPM, 2 GB of memory and a 40 GB disk** (Secure Boot off,
+because iPXE is not signed). Each row is one start of Setup with the Menu page > Tuning ticks as listed.
+
+| Ticks | What Setup showed |
+|---|---|
+| none | right after the edition page: "This PC can't run Windows 11 - This PC doesn't meet the minimum system requirements" |
+| all five | went on (key page / licence terms / disk page) |
+| all but TPM | the same "This PC can't run Windows 11" |
+| all but memory | went on: **2 GB did not stop Setup even without the memory tick** |
+| all but storage | went on; on the disk page a note says "To install this version of Windows, the system drive needs to be 52 GB or larger" **with the tick as well as without it**, and Next worked on the 40 GB disk (the install ran through to the first-start screens with the tick off) |
+
+So on this build only the TPM tick changed anything the person could see. The Secure Boot and processor ticks could not be tried (the VM is UEFI and its processor is fine); they write the same registry values
+as the others and are kept. The memory and storage ticks are harmless, and their absence did not matter on this machine; Setup may enforce them on hardware that is further below the limits.
+
+### Answer file per PC (Hyper-V, same VM, 64 GB disk)
+
+A PC with a Windows answer file attached (an edition by name, the disk wiped and partitioned, a local account, a first-logon command) and a name given on the PCs page ran Setup with no question from the language page to
+the end of the first start, got the computer name `SHOP-PC-7` and ran the first-logon command ({{computername}} cut and upper-cased by Windows). The same VM without a file asked every page.
+
+### Local account at the first start (Hyper-V, no network at all)
+
+Windows 11 26H2's first start showed "Let's connect you to a network" with Next greyed out and no link to go on without a connection. Tried, each as an answer file on a fresh install:
+
+| What the answer file held | The network page |
+|---|---|
+| `HideOnlineAccountScreens` only | still shown |
+| `HideOnlineAccountScreens` and the `BypassNRO` value written before the first start (specialize pass) | still shown |
+| `HideOnlineAccountScreens` and a local account made by the file, no `HideWirelessSetupInOOBE` | still shown |
+| `HideOnlineAccountScreens` and `HideWirelessSetupInOOBE` | **skipped**: "Who's going to use this device?", a name, "Create a super memorable password" (blank accepted), the privacy page |
+| `HideWirelessSetupInOOBE` alone | **skipped**, the same pages |
+| an account in the file with a password, automatic sign-in, `HideEULAPage`, `HideWirelessSetupInOOBE` and `ProtectYourPC` | skipped; the account was made and the desktop came up |
+
+So `HideWirelessSetupInOOBE` is what works on this build; the `OOBE\BYPASSNRO` route is gone. (A partial answer file also needs the product key page to be shown, or Setup stops with "Windows cannot read the
+&lt;ProductKey&gt; setting".) Not tried: Windows 11 builds other than 26300, the Home edition against the Pro edition (the runs used Home, the first edition of the list, and Pro), a localised first start.
+
+### Drivers (Hyper-V and Proxmox)
+
+- Proxmox UEFI VM (e1000 network card, 40 GB disk on a virtio-scsi controller; the `vioscsi` package of virtio-win 0.1.302, Microsoft-signed, in `drivers/all/vioscsi`): without the drivers Setup shows "We couldn't find any drives. To get a
+  storage driver, click Load driver."; with the tick on, Setup sees the disk and starts installing onto it. The boot.wim copy held the folder `\$WinPEDriver$\all\vioscsi`.
+- Hyper-V (the same package, no matching hardware): after an install the driver store of the new Windows (`C:\Windows\System32\DriverStore\FileRepository`) holds `vioscsi.inf_amd64_...`, shown by a first-logon command: the drivers do
+  reach the installed system.
+- `setup.exe /installdrivers <folder>` was tried first and does not exist in the set-up image's Setup ("An unknown command-line option [/installdrivers] was specified"): it is not used.
+- **Not seen:** the installed Windows starting from the virtio-scsi disk. On the Proxmox test host (an i7-2700K without AVX2) the VM's QEMU exited by itself at about 75 % of "Getting files ready for installation" in two runs, so the install never finished there
+  (the cause is not known; the same ISO ran to the end on Hyper-V on a newer processor). Without the unfinished install nothing is claimed about booting from that controller.

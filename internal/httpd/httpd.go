@@ -183,11 +183,7 @@ func (s *Server) gated(next http.Handler) http.Handler {
 
 // addrOf is the address of a "host:port" string, as a net.Addr.
 func addrOf(hostport string) net.Addr {
-	host, _, err := net.SplitHostPort(hostport)
-	if err != nil {
-		host = hostport
-	}
-	return &net.IPAddr{IP: net.ParseIP(host)}
+	return &net.IPAddr{IP: net.ParseIP(access.Host(hostport))}
 }
 
 // Sessions are the PCs that are fetching something over the web port right now, once each.
@@ -310,6 +306,28 @@ func (s *Server) windows(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		set.PEOnly = s.windowsPEOnly(iso)
+		if file == "boot.wim" { // the copy that holds the drivers (see package winpe): only offered while there are some
+			if !set.Drivers || set.PEOnly {
+				http.NotFound(w, r)
+				return
+			}
+			p, err := s.patchedBootWIM(iso)
+			if err != nil {
+				s.logf("%s asks for the boot.wim of %s: %v", r.RemoteAddr, iso.Title, err)
+				http.Error(w, "cannot make the boot.wim", http.StatusInternalServerError)
+				return
+			}
+			f, err := os.Open(p)
+			if err != nil {
+				http.Error(w, "cannot open the boot.wim", http.StatusInternalServerError)
+				return
+			}
+			defer f.Close()
+			s.logf("%s fetches the boot.wim of %s with the drivers added", r.RemoteAddr, iso.Title)
+			w.Header().Set("Content-Type", "application/octet-stream")
+			http.ServeContent(w, r, "boot.wim", time.Time{}, f)
+			return
+		}
 		var body string
 		switch file {
 		case "boot.ipxe":

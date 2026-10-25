@@ -4,13 +4,14 @@
 package httpd
 
 import (
+	"encoding/xml"
 	"fmt"
-	"net"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
 )
@@ -116,6 +117,53 @@ func renderAnswer(text string, vars map[string]string) string {
 	return strings.NewReplacer(pairs...).Replace(text)
 }
 
+// xmlKinds are the kinds of answer file that are XML: the words put into them are escaped.
+var xmlKinds = map[string]bool{"autoyast": true, "unattend": true}
+
+// renderFile is the text of the file for the PC: its words replaced, and the files that cloud-init asks for besides user-data made up.
+func (s *Server) renderFile(a config.AnswerFile, name, mac, host string) string {
+	var serial string
+	s.clientsMu.Lock()
+	if c := s.clients[mac]; c != nil {
+		serial = wordSerial.ReplaceAllString(c.Serial, "")
+	}
+	s.clientsMu.Unlock()
+	pcName := s.PCName(mac)
+	host2 := hostnameFor(pcName, mac)
+	vars := map[string]string{"hostname": host2, "computername": computerNameFor(host2), "name": pcName, "mac": mac, "mac-dash": strings.ReplaceAll(mac, ":", "-"), "ip": host, "serial": serial}
+	if xmlKinds[a.Kind] {
+		for k, v := range vars {
+			var b strings.Builder
+			_ = xml.EscapeText(&b, []byte(v))
+			vars[k] = b.String()
+		}
+	}
+	body := renderAnswer(a.Content, vars)
+	switch {
+	case a.Kind == "autoinstall" && name == "meta-data":
+		body = "instance-id: " + vars["mac-dash"] + "\nlocal-hostname: " + vars["hostname"] + "\n"
+	case a.Kind == "autoinstall" && name == "vendor-data":
+		body = "#cloud-config\n{}\n"
+	}
+	return body
+}
+
+// computerNameFor is the host name made into a Windows computer name: at most 15 characters, not ending in a hyphen, and never only digits.
+func computerNameFor(host string) string {
+	n := host
+	if len(n) > 15 {
+		n = n[:15]
+	}
+	n = strings.Trim(n, "-")
+	if n == "" || strings.Trim(n, "0123456789") == "" {
+		n = "PC-" + n
+		if len(n) > 15 {
+			n = n[:15]
+		}
+	}
+	return n
+}
+
 // answers serves /answers/<id>/<mac>/<name>.
 func (s *Server) answers(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, answerPath), "/")
@@ -139,28 +187,14 @@ func (s *Server) answers(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	host := access.Host(r.RemoteAddr)
 	allowed, note := s.takeAnswer(cfg, mac, host, time.Now(), r.Method == http.MethodGet)
 	if !allowed {
 		s.logf("answer file %q (%s) refused to %s: %s", a.Name, name, s.who(Client{MAC: mac, IP: host}), note) // (the requester is told nothing more than "not found")
 		http.NotFound(w, r)
 		return
 	}
-	var serial string
-	s.clientsMu.Lock()
-	if c := s.clients[mac]; c != nil {
-		serial = wordSerial.ReplaceAllString(c.Serial, "")
-	}
-	s.clientsMu.Unlock()
-	pcName := s.PCName(mac)
-	vars := map[string]string{"hostname": hostnameFor(pcName, mac), "name": pcName, "mac": mac, "mac-dash": strings.ReplaceAll(mac, ":", "-"), "ip": host, "serial": serial}
-	body := renderAnswer(a.Content, vars)
-	switch {
-	case a.Kind == "autoinstall" && name == "meta-data":
-		body = "instance-id: " + vars["mac-dash"] + "\nlocal-hostname: " + vars["hostname"] + "\n"
-	case a.Kind == "autoinstall" && name == "vendor-data":
-		body = "#cloud-config\n{}\n"
-	}
+	body := s.renderFile(a, name, mac, host)
 	if note != "" {
 		note = " (" + note + ")"
 	}
@@ -171,6 +205,39 @@ func (s *Server) answers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	fmt.Fprint(w, body)
+}
+
+// WindowsAnswer is the autounattend.xml that Windows' set-up environment reads from the share for the PC with this MAC address when it starts the Windows ISO isoID: the file of
+// the PC's own choice, or the one attached to the ISO, when it is a Windows answer file and the PC may have it (the same rules as for the web address, see answergate.go; the share
+// cannot tell which address the PC reads from, so the address is not asked for). With commit false it only says whether there is a file (the set-up script asks before it copies);
+// with commit true it counts the file against the PC's twelve and notes in its history that it was given one.
+func (s *Server) WindowsAnswer(isoID, macText, name string, commit bool) ([]byte, bool) {
+	if name != "autounattend.xml" {
+		return nil, false
+	}
+	mac, ok := config.NormalizeMAC(macText)
+	if !ok {
+		return nil, false
+	}
+	cfg := s.settings()
+	_, a, has := cfg.AnswerFor(isoID, mac)
+	if !has || a.Kind != "unattend" {
+		// no Windows answer file: the small one of the "local account" setting, unless this PC was told to have none
+		if !cfg.SetupChecks.LocalAccount || cfg.PCOptions[mac].Answer == config.NoAnswer {
+			return nil, false
+		}
+		a = config.AnswerFile{Name: "local account at the first start", Kind: "unattend", Content: localAccountXML}
+	}
+	allowed, note := s.takeAnswer(cfg, mac, "", time.Now(), commit)
+	if !allowed {
+		s.logf("answer file %q (autounattend.xml) refused to %s through the share: %s", a.Name, s.who(Client{MAC: mac}), note)
+		return nil, false
+	}
+	if commit {
+		s.logf("answer file %q (Windows autounattend.xml) given to %s through the share", a.Name, s.who(Client{MAC: mac}))
+		s.setAction(mac, "unattended install: "+a.Name)
+	}
+	return []byte(s.renderFile(a, name, mac, "")), true
 }
 
 // answerInUse says whether the file is attached to an ISO or to a PC: a file that is not is not given to anyone.

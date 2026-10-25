@@ -86,7 +86,7 @@ func (p serverPlan) startSMB() (service.Instance, error) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		err := smbshare.Serve(ctx, smbshare.Options{Addr: l.Addr().String(), Listener: tl, Forward: p.smbForward, ISODir: dir, User: p.smbUser, Password: p.smbPassword, Logf: p.logf, Debug: p.debugSMB})
+		err := smbshare.Serve(ctx, smbshare.Options{Addr: l.Addr().String(), Listener: tl, Forward: p.smbForward, ISODir: dir, User: p.smbUser, Password: p.smbPassword, Logf: p.logf, Debug: p.debugSMB, Answer: p.web.WindowsAnswer})
 		if err != nil && ctx.Err() == nil {
 			p.logf("Windows file share: %v", err)
 		}

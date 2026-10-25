@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -30,9 +31,10 @@ func Wimlib(given string) string {
 
 var imageCount = regexp.MustCompile(`(?m)^Image Count:\s+(\d+)`)
 
-// PatchBootWIM copies the boot.wim read from src to dst and adds the files (path inside the WIM, with forward slashes -> content) to every image of it.
+// PatchBootWIM copies the boot.wim read from src to dst and adds the files (path inside the WIM, with forward slashes -> content) and the folders (path inside the WIM -> folder on disk,
+// copied with everything in it) to every image of it.
 // dst is written under another name and renamed when it is whole, so that a half-made file is never used.
-func PatchBootWIM(wimlib string, src io.Reader, dst string, files map[string][]byte) error {
+func PatchBootWIM(wimlib string, src io.Reader, dst string, files map[string][]byte, dirs map[string]string) error {
 	if wimlib == "" {
 		return errors.New("wimlib-imagex is not installed")
 	}
@@ -77,6 +79,15 @@ func PatchBootWIM(wimlib string, src io.Reader, dst string, files map[string][]b
 			return err
 		}
 		fmt.Fprintf(&script, "add '%s' '%s'", filepath.ToSlash(local), name)
+		script.WriteByte(10)
+	}
+	dirNames := make([]string, 0, len(dirs))
+	for name := range dirs {
+		dirNames = append(dirNames, name)
+	}
+	sort.Strings(dirNames)
+	for _, name := range dirNames {
+		fmt.Fprintf(&script, "add '%s' '%s'", filepath.ToSlash(dirs[name]), name)
 		script.WriteByte(10)
 	}
 	for image := 1; image <= n; image++ {

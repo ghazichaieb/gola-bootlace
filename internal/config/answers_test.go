@@ -111,3 +111,18 @@ func TestSecretsInAnswerFilesAreMaskedAndComeBackWhenTheMaskedTextIsSaved(t *tes
 		t.Errorf("%s", bad)
 	}
 }
+
+func TestXMLKindsRefuseControlCharactersThatBreakSetup(t *testing.T) {
+	c := Config{Answers: map[string]AnswerFile{"0123456789ab": {Name: "x", Kind: "unattend", Content: "<a>\n<b>C:\x0bioscsi</b>\n</a>"}}}
+	if err := c.validateAnswers(); err == nil || !strings.Contains(err.Error(), "line 2") {
+		t.Fatalf("%v", err)
+	}
+	c.Answers["0123456789ab"] = AnswerFile{Name: "x", Kind: "unattend", Content: "<a>\r\n\t<b/>\n</a>"}
+	if err := c.validateAnswers(); err != nil {
+		t.Fatalf("tabs and line ends are fine: %v", err)
+	}
+	c.Answers["0123456789ab"] = AnswerFile{Name: "x", Kind: "preseed", Content: "d-i x string a\x0bb"}
+	if err := c.validateAnswers(); err != nil {
+		t.Fatalf("only the XML kinds are checked: %v", err)
+	}
+}

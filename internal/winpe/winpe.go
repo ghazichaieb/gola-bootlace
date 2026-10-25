@@ -24,6 +24,9 @@ type Settings struct {
 	// Bypass names the checks of Windows 11 Setup to skip, as the names of the LabConfig values (BypassTPMCheck ...): each is written as 1 before Setup starts, which is how Setup is told to
 	// go on on a PC that does not have what Windows 11 asks for. Empty skips none.
 	Bypass []string
+	// Drivers says that the boot.wim carries a folder X:Drivers (see drivers.go): its packages are loaded with drvload before the network starts, and Setup is told to add them to the
+	// Windows it installs. PatchedWIM makes the iPXE script load the server's copy of boot.wim (the one that holds them) instead of the ISO's own.
+	Drivers, PatchedWIM bool
 }
 
 // IPXE is the script that loads the set-up environment: wimboot with the boot files of the ISO and the two files of this package. The same script
@@ -46,7 +49,11 @@ func IPXE(s Settings) string {
 	file("BCD", "%s/boot/bcd", s.FS)
 	line(":common")
 	file("boot.sdi", "%s/boot/boot.sdi", s.FS)
-	file("boot.wim", "%s/sources/boot.wim", s.FS)
+	if s.PatchedWIM {
+		file("boot.wim", "%s/boot.wim", s.Win)
+	} else {
+		file("boot.wim", "%s/sources/boot.wim", s.FS)
+	}
 	if !s.PEOnly { // a PE that is not an installer keeps its own start-up
 		file("winpeshl.ini", "%s/winpeshl.ini", s.Win)
 		file("bootlace.cmd", "%s/bootlace.cmd", s.Win)
@@ -65,6 +72,7 @@ func ShellIni() string {
 func Cmd(s Settings) string {
 	var b strings.Builder
 	line := func(f string, a ...any) { fmt.Fprintf(&b, f+"\r\n", a...) }
+	raw := func(t string) { b.WriteString(strings.ReplaceAll(t, "@ID@", s.Folder) + "\r\n") }
 	port := ""
 	if s.Port != 0 && s.Port != 445 {
 		port = fmt.Sprintf(" /TCPPORT:%d", s.Port)
@@ -72,6 +80,11 @@ func Cmd(s Settings) string {
 	connect := fmt.Sprintf(`net use Z: \\%s\%s /user:%s %s%s`, s.Host, s.Share, s.User, s.Password, port)
 	line("@echo off")
 	line("title Gola Bootlace")
+	if s.Drivers {
+		// the drivers first, so that a network card or a disk that Windows does not know is found by wpeinit and by Setup (the folder is in the boot.wim copy)
+		raw(`if exist "%SystemDrive%\$WinPEDriver$\nul" echo Loading the drivers ...`)
+		raw(`if exist "%SystemDrive%\$WinPEDriver$\nul" for /r "%SystemDrive%\$WinPEDriver$" %%f in (*.inf) do drvload "%%f" > nul 2>&1`)
+	}
 	line("echo Gola Bootlace: starting the network ...")
 	line("wpeinit")
 	line("set tries=0")
@@ -108,8 +121,28 @@ func Cmd(s Settings) string {
 	line(`set IMAGE=Z:\%s\sources\install.wim`, s.Folder)
 	line(`if not exist %%IMAGE%% set IMAGE=Z:\%s\sources\install.esd`, s.Folder)
 	line(`set OPTIONS=/installfrom:%%IMAGE%%`)
-	line(`if exist Z:\%s\autounattend.xml set OPTIONS=%%OPTIONS%% /unattend:Z:\%s\autounattend.xml`, s.Folder, s.Folder)
+	// The answer file of this PC (issue #17). The set-up environment has no web client, so the file is read from the share: it shows `_bootlace\<MAC>\autounattend.xml` in the
+	// ISO's folder while one is attached to the PC or to the ISO (made for that PC when it is read). The MAC addresses are read from `ipconfig /all`, whatever the language of
+	// Windows (every line that holds a dash is looked at, and only a word of the shape aa-bb-cc-dd-ee-ff is tried). A file attached here wins over one in the ISO's own folder.
+	raw(`set UNATTEND=`)
+	raw(`for /f "tokens=1,* delims=:" %%a in ('ipconfig /all ^| find "-"') do call :answer %%b`)
+	raw(`if defined UNATTEND goto haveanswer`)
+	raw(`if exist Z:\@ID@\autounattend.xml set UNATTEND=Z:\@ID@\autounattend.xml`)
+	raw(`:haveanswer`)
+	raw(`if defined UNATTEND set OPTIONS=%OPTIONS% /unattend:%UNATTEND%`)
 	line(`%%SystemDrive%%\sources\setup.exe %%OPTIONS%%`)
 	line(":end")
+	raw(`goto :eof`)
+	raw(`:answer`)
+	raw(`if "%~1"=="" exit /b 0`)
+	raw(`set cand=%~1`)
+	for _, at := range []string{"2", "5", "8", "11", "14"} {
+		raw(`if not "%cand:~` + at + `,1%"=="-" exit /b 0`)
+	}
+	raw(`if not "%cand:~17%"=="" exit /b 0`)
+	raw(`if defined UNATTEND exit /b 0`)
+	raw(`copy Z:\@ID@\_bootlace\%cand%\autounattend.xml %SystemDrive%\autounattend.xml > nul 2>&1`)
+	raw(`if not errorlevel 1 set UNATTEND=%SystemDrive%\autounattend.xml`)
+	raw(`exit /b 0`)
 	return b.String()
 }
