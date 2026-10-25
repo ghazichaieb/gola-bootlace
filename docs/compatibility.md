@@ -229,3 +229,36 @@ Windows 11 (a custom-built English ISO, build 26300.9711, 7.9 GB) started from t
   Server ISOs are now downloaded whole into memory (the VM had 9 GB for the 2.7 GB ISO). With the network disk on and a server ISO, the menu now picks that way by itself.
 - **Debian 13.7 netinst**, preseed attached: stopped at the installer's first step (it needs a CD), see the next section: fixed 2026-10-25 ([#59](https://github.com/ghazichaieb/gola-bootlace/issues/59)), and the preseed is then read like any other.
 - Kickstart (`inst.ks=`) and AutoYaST (`autoyast=`): the arguments and the served files were checked by the tests only.
+
+## Debian and Kali netinst over the network (2026-10-25, Proxmox VMs; #59)
+
+**What was wrong.** The installer of a netinst ISO (`install.amd/gtk/initrd.gz`) is the CD flavour: its start-up disk holds `cdrom-detect` but no network card drivers and no iSCSI client, and it
+loads even `netcfg` from the CD, so it cannot take a step without a device the kernel calls a CD. Bootlace handed the ISO over as a network block disk, which it does not look at.
+
+**What was built.** Every ISO is already offered as an iSCSI CD-ROM. For a Debian installer the start-up archive (`/x/<id>/extra.cpio`, made on first request and kept, about 10 MB) adds, taken from the
+ISO's own pool (`dists/*/main/debian-installer/binary-amd64/Packages.gz`, then the `.udeb` files): the network card drivers (`nic-modules`, `nic-shared-modules`, `nic-usb-modules` of the **kernel version read
+from the start-up disk**), `iscsistart` and `libopeniscsiusr` (libraries it needs that the start-up disk lacks are looked for in the packages `open-iscsi-udeb` depends on; none was missing), and a script
+`S12bootlace-iscsi` in the installer's start-up folder. The script loads the drivers, gets an address with the start-up disk's `udhcpc`, logs in to the CD-ROM target and waits for `/dev/sr0`; then the
+installer's own "Detect and mount installation media" mounts it like a disc. Nothing in the code names a Debian version; the layouts of an old (`/lib`, `/sbin`) and a usr-merged start-up disk are both handled
+(unit tests with fake ISOs of three kernel versions, among them one that does not exist yet).
+
+**What was run (UEFI VMs on the Proxmox test server, the private test instance of the code in this change):**
+
+| ISO | Installer kernel | How | Result |
+|---|---|---|---|
+| Debian 13.7.0 netinst | 6.12.107+deb13 | by hand: language, network, partitioning, base system from the CD, mirror, GRUB | "Installation complete"; the installed system booted to its login prompt |
+| Debian 13.7.0 netinst | 6.12.107+deb13 | preseed file attached (Unattended page), 20 GB disk | no question asked; installed and booted to its login prompt |
+| Debian 12.15.0 netinst (an older installer) | 6.1.0-50 | preseed file attached | installed; the disk holds the system (user from the file, GRUB on the ESP, kernels 6.1.0-50 and -54) |
+| Debian 13.7.0 netinst, **BIOS** (SeaBIOS VM) | 6.12.107+deb13 | preseed file attached, started from an iPXE CD | installed; the installed system booted to its login prompt |
+| Kali 2026.2 installer netinst | 7.1.5+kali | preseed file with Kali's mirror | installed; booted to `kali login:` |
+
+The installer took the answer file from `preseed/url` as for any installer, so the answer files of the Unattended page work with these ISOs. Two things the runs showed: the template's user name `admin` is
+reserved by the installer ([#63](https://github.com/ghazichaieb/gola-bootlace/issues/63), fixed: `localadmin`), and the `hostname` word has no effect on a netinst install because the network is configured before
+the file is read ([#64](https://github.com/ghazichaieb/gola-bootlace/issues/64)).
+
+**Memory.** The graphical installer ran with 3 GB and 1 GB. With 768 MB it switched to its "Low memory mode" (text) and reached partitioning. With 512 MB the screen filled with
+`touch: /var/run/brltty-Xorg: No such file or directory` and it did not get further (not compared with an installer on a real CD). The ISO is not held in memory: it is read over iSCSI a piece at a time.
+
+**What does not work or was not tried.** The iSCSI server must be on (it is by default): without it the menu entry says that the installer cannot install, and the installer stops at the first step as before.
+A server restart while an install runs cuts the CD (the initiator gives up after 120 s). The network cards are the ones in the ISO's `nic-*-modules` packages (virtio-net and e1000e were used here); a PC with a
+card those packages do not carry cannot reach the CD (the log of the start-up script is `/tmp/bootlace-iscsi.log`, shown on the installer's second console). BIOS was run to the end for Debian 13.7 (the VM started iPXE from a CD image; that CD had to be taken out once the kernel was loaded, because the installer then also looks at it as a second CD and its "configure apt from the media" step stops at a disc that is not a Debian disc: a property of that test setup).
