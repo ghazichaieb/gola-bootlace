@@ -30,7 +30,7 @@ d-i mirror/http/directory string /debian
 d-i mirror/http/proxy string
 d-i passwd/root-login boolean false
 d-i passwd/user-fullname string Administrator
-d-i passwd/username string admin
+d-i passwd/username string localadmin
 d-i passwd/user-password-crypted password PUT-A-PASSWORD-HASH-HERE
 d-i clock-setup/utc boolean true
 d-i time/zone string UTC

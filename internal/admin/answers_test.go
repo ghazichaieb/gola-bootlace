@@ -154,3 +154,19 @@ func TestTheTemplatesAreThereForEveryKindAndTheLibraryNeedsASignIn(t *testing.T)
 		}
 	}
 }
+
+// The Debian installer refuses the names that its user-setup reserves ("The username you entered (admin) is reserved for use by the system"), found by running the
+// template (#59): the template must not use one.
+func TestThePreseedTemplateDoesNotUseAReservedUserName(t *testing.T) {
+	reserved := map[string]bool{"root": true, "admin": true, "daemon": true, "bin": true, "sys": true, "sync": true, "games": true, "man": true, "lp": true, "mail": true,
+		"news": true, "uucp": true, "proxy": true, "www-data": true, "backup": true, "list": true, "irc": true, "nobody": true, "operator": true}
+	for _, line := range strings.Split(answerTemplates["preseed"], "\n") {
+		if rest, ok := strings.CutPrefix(line, "d-i passwd/username string "); ok {
+			if name := strings.TrimSpace(rest); reserved[name] {
+				t.Errorf("the preseed template gives the first user the reserved name %q", name)
+			}
+			return
+		}
+	}
+	t.Error("the preseed template has no user name line")
+}

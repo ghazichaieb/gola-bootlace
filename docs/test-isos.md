@@ -12,7 +12,7 @@ from the share; only `boot.wim`, about 0.6 GB, is loaded because WinPE is a RAM 
 | ShredOS (nwipe) | wiping drives | tiny Buildroot image, runs from RAM | small enough to send whole; nothing to stream |
 | Linux Mint (Cinnamon) | the most downloaded desktop after Ubuntu | casper | works as Ubuntu |
 | Debian live (Standard or GNOME) | popular, different loader | live-boot | `nfsmount` stand-in, or live-boot's `httpfs=` |
-| Debian netinst | installs over the network | Debian installer | kernel + initrd from the ISO, packages from a mirror |
+| Debian netinst | installs over the network | Debian installer | kernel + initrd from the ISO, the ISO as an iSCSI CD-ROM (extra archive), the rest of the packages from the CD and a mirror |
 | Fedora Workstation Live | popular, different family | dracut (`root=live:`) | dracut has an NBD client |
 | Kali Linux (installer or live) | very common in IT | Debian live | as Debian |
 | openSUSE Tumbleweed / Leap | different family | dracut | as Fedora |

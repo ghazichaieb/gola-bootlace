@@ -14,6 +14,9 @@ file we tried. BIOS (legacy) boot is covered in its own section at the end.
 | TrueNAS SCALE | 25.10.7 | not tried | yes | **works** | 2026-10-21 | Debian live style (`fetch=` the squashfs). The installer menu appears. |
 | TrueNAS SCALE | 25.04.2.5 | not tried | yes | **works** | 2026-10-21 | Same as 25.10.7: the console setup menu (Install/Upgrade) appears. |
 | TrueNAS SCALE | 25.10.3.1 | not tried | yes | **works** | 2026-10-21 | Same: the console setup menu appears. |
+| Debian netinst | 13.7.0 | yes | yes | **works** | 2026-10-25 | The ISO is offered to the installer as an iSCSI CD-ROM (extra archive), see "Debian and Kali netinst over the network" below. Installed to the end and booted, by hand and with a preseed file. |
+| Debian netinst | 12.15.0 | not tried | yes | **works** | 2026-10-25 | Same method, an older installer (kernel 6.1): installed to the end with a preseed file; the installed system was checked on its disk. |
+| Kali Linux installer (netinst) | 2026.2 | not tried | yes | **works** | 2026-10-25 | Same method, kernel 7.1.5+kali: installed to the end with a preseed file and booted to the login prompt. |
 | pfSense CE | 2.7.2 | not tried | yes | **fails** | 2026-10-21 | Handed to the PC as a disk, the FreeBSD kernel cannot see the disk. Second method (menu entry "FreeBSD, experimental"): iPXE tells the server which ISO was chosen and restarts the PC; the PC's own firmware then loads the ISO's loader.efi from this server by TFTP (this part works, see internal/handoff). The loader starts and does its own DHCP, then stops: it sends no TFTP or NFS request, so it never reaches the kernel. Issue #9. |
 | Windows 11 24H2 (FW11HEN, an a Windows image trimming tool build, Pro, English) | 24H2 | not tried | yes | **works** | 2026-10-21 | wimboot loads the ISO's WinPE, which maps Bootlace's built-in SMB share and runs `X:\sources\setup.exe /installfrom:Z:\<id>\sources\install.wim /unattend:...` from the ISO's folder. Installed to an 80 GB disk, rebooted from the disk into the new Windows. Setup went through the whole copy over the network (about 25 minutes in the lab). |
 | Windows 11, custom-built (EN, Home+Pro, 9 GB ISO) | 26300.9711 | not tried | yes | **works** | 2026-10-21 | Same method. Setup showed both editions read over the share; Pro installed to an 80 GB disk (the whole 9 GB image copied over the network in about 12 minutes) and the new Windows reached the first-boot computer-name screen. The first attempt failed with 0x8007003B because the SMB server lost a half-read frame under the heavy copy (fixed in 046cc31). |
@@ -56,7 +59,7 @@ It suits what boots and then runs from memory or only needs its loader's disk: r
 
 ### Run C and the Windows tests (2026-10-22, Hyper-V lab, UEFI, Secure Boot off)
 
-- Working: CachyOS (4 GB VM, network block disk), Debian 13.7 and Kali 2026.2 netinst (the installer starts and shows its language page, but cannot complete an install, see #59), SystemRescue (a graphical session via `startx` works).
+- Working: CachyOS (4 GB VM, network block disk), Debian 13.7 and Kali 2026.2 netinst (at that time the installer started and showed its language page but could not complete an install, #59; it can since 2026-10-25, see the section on it below), SystemRescue (a graphical session via `startx` works).
 - **ShredOS** needs more memory than it looks: its kernel is 352 MB with the whole system inside, iPXE holds it and the kernel unpacks it. With 2 GB nothing appears on screen
   (no message at all); with 4 GB it boots to nwipe. There is no streaming alternative (one file), so the menu cannot do better than "needs about 4 GB".
 - **Hiren's BootCD PE** (a Windows PE with no installation image): through wimboot it failed with `0xc0000017 not enough memory to create a ramdisk` even with 4 GB, because the
@@ -224,13 +227,5 @@ Windows 11 (a custom-built English ISO, build 26300.9711, 7.9 GB) started from t
   subiquity read the file and installed onto the second disk by itself, and the installed system booted as `pc-980101` (the `hostname` word of the file). Two things were found on the way and fixed: the file's
   user name must not be one Ubuntu reserves (`admin`: the template now says `ubuntu`), and **over the network disk subiquity's disk probe fails** ("Invalid dep_id (disk-nbd0) not in storage config"), so Ubuntu
   Server ISOs are now downloaded whole into memory (the VM had 9 GB for the 2.7 GB ISO). With the network disk on and a server ISO, the menu now picks that way by itself.
-- **Debian 13.7 netinst**, preseed attached: the installer starts, but its first step ("Detect and mount installation media") needs a CD and, with `cdrom-detect/retry=false`, it ends in the
-  installer's manual main menu with no network setup. The preseed is never reached. [#59](https://github.com/ghazichaieb/gola-bootlace/issues/59).
-  **Why (read from the ISO's `install.amd/gtk/initrd.gz`, 2026-10-25):** it is the CD flavour of the installer. Its start-up disk holds `cdrom-detect` and `load-cdrom` but no `iso-scan`, no network block
-  device or loop driver, no iSCSI initiator, and not even the udebs that set up the network (`netcfg`, `choose-mirror`, `download-installer`): it loads those from the CD itself, so it cannot go one step
-  without a device the kernel calls a CD. Bootlace hands the ISO over as a network disk (`/dev/nbd0`) and the installer does not look there. **What would make it work:** an extra start-up archive that adds
-  the NBD driver (`nbd-modules-<kernel>-di`, `loop`/`isofs` modules, which the ISO carries as udebs in its pool), a client for the network disk (the Go client of this project is static) and an early
-  command that connects it and tells `cdrom-detect` to use that device (`cdrom-detect/manual_cdrom`, `cdrom-detect/cdrom_device`): a new start strategy for this installer that has to follow the kernel of each
-  Debian release. Another way is Debian's own *netboot* installer (its kernel and start-up disk are on the Debian mirror, not on the ISO), which needs the mirror reachable. Neither is built: use
-  Debian's or Kali's **live** ISOs (they start and run) or the full Kali installer ISO, and do not attach a preseed to a netinst ISO.
+- **Debian 13.7 netinst**, preseed attached: stopped at the installer's first step (it needs a CD), see the next section: fixed 2026-10-25 ([#59](https://github.com/ghazichaieb/gola-bootlace/issues/59)), and the preseed is then read like any other.
 - Kickstart (`inst.ks=`) and AutoYaST (`autoyast=`): the arguments and the served files were checked by the tests only.

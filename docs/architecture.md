@@ -52,6 +52,7 @@ The extra archive is the only way in. What has to be added, and where the start-
 | a hook, and the hook list (`hooks/bootlace`, `config`) | archiso without network hooks (ChimeraOS) | mkinitcpio runs the hooks of `HOOKS=`; **only executable ones** |
 | a changed copy of the start-up script (`init`) | Proxmox VE | its script looks for the ISO in its own way; lines are added before it |
 | `rdinit=/bootlace-init` | Alpine, LibreELEC (Lakka) | the kernel runs this before `/init`: it loads drivers or fixes one line, then `exec /init` |
+| a start-up script of the installer (`lib/debian-installer-startup.d/S12...`) | the Debian installer of a netinst ISO (Debian, Kali) | it can only go on with a CD: the script brings up the network, logs in to the ISO's iSCSI CD-ROM and waits for `/dev/sr0`, and the installer's own CD detection mounts it. The drivers and `iscsistart` come out of the ISO's own pool (`udeb`, `debinst`) |
 | a file in a folder the archive makes | Porteus | the script looks in `/mnt/*`; the ISO is an initrd file there |
 
 Things that were learnt the hard way, and are why the code looks as it does:
@@ -114,6 +115,7 @@ Meant for development and for reporting a problem; none of them changes what is 
 | `bootcfg` | reads isolinux/GRUB/systemd-boot menus |
 | `initrd` | writes the extra archive (cpio), the shell scripts that go in it |
 | `initread` | reads an initramfs (any compression) and kernel modules out of a squashfs |
+| `udeb`, `debinst` | read the Debian installer's own packages (the ISO's Packages index and `.udeb` files) and make the archive that lets the installer of a netinst ISO find its CD over iSCSI |
 | `disc`, `iso9660`, `udf`, `fat`, `partition` | read ISOs, disk images and their partitions without mounting |
 | `httpd` | the web server: menu, files, extra archives, the network disk exports; `source.go` opens what a file holds |
 | `nbd`, `iscsi` | the network disk and iSCSI servers; `cmd/bootlace-nbd` is the client that runs in the PC's initramfs |
