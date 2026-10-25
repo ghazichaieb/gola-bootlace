@@ -88,3 +88,27 @@ func TestAnHttpBootClientIsTreatedLikeAPXEOneByAServerThatHandsOutAddresses(t *t
 		t.Errorf("option 67 %q, class %q", reply.Opts[OptBootFile], reply.Opts[OptVendorClass])
 	}
 }
+
+// UEFI firmware that boots over HTTP does not say 7: it reports 16 (x64), 15 (x86), 19 (ARM64) and 20 (BIOS), the codes of the IANA list for HTTP boot. A first version
+// answered only the code 7, and so no real firmware.
+func TestFirmwareReportsTheHttpBootCodesNotTheOnesOfPXE(t *testing.T) {
+	b := boot()
+	b.HTTPBase = "http://192.168.1.10:8080"
+	reply, ok := b.Reply(httpBootRequest(Discover, 16))
+	if !ok || string(reply.Opts[OptBootFile]) != "http://192.168.1.10:8080/ipxe/bootlace-x64.efi" {
+		t.Fatalf("x64 UEFI HTTP (16): %v %v", ok, reply)
+	}
+	if ClientArch(httpBootRequest(Discover, 16)).String() != "x64-efi" {
+		t.Errorf("the log and the PC list name it %q", ClientArch(httpBootRequest(Discover, 16)))
+	}
+	for _, code := range []uint16{19, 20} {
+		if _, ok := b.Reply(httpBootRequest(Discover, code)); ok {
+			t.Errorf("code %d: no loader of that kind here", code)
+		}
+	}
+	for code, want := range map[Arch]Arch{15: ArchIA32EFI, 16: ArchX64EFI, 19: ArchARM64, 20: ArchBIOS, 7: ArchX64EFI, 9: ArchX64EFI, 11: ArchARM64} {
+		if got := code.Canonical(); got != want {
+			t.Errorf("code %d folds to %d, want %d", code, got, want)
+		}
+	}
+}
