@@ -532,12 +532,12 @@ func (s *conn) command(p *pdu) error {
 		default:
 			lba, n = binary.BigEndian.Uint64(cdb[2:]), binary.BigEndian.Uint32(cdb[10:])
 		}
-		if lba+uint64(n) > blocks {
+		if lba > blocks || uint64(n) > blocks-lba {
 			s.respond(itt, statusCheckCondition, &senseOutOfRange, expected, 0)
 			break
 		}
 		buf := make([]byte, int64(n)*bs)
-		if _, err := s.disc.R.ReadAt(buf, int64(lba)*bs); err != nil && !errors.Is(err, io.EOF) {
+		if got, err := s.disc.R.ReadAt(buf, int64(lba)*bs); got != len(buf) || (err != nil && !errors.Is(err, io.EOF)) {
 			s.respond(itt, statusCheckCondition, &senseMediumError, expected, 0)
 			break
 		}
