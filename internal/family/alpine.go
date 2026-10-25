@@ -33,7 +33,7 @@ func alpine(c *Context) (Boot, bool) {
 	if hasModloop {
 		args += " modloop=" + u.FS + modloop
 	}
-	withDrivers := u.Extra != "" && hasModloop
+	withDrivers := u.has(NBD) && hasModloop
 	if withDrivers {
 		args += " rdinit=/bootlace-init"
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/debinst"
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
 	"github.com/ghazichaieb/gola-bootlace/internal/ipxesafe"
@@ -127,6 +128,7 @@ type Boot struct {
 type ExtraEnv struct {
 	Settings initrd.Settings
 	Helper   []byte
+	ISCSI    debinst.Target // the network CD-ROM of this ISO, for the start-up disks that log in to it themselves (empty when the iSCSI server is off)
 }
 
 // ExtraBuilder makes the extra initramfs archive of one ISO. It reads the ISO's files, so it is made while they are still open (see Boot.BuildExtra).

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/debinst"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
 	"github.com/ghazichaieb/gola-bootlace/internal/initread"
 )
@@ -191,5 +192,13 @@ func debianInstaller(c *Context) (Boot, bool) {
 	if !t.Exists(initrd) {
 		return Boot{}, false
 	}
-	return newBoot("Debian installer", c.in("/install.amd/vmlinuz", initrd), "vga=788 --- quiet"), true
+	b := newBoot("Debian installer", c.in("/install.amd/vmlinuz", initrd), "vga=788 --- quiet")
+	// The start-up disk of the CD flavour can only continue with the CD it was started from. Started over the network the ISO is offered as an iSCSI CD-ROM, and the extra
+	// archive (package debinst) gives the start-up disk what it needs to log in to it before its first step.
+	if c.URLs.has(ISCSI) && c.URLs.Extra != "" {
+		b = b.withExtra(c.URLs, func(env ExtraEnv) ([]byte, error) { return debinst.Archive(c.FS, initrd, env.ISCSI) })
+	} else {
+		b.Commands = append([]string{"echo This installer needs the network CD-ROM (the iSCSI server of Bootlace), which is off: it will start but cannot install.", "sleep 4"}, b.Commands...)
+	}
+	return b, true
 }

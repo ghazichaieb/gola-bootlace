@@ -58,7 +58,7 @@ func libreELECExtra(env ExtraEnv) ([]byte, error) {
 // (the script copies the initramfs once), but nothing else. The "always fresh" options are used: the ISO cannot hold changes.
 func porteus(c *Context) (Boot, bool) {
 	t, u := c.FS, c.URLs
-	if !t.Exists("/boot/syslinux/vmlinuz") || !t.Exists("/boot/syslinux/initrd.xz") || !t.Exists("/porteus/base/001-core.xzm") || u.Extra == "" {
+	if !t.Exists("/boot/syslinux/vmlinuz") || !t.Exists("/boot/syslinux/initrd.xz") || !t.Exists("/porteus/base/001-core.xzm") || !u.has(NBD) {
 		return Boot{}, false
 	}
 	b := newBoot("Porteus (whole ISO in memory)", c.in("/boot/syslinux/vmlinuz", "/boot/syslinux/initrd.xz"), "from=/porteus.iso nomagic base_only norootcopy")

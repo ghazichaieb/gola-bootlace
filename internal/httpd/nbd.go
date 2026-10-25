@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/assets"
+	"github.com/ghazichaieb/gola-bootlace/internal/debinst"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
 	"github.com/ghazichaieb/gola-bootlace/internal/iscsi"
@@ -34,7 +35,9 @@ func (s *Server) familyURLsFor(iso isos.ISO, spec string) family.URLs {
 	if s.NBDPort != 0 {
 		u.NBD = pu.Hostname() + ":/" + spec // what casper's nfsroot= shows; the helper gets the real address from the archive
 		u.NBDHost, u.NBDPort, u.NBDName = pu.Hostname(), s.NBDPort, spec
-		u.Extra = s.Base + "/x/" + spec + "/extra.cpio"
+	}
+	if s.NBDPort != 0 || s.ISCSIPort != 0 {
+		u.Extra = s.Base + "/x/" + spec + "/extra.cpio" // the archive of a start-up disk that needs one: for the network disk, or to log in to the network CD-ROM (the Debian installer)
 	}
 	return u
 }
@@ -76,6 +79,12 @@ func (s *Server) extraArchive(spec string, set initrd.Settings) ([]byte, error) 
 	}
 	defer src.Close()
 	env := family.ExtraEnv{Settings: set, Helper: assets.NBDHelper()}
+	if s.ISCSIPort != 0 {
+		if pu, err := url.Parse(s.Base); err == nil {
+			id, _ := splitSpec(spec)
+			env.ISCSI = debinst.Target{Host: pu.Hostname(), Port: s.ISCSIPort, IQN: iscsi.IQNPrefix + id}
+		}
+	}
 	if src.FS == nil {
 		return family.Boot{}.BuildExtra(env)
 	}
@@ -119,7 +128,7 @@ type extraCache struct {
 func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 	spec, file, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/x/"), "/")
 	id, part := splitSpec(spec)
-	if file != "extra.cpio" || s.NBDPort == 0 {
+	if file != "extra.cpio" || (s.NBDPort == 0 && s.ISCSIPort == 0) {
 		http.NotFound(w, r)
 		return
 	}
@@ -143,11 +152,11 @@ func (s *Server) extraInitrd(w http.ResponseWriter, r *http.Request) {
 		}
 		data, err := s.extraArchive(spec, set)
 		if err != nil {
-			s.logf("cannot make the network-disk archive for %s: %v", iso.Title, err)
+			s.logf("cannot make the start-up archive for %s: %v", iso.Title, err)
 			http.Error(w, "cannot make the archive", http.StatusInternalServerError)
 			return
 		}
-		s.logf("%s fetches the network-disk archive for %s", r.RemoteAddr, iso.Title)
+		s.logf("%s fetches the start-up archive for %s", r.RemoteAddr, iso.Title)
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Length", fmt.Sprint(len(data)))
 		_, _ = w.Write(data)

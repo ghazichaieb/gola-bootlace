@@ -77,3 +77,33 @@ func TestDebiansInstallerPrefersTheGraphicalStartUpDisk(t *testing.T) {
 		t.Error("a kernel with no start-up disk is not an installer")
 	}
 }
+
+// iscsiOnly is a server with the iSCSI server on and the network disk server off, which still serves the extra archives (the installer's own).
+func iscsiOnly() URLs {
+	u := withISCSI(urls)
+	u.Extra = "http://s/x/abc/extra.cpio"
+	return u
+}
+
+func TestDebiansInstallerLogsInToTheIscsiCdBeforeItsFirstStep(t *testing.T) {
+	tree := fake{"/install.amd/vmlinuz": true, "/install.amd/initrd.gz": true, "/install.amd/gtk/initrd.gz": true}
+	b := detect(t, "iscsi", tree, iscsiOnly(), "Debian installer", "initrd http://s/fs/abc/install.amd/gtk/initrd.gz\ninitrd http://s/x/abc/extra.cpio\nboot")
+	if !b.HasOwnExtra() || b.ExtraInitrd != "http://s/x/abc/extra.cpio" {
+		t.Errorf("the archive that logs in to the CD is not the installer's own: %+v", b)
+	}
+	// without the iSCSI server, or without the archive server, the installer is started as before
+	detect(t, "no iscsi", tree, withNBD(urls), "Debian installer", "!extra.cpio", "cannot install")
+	detect(t, "nothing", tree, urls, "Debian installer", "!extra.cpio", "iSCSI server of Bootlace), which is off")
+	noExtra := withISCSI(urls)
+	if b := detect(t, "no archive server", tree, noExtra, "Debian installer", "!extra.cpio", "cannot install"); b.HasOwnExtra() {
+		t.Error("an archive without anywhere to serve it from")
+	}
+}
+
+func TestTheArchiveServerAloneDoesNotTurnOnTheNetworkDiskOnlyStrategies(t *testing.T) {
+	u := iscsiOnly()
+	detect(t, "alpine", fake{"/.alpine-release": true, "/boot/vmlinuz-lts": true, "/boot/initramfs-lts": true, "/boot/modloop-lts": true}, u, "Alpine Linux", "!rdinit", "!extra.cpio")
+	if _, ok := Detect(fake{"/boot/syslinux/vmlinuz": true, "/boot/syslinux/initrd.xz": true, "/porteus/base/001-core.xzm": true}, u); ok {
+		t.Error("Porteus needs the network disk, not only the archive server")
+	}
+}
