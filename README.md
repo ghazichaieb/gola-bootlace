@@ -29,7 +29,8 @@ Ubuntu or a rescue tool, and the PC runs it, reading the ISO from the server acr
 You get:
 - one folder of ISOs instead of a drawer of sticks; add an ISO by copying a file, remove it by deleting the file;
 - the same menu on every PC, UEFI or older BIOS, without touching its settings beyond "boot from network";
-- ISOs that start **as they are**: nothing is unpacked or edited on the way.
+- ISOs that start **as they are**: nothing is unpacked or edited on the way;
+- **unattended installs** where you want them: keep answer files (Debian preseed, Ubuntu autoinstall, Red Hat kickstart, openSUSE AutoYaST) on the *Unattended* page and attach one to an ISO or to a single PC; the installer is pointed at it on its kernel line (see [the web interface](docs/web-interface.md#unattended-installs)).
 
 ### What you need
 
@@ -97,7 +98,7 @@ Then `docker compose up -d`, and `docker compose logs bootlace | grep -i passwor
 **3. Linux, as a service (a PC, a mini PC, a Raspberry Pi, a virtual machine).** The simplest way on Debian, Ubuntu, Raspberry Pi OS and Proxmox hosts is the package: download
 `bootlace-<version>-linux-amd64.deb` (or `arm64`) from the [Releases page](https://github.com/ghazichaieb/gola-bootlace/releases) and `apt install ./bootlace-*.deb`
 (`dnf install ./bootlace-*.rpm` on Fedora and RHEL). It installs the program, a systemd service that it starts, the folder `/srv/library` for your ISOs, and `/etc/default/bootlace` for the settings (kept when you
-upgrade); `journalctl -u bootlace | grep -i password` shows the password. Or install it by hand from the archive: download `bootlace-<version>-linux-amd64.tar.gz` (or `arm64`),
+upgrade); `journalctl -u bootlace | grep -i password` shows the password. The `.rpm` was installed and run under systemd in a Fedora 44 container (install, start, remove, upgrade with an edited settings file); it recommends `wimlib-utils` (the Debian package recommends `wimtools`). A host firewall such as firewalld can keep PCs out depending on its zone: the ports are 8080/tcp (web), 445/tcp, 3260/tcp, 10809/tcp, and 67/udp, 69/udp and 4011/udp (not covered by the package, and not tested against a real firewalld). Or install it by hand from the archive: download `bootlace-<version>-linux-amd64.tar.gz` (or `arm64`),
 then, as root (Debian or Ubuntu shown; install `wimtools` with your system's package manager otherwise):
 
 ```
@@ -141,9 +142,10 @@ In all four, check it from a PC: restart it, choose **boot from network**, and t
 - **Which systems work, and how well:** [docs/compatibility.md](docs/compatibility.md) lists every ISO tried and what happened. An ISO is marked as working only after it started in the test lab.
 - **A system that is not on the list may still work.** Bootlace recognises well-known systems by their files, and for others it reads the ISO's own boot menu and looks at its
   start-up disk to see what it is made of. A few seconds after you add an ISO, the menu shows what it found.
-- **The ISO's own boot menu is not shown.** Bootlace starts one way of each ISO (the ordinary one). What the ISO's own menu would offer (safe graphics, an OEM or minimal install, a
-  rescue or text mode, "check the disc", persistence, memtest) is not offered yet; for now you can add extra kernel arguments for an ISO on the management page. Showing those entries
-  is planned ([#35](https://github.com/ghazichaieb/gola-bootlace/issues/35)).
+- **The ISO's own boot menu is offered, not copied.** The usual way of each ISO is one key press. The other entries of its own menu that Bootlace can start the same way (safe
+  graphics, an OEM or minimal install, a text or rescue mode, "check the disc") are on the menu line "Other ways to start an ISO": pick the ISO, then the entry. Entries that need the
+  distribution's own boot loader (a chain to another disk, memtest images, persistence, `toram`) are not offered, and a system that Bootlace starts by rules of its own (an installer
+  such as Alma's, Windows, FreeBSD) has only its usual start. You can also add extra kernel arguments for an ISO, or for one PC, on the management page.
 - **Does it change what is installed or how the system runs?** The installed system is the installer's own, and Bootlace never writes to the ISO or the PC's disks. But a system that runs from
   the network does not start exactly as it would from a disc: the network has to stay up, and a few features that need the boot stick (Tails's persistent storage, for example) are not
   there. Read [docs/what-bootlace-changes.md](docs/what-bootlace-changes.md) before relying on it for something important.

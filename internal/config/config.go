@@ -65,31 +65,34 @@ func (g GroupRule) Describe() string { return g.Kind + ` "` + g.Match + `"` }
 
 // Config is the whole file.
 type Config struct {
-	MenuTimeout     int                  `json:"menuTimeout"`   // seconds before the default entry starts; 0 waits for a choice
-	PCDays          int                  `json:"pcDays"`        // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
-	Default         string               `json:"default"`       // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
-	Hidden          map[string]bool      `json:"hidden"`        // ISO id -> not in the menu
-	Titles          map[string]string    `json:"titles"`        // ISO id -> the name shown instead of the file name
-	Debug           map[string]DebugMode `json:"debug"`         // ISO id -> how to start it for finding faults (see DebugMode)
-	Args            map[string]string    `json:"args"`          // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
-	BootPasswords   map[string]string    `json:"bootPasswords"` // ISO id -> hash of the password the menu asks for before it starts that ISO (see package admin); a secret, not in backups without secrets
-	Rules           []Rule               `json:"rules"`
-	GroupRules      []GroupRule          `json:"groupRules"`      // rules for every PC of a kind (model, manufacturer, platform); a rule for one PC wins
-	PCNames         map[string]string    `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
-	AdminHash       string               `json:"adminHash"`       // see package admin
-	SMBPassword     string               `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
-	Library         Library              `json:"library"`         // the folder with the ISOs; empty until one is chosen
-	NoAutoStart     bool                 `json:"noAutoStart"`     // the services stay stopped when the program starts, until they are started in the web interface
-	Access          Access               `json:"access"`          // which addresses may use the server, besides the local network
-	ImportLimitMBps int                  `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
-	Cache           CacheSettings        `json:"cache"`
-	Tuning          Tuning               `json:"tuning"`
-	SetupChecks     SetupChecks          `json:"setupChecks"`    // checks of Windows 11 Setup to skip
-	PasswordChosen  bool                 `json:"passwordChosen"` // the person set the web interface's password (it was not only made up at the first start)
-	FirstStartDone  bool                 `json:"firstStartDone"` // the first-start guide was finished or skipped
-	LibrarySync     string               `json:"librarySync"`    // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
-	MenuAccent      string               `json:"menuAccent"`     // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
-	HidePatterns    []string             `json:"hidePatterns"`   // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
+	MenuTimeout     int                   `json:"menuTimeout"`   // seconds before the default entry starts; 0 waits for a choice
+	PCDays          int                   `json:"pcDays"`        // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
+	Default         string                `json:"default"`       // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
+	Hidden          map[string]bool       `json:"hidden"`        // ISO id -> not in the menu
+	Titles          map[string]string     `json:"titles"`        // ISO id -> the name shown instead of the file name
+	Debug           map[string]DebugMode  `json:"debug"`         // ISO id -> how to start it for finding faults (see DebugMode)
+	Args            map[string]string     `json:"args"`          // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
+	BootPasswords   map[string]string     `json:"bootPasswords"` // ISO id -> hash of the password the menu asks for before it starts that ISO (see package admin); a secret, not in backups without secrets
+	Rules           []Rule                `json:"rules"`
+	GroupRules      []GroupRule           `json:"groupRules"`      // rules for every PC of a kind (model, manufacturer, platform); a rule for one PC wins
+	PCNames         map[string]string     `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
+	PCOptions       map[string]PCOptions  `json:"pcOptions"`       // MAC address -> extra kernel arguments and debug switches for every ISO that PC starts from its files (see PCOptions)
+	AdminHash       string                `json:"adminHash"`       // see package admin
+	SMBPassword     string                `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
+	Library         Library               `json:"library"`         // the folder with the ISOs; empty until one is chosen
+	NoAutoStart     bool                  `json:"noAutoStart"`     // the services stay stopped when the program starts, until they are started in the web interface
+	Access          Access                `json:"access"`          // which addresses may use the server, besides the local network
+	ImportLimitMBps int                   `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
+	Cache           CacheSettings         `json:"cache"`
+	Tuning          Tuning                `json:"tuning"`
+	SetupChecks     SetupChecks           `json:"setupChecks"`    // checks of Windows 11 Setup to skip
+	PasswordChosen  bool                  `json:"passwordChosen"` // the person set the web interface's password (it was not only made up at the first start)
+	FirstStartDone  bool                  `json:"firstStartDone"` // the first-start guide was finished or skipped
+	LibrarySync     string                `json:"librarySync"`    // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
+	MenuAccent      string                `json:"menuAccent"`     // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
+	HidePatterns    []string              `json:"hidePatterns"`   // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
+	Answers         map[string]AnswerFile `json:"answers"`        // answer file id -> the file (a secret: it can hold passwords; see answers.go)
+	ISOAnswers      map[string]string     `json:"isoAnswers"`     // ISO id -> the answer file every PC that starts that ISO gets (a PC's own choice wins)
 }
 
 // AccentNames are the colours the menu's highlighted line may have (see package menu).
@@ -183,10 +186,35 @@ func glob(p, s string) bool {
 }
 
 // DebugMode is how an ISO is started when it does not start well: Verbose takes out the quiet start-up (no `quiet`, `splash`, `rhgb`) and turns the kernel's messages
-// up and enables the detected family's diagnostics; Serial also sends the console to the first serial port (115200 baud), for a PC or a virtual machine whose serial port is being recorded.
+// up; Serial also sends the console to the first serial port (115200 baud), for a PC or a virtual machine whose serial port is being recorded.
 type DebugMode struct {
 	Verbose bool `json:"verbose,omitempty"`
 	Serial  bool `json:"serial,omitempty"`
+}
+
+// PCOptions are how one PC is started when it needs it (a graphics card that wants `nomodeset`, a PC whose serial port is being recorded): the arguments come after the ones
+// of the ISO itself and the switches work like those of an ISO (see DebugMode), on the kernel line of every ISO that PC starts from its own files.
+type PCOptions struct {
+	Args   string    `json:"args,omitempty"`
+	Debug  DebugMode `json:"debug,omitempty"`
+	Answer string    `json:"answer,omitempty"` // the answer file this PC gets for the ISOs that take one: an id, NoAnswer to keep it away, or empty to follow the ISO
+}
+
+// Empty says that nothing is set: such an entry is not kept.
+func (o PCOptions) Empty() bool {
+	return o.Args == "" && !o.Debug.Verbose && !o.Debug.Serial && o.Answer == ""
+}
+
+// MaxArgs is the longest extra kernel arguments line.
+const MaxArgs = 300
+
+// CleanArgs checks a line of extra kernel arguments (one line, MaxArgs characters at most) and returns it without the spaces around it.
+func CleanArgs(a string) (string, error) {
+	a = strings.TrimSpace(a)
+	if strings.ContainsAny(a, "\r\n") || len(a) > MaxArgs {
+		return "", fmt.Errorf("extra kernel arguments must be one line of at most %d characters", MaxArgs)
+	}
+	return a, nil
 }
 
 // Library is the folder the ISOs are in, as it was added (see package library): its path and the id that was written into its marker.
@@ -318,6 +346,25 @@ func (c *Config) Validate() error {
 			delete(c.Debug, id)
 		}
 	}
+	pcOptions := map[string]PCOptions{}
+	for mac, o := range c.PCOptions {
+		key, ok := NormalizeMAC(mac)
+		if !ok {
+			return fmt.Errorf("%q is not a MAC address", mac)
+		}
+		args, err := CleanArgs(o.Args)
+		if err != nil {
+			return err
+		}
+		o.Args = args
+		if !o.Empty() {
+			pcOptions[key] = o
+		}
+	}
+	c.PCOptions = pcOptions
+	if err := c.validateAnswers(); err != nil {
+		return err
+	}
 	seen := map[string]bool{}
 	rules := []Rule{}
 	for _, r := range c.Rules {
@@ -417,6 +464,18 @@ func (c Config) clone() Config {
 	d.PCNames = map[string]string{}
 	for k, v := range c.PCNames {
 		d.PCNames[k] = v
+	}
+	d.PCOptions = map[string]PCOptions{}
+	for k, v := range c.PCOptions {
+		d.PCOptions[k] = v
+	}
+	d.Answers = map[string]AnswerFile{}
+	for k, v := range c.Answers {
+		d.Answers[k] = v
+	}
+	d.ISOAnswers = map[string]string{}
+	for k, v := range c.ISOAnswers {
+		d.ISOAnswers[k] = v
 	}
 	d.Rules = append([]Rule(nil), c.Rules...)
 	d.GroupRules = append([]GroupRule(nil), c.GroupRules...)

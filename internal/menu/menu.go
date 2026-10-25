@@ -71,6 +71,10 @@ type Options struct {
 
 	// Accent is the colour of the highlighted line and of the section headings, one of AccentNames; empty is Gola's red.
 	Accent string
+
+	// Ways is the address of the menu of other ways to start an ISO (the ISO's own boot menu entries): when set, the page ends in a line that opens it. Back is the address of the
+	// menu to return to from such a page: when set, the page ends in a line that goes there. Heading replaces "Choose what to start" over the list of the picture menu.
+	Ways, Back, Heading string
 }
 
 // accents are the colours of iPXE's palette that read well as the highlighted line: the background of the chosen line and the text colour on it.
@@ -233,7 +237,7 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 				fmt.Fprintf(&b, "item %s %s\n", label(e.Name, i), listRow(e.Name, "", ""))
 			}
 		}
-		if o.Prev != "" || o.Next != "" {
+		if o.Prev != "" || o.Next != "" || o.Ways != "" || o.Back != "" {
 			if !ascii {
 				gap("")
 			}
@@ -242,6 +246,12 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 			}
 			if o.Next != "" {
 				line("next", "Next page >>")
+			}
+			if o.Ways != "" {
+				line("ways", "Other ways to start an ISO >>")
+			}
+			if o.Back != "" {
+				line("back", "<< Back to the list")
 			}
 		}
 		if ascii {
@@ -262,7 +272,11 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 		// screen and downloading the picture again
 		b.WriteString("isset ${gfx-ready} && goto gfx || goto setup\n:setup\n") // (isset fails when the setting is empty, and a failing line without || ends the script)
 		fmt.Fprintf(&b, "console --x %d --y %d --picture %s --left 64 --right 64 --top %d --bottom 40 && set gfx-ready 1 && goto gfx || goto plain\n", o.Width, o.Height, o.Picture, o.Top)
-		fmt.Fprintf(&b, ":gfx\nmenu Choose what to start%s\n", pageNote(o, " - "))
+		heading := "Choose what to start"
+		if o.Heading != "" {
+			heading = clean(o.Heading)
+		}
+		fmt.Fprintf(&b, ":gfx\nmenu %s%s\n", heading, pageNote(o, " - "))
 		gap("")
 		items(false)
 		b.WriteString("goto choose\n:plain\n")
@@ -297,6 +311,12 @@ func ScriptWith(title string, entries []Entry, o Options) string {
 	}
 	if o.Next != "" {
 		fmt.Fprintf(&b, ":next\nchain %s || goto shell\n\n", o.Next)
+	}
+	if o.Ways != "" {
+		fmt.Fprintf(&b, ":ways\nchain %s || goto shell\n\n", o.Ways)
+	}
+	if o.Back != "" {
+		fmt.Fprintf(&b, ":back\nchain %s || goto shell\n\n", o.Back)
 	}
 	b.WriteString(":failed\necho Booting did not work: read the message above.\nprompt --timeout 20000 " + failedPrompt + " || echo\ngoto again\n\n")
 	b.WriteString(":denied\necho Wrong password, or none given. Back to the menu in 3 seconds.\nsleep 3\ngoto again\n\n")

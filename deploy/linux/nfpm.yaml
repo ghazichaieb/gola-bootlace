@@ -16,6 +16,10 @@ homepage: https://github.com/ghazichaieb/gola-bootlace
 license: GPL-3.0-or-later
 recommends:
   - wimtools
+overrides:
+  rpm:
+    recommends:
+      - wimlib-utils   # (the Fedora, RHEL and openSUSE name of what Debian calls wimtools: wimlib-imagex)
 contents:
   - src: ${BINARY}
     dst: /usr/bin/bootlace

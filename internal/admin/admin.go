@@ -127,7 +127,15 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("DELETE /api/pcs/{mac}", a.authed(a.pcForget))
 	api.HandleFunc("POST /api/pcs/clean", a.authed(a.pcClean))
 	api.HandleFunc("PUT /api/pcs/{mac}/name", a.authed(a.pcRename))
+	api.HandleFunc("PUT /api/pcs/{mac}/options", a.authed(a.pcOptions))
 	api.HandleFunc("POST /api/pcs/{mac}/wake", a.authed(a.pcWake))
+	api.HandleFunc("PUT /api/pcs/{mac}/answer", a.authed(a.pcAnswer))
+	api.HandleFunc("GET /api/answers", a.authed(a.answersList))
+	api.HandleFunc("GET /api/answers/templates", a.authed(a.answerTemplates))
+	api.HandleFunc("POST /api/answers", a.authed(a.answerCreate))
+	api.HandleFunc("GET /api/answers/{id}", a.authed(a.answerGet))
+	api.HandleFunc("PUT /api/answers/{id}", a.authed(a.answerUpdate))
+	api.HandleFunc("DELETE /api/answers/{id}", a.authed(a.answerDelete))
 	api.HandleFunc("GET /api/grouprules", a.authed(a.groupRules))
 	api.HandleFunc("POST /api/grouprules", a.authed(a.groupRuleSet))
 	api.HandleFunc("DELETE /api/grouprules", a.authed(a.groupRuleDelete))
@@ -468,6 +476,7 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 		Args         *string           `json:"args"`
 		Debug        *config.DebugMode `json:"debug"`
 		BootPassword *string           `json:"bootPassword"` // the password the menu asks for before it starts this ISO; empty takes it away
+		Answer       *string           `json:"answer"`       // the answer file every PC that starts this ISO gets (an unattended install); empty takes it away
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -521,6 +530,19 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 				c.Debug = map[string]config.DebugMode{}
 			}
 			c.Debug[id] = *in.Debug // both off: dropped by the check
+		}
+		if in.Answer != nil {
+			if c.ISOAnswers == nil {
+				c.ISOAnswers = map[string]string{}
+			}
+			if *in.Answer == "" {
+				delete(c.ISOAnswers, id)
+			} else {
+				if _, ok := c.Answers[*in.Answer]; !ok {
+					return errors.New("no such answer file")
+				}
+				c.ISOAnswers[id] = *in.Answer
+			}
 		}
 		return nil
 	})
@@ -853,13 +875,20 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	}
 	type pc struct {
 		httpd.Client
-		Name string       `json:"name,omitempty"` // the name a person gave the PC
-		Rule *config.Rule `json:"rule,omitempty"`
+		Name    string            `json:"name,omitempty"` // the name a person gave the PC
+		Rule    *config.Rule      `json:"rule,omitempty"`
+		Options *config.PCOptions `json:"options,omitempty"` // its own kernel arguments and debug switches
+	}
+	optionsOf := func(mac string) *config.PCOptions {
+		if o, ok := c.PCOptions[mac]; ok {
+			return &o
+		}
+		return nil
 	}
 	out := []pc{}
 	seen := map[string]bool{}
 	for _, cl := range a.o.Backend.Clients() {
-		p := pc{Client: cl, Name: c.PCNames[cl.MAC]}
+		p := pc{Client: cl, Name: c.PCNames[cl.MAC], Options: optionsOf(cl.MAC)}
 		if r, ok := rules[cl.MAC]; ok {
 			r := r
 			p.Rule = &r
@@ -871,12 +900,18 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 		if !seen[r.MAC] {
 			r := r
 			seen[r.MAC] = true
-			out = append(out, pc{Client: httpd.Client{MAC: r.MAC}, Name: c.PCNames[r.MAC], Rule: &r})
+			out = append(out, pc{Client: httpd.Client{MAC: r.MAC}, Name: c.PCNames[r.MAC], Rule: &r, Options: optionsOf(r.MAC)})
 		}
 	}
 	for mac, name := range c.PCNames { // a named PC that is not in the list (forgotten, or not seen since the server started)
 		if !seen[mac] {
-			out = append(out, pc{Client: httpd.Client{MAC: mac}, Name: name})
+			seen[mac] = true
+			out = append(out, pc{Client: httpd.Client{MAC: mac}, Name: name, Options: optionsOf(mac)})
+		}
+	}
+	for mac := range c.PCOptions { // a PC with its own kernel options that is in none of the above
+		if !seen[mac] {
+			out = append(out, pc{Client: httpd.Client{MAC: mac}, Options: optionsOf(mac)})
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { // (the order of a map is not one: the PCs not seen go last, by name)
@@ -1002,6 +1037,36 @@ func (a *Admin) pcRename(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.o.Logf != nil {
 		a.o.Logf("web interface: %s is called %q now", mac, strings.TrimSpace(in.Name))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// pcOptions sets the extra kernel arguments and the debug switches of one PC, or takes them away (nothing set). They come after the ISO's own on the kernel line of every ISO
+// that PC starts from its files, from its next start on.
+func (a *Admin) pcOptions(w http.ResponseWriter, r *http.Request) {
+	mac, ok := config.NormalizeMAC(r.PathValue("mac"))
+	if !ok {
+		fail(w, http.StatusBadRequest, "that is not a MAC address (like aa:bb:cc:dd:ee:ff)")
+		return
+	}
+	var in config.PCOptions
+	if !readJSON(w, r, &in) {
+		return
+	}
+	err := a.o.Store.Update(func(c *config.Config) error {
+		if c.PCOptions == nil {
+			c.PCOptions = map[string]config.PCOptions{}
+		}
+		in.Answer = c.PCOptions[mac].Answer // (the answer file choice has a call of its own and is not changed here)
+		c.PCOptions[mac] = in               // (Validate trims the arguments and drops an entry with nothing set)
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: kernel options of %s: arguments %q, verbose %v, serial %v", mac, strings.TrimSpace(in.Args), in.Debug.Verbose, in.Debug.Serial)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

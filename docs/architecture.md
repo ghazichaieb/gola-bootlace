@@ -69,6 +69,9 @@ Things that were learnt the hard way, and are why the code looks as it does:
 
 1. `bootcfg` reads the ISO's own boot menus (isolinux/syslinux, GRUB incl. `source`, systemd-boot) and gives the kernel, start-up disk and arguments of each entry.
    Ordinary entries come before "safe graphics", "check" and such.
+   `family.Ways` (`ways.go`) turns the other entries into *ways*: each is started by the same strategy as the usual start (the strategy is recorded as `Boot.Kind`: casper, live-boot,
+   archiso, dracut-live), and only when it needs no extra archive other than the usual start's (the server offers one per ISO). The server looks for them in the background (like
+   the generic recognition) and the menu line "Other ways to start an ISO" opens `menu?ways=list`, then `menu?ways=<iso id>`.
 2. `initread.Inspect` lists the start-up disk, and `identify` (`flavor.go`) says what it is: casper (`scripts/casper`), live-boot (`scripts/live`), archiso
    (`hooks/archiso`, and whether it has `archiso_pxe_nbd`), dracut with a live module (`dmsquash-live-root`, and whether it has `netroot`, an iSCSI client,
    `livenetroot`), and whether it carries network card drivers and the `nbd` driver.

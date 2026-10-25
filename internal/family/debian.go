@@ -38,16 +38,20 @@ func (c *Context) casper(family string, f files, dir string, server bool, args s
 	if dir != "/casper" { // Pop!_OS and others keep the live system in a folder of their own name, which casper is told about
 		livePath = " live-media-path=" + dir
 	}
-	if u.pick(NBD, Memory) == NBD {
-		// cloud-init stays on for the server ISOs: casper hands them the network settings of the start-up (which the network disk needs kept: see package initrd), and with
-		// cloud-init off they get a plain "DHCP on every card" instead, take another address and lose the connection to the ISO. The desktop ISOs do not need it.
+	// Ubuntu Server's installer (subiquity) probes the disks and stops on the network disk that holds the ISO ("Invalid dep_id (disk-nbd0) not in storage config"), so the server
+	// ISOs are downloaded whole into memory instead (the PC needs the size of the ISO and some more as memory).
+	if !server && u.pick(NBD, Memory) == NBD {
+		// cloud-init is switched off here: casper hands it the network settings of the start-up (which the network disk needs kept: see package initrd), and with cloud-init on
+		// the live system gets a plain "DHCP on every card" instead, takes another address and loses the connection to the ISO.
 		cloudInit := " cloud-init=disabled"
-		if server {
-			cloudInit = ""
-		}
-		return newBoot(family, f, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+livePath+cloudInit+" console=tty0"+args).withExtra(u, extra)
+		return newBoot(family, f, "ip=dhcp boot=casper netboot=nfs nfsroot="+u.NBD+livePath+cloudInit+" console=tty0"+args).withExtra(u, extra).kind("casper")
 	}
-	return newBoot(family, f, "ip=dhcp url="+u.ISO+" boot=casper"+livePath+" cloud-init=disabled"+" console=tty0"+args)
+	// the server ISOs keep cloud-init on here too: it is what hands an autoinstall file to the installer (the ISO is in memory by now, so it has no network disk to lose)
+	disabled := " cloud-init=disabled"
+	if server {
+		disabled = ""
+	}
+	return newBoot(family, f, "ip=dhcp url="+u.ISO+" boot=casper"+livePath+disabled+" console=tty0"+args).kind("casper")
 }
 
 // casperDir finds the folder of a casper live system and its kernel: /casper, or a folder whose name starts with casper (Pop!_OS: casper_pop-os_24.04_..., kernel vmlinuz.efi).
@@ -99,9 +103,9 @@ func debianLive(c *Context) (Boot, bool) {
 func (c *Context) liveBoot(family string, f files, image, args string, network bool, extra ExtraBuilder) Boot {
 	u := c.URLs
 	if network && u.has(NBD) {
-		return newBoot(family, f, "boot=live components netboot=nfs nfsroot="+u.NBD+" console=tty0"+args).withExtra(u, extra)
+		return newBoot(family, f, "boot=live components netboot=nfs nfsroot="+u.NBD+" console=tty0"+args).withExtra(u, extra).kind("live-boot")
 	}
-	return newBoot(family, f, "boot=live components ip=dhcp fetch="+u.FS+image+" console=tty0"+args)
+	return newBoot(family, f, "boot=live components ip=dhcp fetch="+u.FS+image+" console=tty0"+args).kind("live-boot")
 }
 
 // isVyOS says whether a live folder is VyOS's (its kernel and initramfs files carry "vyos" in their names).

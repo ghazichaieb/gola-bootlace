@@ -68,9 +68,9 @@ func (c *Context) archiso(family string, f files, ip, basedir, args string) Boot
 	u := c.URLs
 	if u.has(NBD) && u.NBDPort == 10809 {
 		// (the extra archive replaces the start-up disk's nbd-client by one that connects again when the connection is lost: the live system changes its address)
-		return newBoot(family, f, ip+" archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n"+" console=tty0"+args).withExtra(u, nil)
+		return newBoot(family, f, ip+" archisobasedir="+basedir+" archiso_nbd_srv="+u.NBDHost+" archiso_nbd_name="+u.NBDName+" copytoram=n"+" console=tty0"+args).withExtra(u, nil).kind("archiso")
 	}
-	return newBoot(family, f, ip+" archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y"+" console=tty0"+args)
+	return newBoot(family, f, ip+" archisobasedir="+basedir+" archiso_http_srv="+u.FS+"/ copytoram=y"+" console=tty0"+args).kind("archiso")
 }
 
 // archisoHook is for an ISO whose start-up disk has no hook for the network: the extra archive makes one, and the arguments name the device it attaches. basedir is the
@@ -80,7 +80,7 @@ func (c *Context) archisoHook(family string, vol Volume, f files, basedir, image
 		return Boot{}, false
 	}
 	b := newBoot(family, f, "archisobasedir="+basedir+" archisodevice=/dev/nbd0 copytoram=n"+" console=tty0"+args)
-	return b.withExtra(c.URLs, func(env ExtraEnv) ([]byte, error) { return c.hookExtra(vol, f.initrd, image, env) }), true
+	return b.withExtra(c.URLs, func(env ExtraEnv) ([]byte, error) { return c.hookExtra(vol, f.initrd, image, env) }).kind("archiso"), true
 }
 
 // mkinitcpioHook is the hook that goes in front of archiso's own. mkinitcpio only runs hooks that are executable.

@@ -251,6 +251,52 @@ func (s *Server) recogniseGeneric(iso isos.ISO) (family.Boot, bool) {
 	return family.Boot{}, false
 }
 
+// waysOf are the other entries of an ISO's own boot menu that it can be started with, next to the usual start `primary` (issue #35). Like the generic recognition this looks into
+// start-up disks, which takes seconds: the first call starts the look in the background and answers none, and the menu that follows has the answer.
+func (s *Server) waysOf(iso isos.ISO, primary family.Boot) []family.Way {
+	if iso.Disk || iso.Packed != "" {
+		return nil
+	}
+	key := "ways|" + stamp(iso)
+	s.mu.Lock()
+	if w, ok := s.waysKnown[key]; ok {
+		s.mu.Unlock()
+		return w
+	}
+	if s.looking[key] {
+		s.mu.Unlock()
+		return nil
+	}
+	if s.looking == nil {
+		s.looking = map[string]bool{}
+	}
+	s.looking[key] = true
+	s.mu.Unlock()
+	go func() {
+		s.lookMu.Lock()
+		defer s.lookMu.Unlock()
+		var found []family.Way
+		cs, done := s.contexts(iso)
+		for _, c := range cs {
+			if found = family.Ways(c, primary); len(found) > 0 {
+				break
+			}
+		}
+		done()
+		s.mu.Lock()
+		if s.waysKnown == nil {
+			s.waysKnown = map[string][]family.Way{}
+		}
+		s.waysKnown[key] = found
+		delete(s.looking, key)
+		s.mu.Unlock()
+		if len(found) > 0 {
+			s.logf("%s: its own boot menu has %d other way(s) to start it", iso.Title, len(found))
+		}
+	}()
+	return nil
+}
+
 // remember runs a look inside a file once, and keeps the answer until the file changes (reading an ISO's folders takes a moment).
 func (s *Server) remember(kind, path string, size int64, mod time.Time, look func() (family.Boot, bool)) (family.Boot, bool) {
 	key := fmt.Sprintf("%s|%s|%d|%d", kind, path, size, mod.UnixNano())

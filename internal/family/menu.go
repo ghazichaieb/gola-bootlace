@@ -35,8 +35,23 @@ func readText(t Tree, name string) (string, bool) {
 	return string(b), true
 }
 
-// menuEntries are the choices of the ISO's own boot menus (isolinux, GRUB, systemd-boot) in the ISO's files and its other volumes, in the order the menus give them, each once.
+// menuEntries are the choices of the ISO's own boot menus (isolinux, GRUB, systemd-boot) in the ISO's files and its other volumes, in the order the menus give them, each kernel and
+// start-up disk once: this is for recognising what the ISO is made of, and one look at a start-up disk tells it for every entry that uses it.
 func (c *Context) menuEntries() []menuEntry {
+	seen := map[string]bool{}
+	var out []menuEntry
+	for _, m := range c.allMenuEntries() {
+		if key := m.vol.URL + m.kernel + m.initrd; !seen[key] {
+			seen[key] = true
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// allMenuEntries are the same choices with the ones that differ only in their arguments too (safe graphics, an OEM install, a check of the disc), each once. The ordinary ones come
+// first; the special ones (safe graphics, a check of the disc ...) follow, and are only taken to recognise an ISO when nothing else is.
+func (c *Context) allMenuEntries() []menuEntry {
 	vols := []Volume{{c.FS, c.URLs.FS}}
 	if c.Volumes != nil {
 		vols = append(vols, c.Volumes()...)
@@ -46,14 +61,14 @@ func (c *Context) menuEntries() []menuEntry {
 	for _, vol := range vols {
 		for _, e := range menuOf(vol.FS) {
 			kernel, initrd := e.Kernel, startUpDisk(vol.FS, e)
-			if kernel == "" || initrd == "" || !vol.FS.Exists(kernel) || seen[vol.URL+kernel+initrd] {
+			key := vol.URL + kernel + initrd + "|" + e.Args
+			if kernel == "" || initrd == "" || !vol.FS.Exists(kernel) || seen[key] {
 				continue
 			}
-			seen[vol.URL+kernel+initrd] = true
+			seen[key] = true
 			out = append(out, menuEntry{Entry: e, vol: vol, kernel: kernel, initrd: initrd})
 		}
 	}
-	// the entries that are the ordinary way to start the system come first; the special ones (safe graphics, a check of the disc ...) are only taken when nothing else is
 	sort.SliceStable(out, func(i, j int) bool { return !special(out[i].Entry) && special(out[j].Entry) })
 	return out
 }

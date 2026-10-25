@@ -216,3 +216,40 @@ func TestAnInstallationFromBeforeTheGuideHasDoneItsFirstStart(t *testing.T) {
 		t.Fatalf("a new installation has not: %v %v %+v", err, created, fresh.Get())
 	}
 }
+
+func TestPCOptionsAreKeyedByNormalisedMACAndCheckedLikeTheArgumentsOfAnISO(t *testing.T) {
+	s, p := open(t)
+	err := s.Update(func(c *Config) error {
+		c.PCOptions = map[string]PCOptions{
+			"AA-BB-CC-DD-EE-01": {Args: "  nomodeset  "},
+			"aa:bb:cc:dd:ee:02": {Debug: DebugMode{Serial: true}},
+			"aa:bb:cc:dd:ee:03": {}, // nothing set: not kept
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := s.Get().PCOptions
+	if len(got) != 2 || got["aa:bb:cc:dd:ee:01"].Args != "nomodeset" || !got["aa:bb:cc:dd:ee:02"].Debug.Serial {
+		t.Fatalf("%+v", got)
+	}
+	if again, _, _ := Open(p, Config{}); again.Get().PCOptions["aa:bb:cc:dd:ee:01"].Args != "nomodeset" {
+		t.Fatal("the options are kept in the file")
+	}
+	for name, o := range map[string]PCOptions{"two lines": {Args: "a\nb"}, "too long": {Args: strings.Repeat("x", MaxArgs+1)}} {
+		if err := s.Update(func(c *Config) error { c.PCOptions["aa:bb:cc:dd:ee:09"] = o; return nil }); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+	if err := s.Update(func(c *Config) error { c.PCOptions["not-a-mac"] = PCOptions{Args: "x"}; return nil }); err == nil {
+		t.Error("a key that is not a MAC address was accepted")
+	}
+	if got := s.Get().PCOptions; len(got) != 2 {
+		t.Fatalf("a refused change must change nothing: %+v", got)
+	}
+	got["aa:bb:cc:dd:ee:01"] = PCOptions{Args: "changed"}
+	if s.Get().PCOptions["aa:bb:cc:dd:ee:01"].Args != "nomodeset" {
+		t.Fatal("Get must return a copy")
+	}
+}

@@ -185,6 +185,14 @@ type ISOInfo struct {
 	Protected bool             `json:"protected"`              // the menu asks for a password before it starts it
 	Debug     config.DebugMode `json:"debug"`                  // how it is started for finding faults
 	Commands  []string         `json:"commands,omitempty"`     // what the menu gives a PC that chooses it (the iPXE commands), so that the final command line can be read
+	Ways      []WayInfo        `json:"ways,omitempty"`         // the other entries of its own boot menu that can start it (issue #35)
+	Answer    string           `json:"answer,omitempty"`       // the id of the answer file every PC that starts it gets (an unattended install, issue #17)
+}
+
+// WayInfo is one of those entries as the web page lists it.
+type WayInfo struct {
+	Title   string `json:"title"`
+	Special bool   `json:"special,omitempty"` // safe graphics, a rescue entry, a check of the disc ...
 }
 
 // ISOInfos lists the ISOs of the folder with what is known of each.
@@ -202,7 +210,11 @@ func (s *Server) ISOInfos() ([]ISOInfo, error) {
 		i.Args = s.settings().Args[e.ISO.ID]
 		i.Debug = s.settings().Debug[e.ISO.ID]
 		i.Protected = e.Protected
+		i.Answer = s.settings().ISOAnswers[e.ISO.ID]
 		i.Commands = e.Entry.Commands
+		for _, w := range e.Ways {
+			i.Ways = append(i.Ways, WayInfo{Title: w.Title, Special: w.Special})
+		}
 		out = append(out, i)
 	}
 	return out, nil
@@ -212,6 +224,7 @@ func (s *Server) ISOInfos() ([]ISOInfo, error) {
 func (s *Server) Rescan() {
 	s.mu.Lock()
 	s.known = nil
+	s.waysKnown = nil
 	s.mu.Unlock()
 }
 

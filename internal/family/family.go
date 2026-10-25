@@ -106,21 +106,19 @@ func (c *Context) volumeWith(path string) (Volume, bool) {
 
 // Boot is how to start one ISO.
 type Boot struct {
-	Family      string   // "Alpine Linux", "Debian live" ...
-	Commands    []string // iPXE commands: kernel, initrd, boot
-	VerboseArgs []string // family-specific arguments added only when verbose start-up is enabled
+	Family   string   // "Alpine Linux", "Debian live" ...
+	Commands []string // iPXE commands: kernel, initrd, boot
 
 	// For a kernel that GRUB (signed by the distribution, so that UEFI Secure Boot can stay on) starts instead of iPXE: the files inside the ISO and the kernel's
 	// arguments. Empty for the kinds that cannot be started that way.
 	Kernel, Initrd, Args string
 
+	// Kind is the strategy that built the start ("casper", "live-boot", "archiso", "dracut-live"), empty for a start of any other kind: the other ways an ISO's own menu offers are
+	// only the same kind as the usual start (see Ways).
+	Kind string
+
 	ExtraInitrd string       // an address: a second initramfs archive to load after the ISO's own
 	extra       ExtraBuilder // how that archive is made; nil for the usual one
-}
-
-func (b Boot) withVerbose(args ...string) Boot {
-	b.VerboseArgs = args
-	return b
 }
 
 // ExtraEnv is what an extra archive is made from besides the files: where the network disk is, and the helper program that attaches it.
@@ -183,6 +181,12 @@ func newBoot(family string, f files, args string) Boot {
 func (b Boot) withExtra(u URLs, build ExtraBuilder) Boot {
 	b.ExtraInitrd, b.extra = u.Extra, build
 	return b.before("initrd " + u.Extra)
+}
+
+// kind names the strategy that built the start.
+func (b Boot) kind(k string) Boot {
+	b.Kind = k
+	return b
 }
 
 // before adds an iPXE command just before the final "boot".

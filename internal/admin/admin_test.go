@@ -566,3 +566,36 @@ func TestTheFirstStartGuideIsOfferedUntilFinished(t *testing.T) {
 		t.Fatalf("%v", out)
 	}
 }
+
+func TestAPCsKernelOptionsAreSetShownAndTakenAway(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	body := map[string]any{"args": "  nomodeset  ", "debug": map[string]bool{"verbose": true}}
+	if code, _ := r.do("PUT", "/api/pcs/not-a-mac/options", body, nil); code != 400 {
+		t.Fatalf("a bad MAC: %d", code)
+	}
+	if code, _ := r.do("PUT", "/api/pcs/AA-BB-CC-DD-EE-01/options", body, nil); code != 200 {
+		t.Fatal(code)
+	}
+	if o := r.store.Get().PCOptions["aa:bb:cc:dd:ee:01"]; o.Args != "nomodeset" || !o.Debug.Verbose || o.Debug.Serial {
+		t.Fatalf("%+v", o)
+	}
+	_, out := r.do("GET", "/api/pcs", nil, nil)
+	opts, _ := out["pcs"].([]any)[0].(map[string]any)["options"].(map[string]any)
+	if opts["args"] != "nomodeset" || opts["debug"].(map[string]any)["verbose"] != true {
+		t.Fatalf("the list of PCs must carry the options: %v", out)
+	}
+	if code, _ := r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/options", map[string]any{"args": "two\nlines"}, nil); code != 400 {
+		t.Fatalf("arguments with a line break: %d", code)
+	}
+	// a PC that has options but has not asked since the server started is still listed
+	r.do("DELETE", "/api/pcs/aa:bb:cc:dd:ee:01", nil, nil)
+	if _, out = r.do("GET", "/api/pcs", nil, nil); len(out["pcs"].([]any)) != 1 {
+		t.Fatalf("%v", out)
+	}
+	// nothing set takes them away
+	r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/options", map[string]any{"args": ""}, nil)
+	if got := r.store.Get().PCOptions; len(got) != 0 {
+		t.Fatalf("%+v", got)
+	}
+}

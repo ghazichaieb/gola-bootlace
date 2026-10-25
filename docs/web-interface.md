@@ -36,7 +36,7 @@ minutes. Anyone on the network can reach the login page, so use a password you w
 
 Everything applies at the next start of a PC: the menu is made again for each one.
 
-**Verbose start-up** on the ISOs page removes `quiet`, `splash` (including `splash=silent`) and `rhgb`, and sets `loglevel=7 ignore_loglevel debug`. It also enables the detected system's own diagnostics: `rd.debug` for dracut live systems (including ones recognised by their boot menu) and Red Hat installers; `proxdebug` for Proxmox VE. **Proxmox debug mode pauses at debug shells: type `exit` or press Ctrl+D to continue.** The *Show the commands a PC gets* fold-out includes these arguments. Turning verbose off restores the normal commands; enabling only the serial console does not enable family diagnostics. These switches affect the iPXE kernel commands; the separate Secure Boot/GRUB path is unchanged.
+Verbose start-up also removes valued splash options such as `splash=silent` and replaces other kernel log levels with `loglevel=7`, for both ISO and PC options. Proxmox's verbose mode opens debug shells: type `exit` or press Ctrl+D to continue installation.
 
 ## Settings file
 
@@ -61,6 +61,37 @@ A UEFI PC shows the Gola Bootlace logo with the menu on top of it (iPXE's graphi
 - A PC's address is the one its request came from.
 - The page is paged (10, 25, 50 or 100 per page; the choice is remembered in the browser, and the first guess comes from the window's height, because the number that fits cannot be known) and has a search box. `/api/pcs` takes `limit`, `offset` and `q`.
 - "Forget" removes one PC, "Forget them now" removes the PCs not seen for N days, and a PC is forgotten by itself after `pcDays` days without a start (default 90, 0 keeps all). Rules are never removed by this.
+- **Kernel options** (button on each PC; `PUT /api/pcs/{mac}/options` with `{"args": "...", "debug": {"verbose": true, "serial": false}}`): extra kernel arguments and the *verbose start-up* and *serial console* switches for that PC only. They come after the arguments of the ISO itself, on the kernel line of every ISO that PC starts from its own files (not Windows, not a disk image; the pages of the menu carry the PC's address, so they apply on every page and to a PC's rule too), from the PC's next start. The settings file keeps them under `pcOptions` by MAC address (they are in backups), and a PC that has them is listed even when it has not asked since the server started. Empty arguments and both switches off remove the entry. *Verbose start-up* adds, besides `loglevel=7 ignore_loglevel debug`, the words that the start-up of the kind of system honours: `rd.debug` for dracut (Fedora and what is built on it, Red Hat's installers, openSUSE, Gentoo), `systemd.show_status=1` for the systemd live systems (Fedora, openSUSE, Arch, SystemRescue, Debian, Ubuntu and their relatives), `debug_init` for Alpine and `proxdebug` for Proxmox VE (its debug shell opens before the installer starts: leave it with `exit`). A kind without a word of its own (Tiny Core, ShredOS, Tails) gets only the general ones.
+
+## Other ways to start an ISO
+
+When the boot menu of an ISO has entries besides the usual start that Bootlace can start the same way, the PC's menu gets the line "Other ways to start an ISO >>" (UEFI and BIOS). It opens
+the list of those ISOs, and an ISO opens its entries: "The usual start" first, then the ISO's own entries in the order its menu gives them, the ordinary ones before safe graphics, a
+check of the disc and such. The ISO's boot password, its extra arguments and the PC's own options apply to every one. The ISOs page lists the entries of an ISO under "other ways to start
+it". They are looked for in the background after the server starts or the library changes ("Look again" on the ISOs page makes it forget them), so a new ISO shows its ways after a minute.
+
+## Unattended installs
+
+The **Unattended** page keeps *answer files*, the files an installer reads so that it asks nothing: Debian's preseed, Ubuntu Server's autoinstall (cloud-init `user-data`), Red Hat's kickstart and
+openSUSE's AutoYaST. "New answer file" starts from a template for the kind; each template says at the top that **it erases the disk** and has a password to change.
+
+- **Attaching.** Nothing is attached by itself. Choose a file for an ISO on the ISOs page ("Unattended install"), or for one PC with *Kernel options* on the PCs page ("Follow the ISO's setting",
+  "No answer file for this PC" or a file); a PC's own choice wins over its ISO's. Attaching asks for a confirmation, because every PC that starts that ISO from the menu (or by a rule) then
+  installs without asking.
+- **How the installer gets it.** The kernel line of the ISO gets the argument of the kind (`auto=true priority=critical cdrom-detect/retry=false url=...` for preseed, `autoinstall ds=nocloud-net;s=...`
+  for autoinstall, `inst.ks=...`, `autoyast=...`), placed before a `---` where the line has one. The address is `/answers/<file id>/<MAC>/<name>` on the server: the id cannot be guessed, the file is only
+  given while it is attached to an ISO or a PC, and, like the rest of the server, only to the networks that may use it.
+- **One file for many PCs.** In the text, the words `hostname`, `name`, `mac`, `mac-dash`, `ip` and `serial` between double curly braces are replaced for the PC that asks: `hostname` is the name given
+  on the PCs page made into a host name, or `pc-` and the last six digits of its address.
+- **Passwords.** A file can hold passwords. They are shown as `********` on the page and in the API unless "Show the passwords" is ticked; a file saved with the stars left as they were keeps its
+  values, and a save that would turn a value into the stars is refused. The files are kept in the settings file (so not in a backup made without secrets, nor in the copy beside the library), and
+  the log only says which file was given to which PC, never its text.
+- **What was checked.** Ubuntu Server 26.04.1 installed by itself in a UEFI VM from an autoinstall file (the disk was partitioned, the system installed and it booted under the PC's `hostname`).
+  The kernel arguments of the other kinds are right for their installers but were not run to the end: the Debian *netinst* installer cannot install when it is started this way (it has no CD, see
+  [#59](https://github.com/ghazichaieb/gola-bootlace/issues/59)), and kickstart and AutoYaST were not tried. A Windows `autounattend.xml` is not part of this: Windows Setup still takes the file that
+  sits in the ISO's own folder.
+- **Ubuntu Server** ISOs are now downloaded whole into the PC's memory (the PC needs about the size of the ISO and 2 GB more) instead of being read from the network disk: Ubuntu's installer stops on
+  the network disk with "Invalid dep_id (disk-nbd0)".
 
 ## Long menus
 

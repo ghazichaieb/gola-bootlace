@@ -29,6 +29,8 @@ This page lists what, and says for each point whether it was checked on a real r
 3. **The network is up before the system starts, and its address is kept.** The PC takes the address its DHCP server gave it, and for Ubuntu and its relatives the live session
    keeps exactly that address (the live system would otherwise ask again, get another one, and lose the ISO). So the live session has a fixed address instead of a leased one
    (**checked** that the session works; **expected**: Ubuntu Server's installer may show the network card as set by hand: look at that screen before accepting it).
+3b. **Ubuntu Server ISOs are loaded into memory.** Their installer (subiquity) stops when it finds the network disk that carries the ISO, so Bootlace downloads these ISOs whole into the PC's memory
+   (about the size of the ISO and 2 GB more is needed). Ubuntu desktop ISOs still use the network disk (**checked**: an autoinstall of Ubuntu Server 26.04.1 completed this way in a UEFI VM).
 4. **The kernel gets different arguments from the ones in its own boot menu.** Bootlace takes out the ones that say where the medium is (`findiso=`, `toram`,
    `live-media=`, `root=LABEL...`, `archisolabel=`, ...) and adds the ones that point at the network disk (`ip=dhcp`, `netboot=nfs`, `console=tty0`, ...). The rest of the menu's own
    arguments are kept. Whatever follows a `---` is left to the distribution: Debian's and Ubuntu's installers copy those arguments into the installed system's kernel command
@@ -37,7 +39,9 @@ This page lists what, and says for each point whether it was checked on a real r
    thing it labels otherwise), and Ubuntu desktop ISOs get `cloud-init=disabled`. Neither is a setting of the installed system (**expected**: an installer does not copy
    them; not checked on a complete install of each).
 5. **The distribution's own boot loader and menu are not used.** iPXE loads the kernel, so what that menu would have offered (language and "safe graphics" choices, OEM
-   install, memtest, persistence) is not offered (planned: [#35](https://github.com/ghazichaieb/gola-bootlace/issues/35)). Extra arguments can be added per ISO in the web interface. Some systems start
+   install, memtest, persistence) is not shown as such. Instead, the entries of the ISO's own menu that can be started the same way (by the same strategy as the usual start, with that entry's kernel, start-up disk and arguments
+   minus the ones that say where the medium is) are offered on the menu line "Other ways to start an ISO" (**checked** on a UEFI VM: Clonezilla's VGA 800x600 entry reaches its language page).
+   Entries that depend on the medium (persistence, `toram`, a chain to another disk, memtest images) are left out; "check the disc" is offered but reads the ISO over the network. Extra arguments can be added per ISO (and per PC) in the web interface. Some systems start
    in another video mode than from their own boot loader (**expected**).
 6. **Network card drivers may be loaded earlier than usual.** A few start-up disks (Tails, Alpine, Proxmox VE, ChimeraOS) have no network drivers because they were made for
    a USB stick or disc. Bootlace brings the common ethernet drivers from the ISO's *own* kernel modules (same kernel version) and loads them first (**checked**).

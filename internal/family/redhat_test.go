@@ -1,36 +1,6 @@
 package family
 
-import (
-	"reflect"
-	"strings"
-	"testing"
-)
-
-func TestVerboseArgumentsFollowTheDetectedBootStrategy(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		tree fake
-		want []string
-	}{
-		{"fedora", fake{"/images/pxeboot/vmlinuz": true, "/images/pxeboot/initrd.img": true, "/LiveOS/squashfs.img": true}, []string{"rd.debug"}},
-		{"redhat installer", fake{"/images/pxeboot/vmlinuz": true, "/images/pxeboot/initrd.img": true}, []string{"rd.debug"}},
-		{"gentoo", fake{"/boot/gentoo": true, "/boot/gentoo.igz": true, "/image.squashfs": true}, []string{"rd.debug"}},
-		{"proxmox", fake{"/.pve-cd-id.txt": true, "/boot/linux26": true, "/boot/initrd.img": true, "/pve-installer.squashfs": true}, []string{"proxdebug"}},
-		{"tinycore", fake{"/boot/vmlinuz": true, "/boot/core.gz": true}, nil},
-	} {
-		for _, u := range []URLs{urls, withNBD(urls), withISCSI(urls)} {
-			b, ok := Detect(tc.tree, u)
-			if !ok || !reflect.DeepEqual(b.VerboseArgs, tc.want) {
-				t.Fatalf("%s: detected=%v verbose args=%v, want %v", tc.name, ok, b.VerboseArgs, tc.want)
-			}
-			for _, arg := range tc.want {
-				if strings.Contains(strings.Join(b.Commands, " "), arg) || strings.Contains(b.Args, arg) {
-					t.Fatalf("%s: debug enabled in an ordinary boot", tc.name)
-				}
-			}
-		}
-	}
-}
+import "testing"
 
 func TestADracutLiveIsoUsesTheNetworkDiskThenIscsiThenTheWholeIso(t *testing.T) {
 	tree := fake{"/images/pxeboot/vmlinuz": true, "/images/pxeboot/initrd.img": true, "/LiveOS/squashfs.img": true}

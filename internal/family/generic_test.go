@@ -136,9 +136,6 @@ func TestADracutLiveIsoUsesWhatItsStartUpDiskCanDo(t *testing.T) {
 	both := withISCSI(withNBD(urls))
 	iso := isoWith("/boot/grub/grub.cfg", menu, append(append([]string{"usr/bin/netroot", "usr/bin/iscsiroot"}, base...), modules(true, true)...)...)
 	b, ok := generic(t, iso, both)
-	if len(b.VerboseArgs) != 1 || b.VerboseArgs[0] != "rd.debug" {
-		t.Fatalf("generic dracut strategy lost its debug argument: %v", b.VerboseArgs)
-	}
 	if !ok || !strings.Contains(lines(b), "netroot=nbd:10.0.0.1:10809:abc root=live:/dev/nbd0") || !strings.Contains(lines(b), "enforcing=0") || strings.Contains(lines(b), "CDLABEL") || strings.Contains(lines(b), "rd.live.check") {
 		t.Fatalf("%v\n%s", ok, lines(b))
 	}

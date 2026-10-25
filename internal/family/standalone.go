@@ -84,9 +84,9 @@ func proxmox(c *Context) (Boot, bool) {
 	const args = "rw quiet splash=silent console=tty0"
 	f := c.in("/boot/linux26", "/boot/initrd.img")
 	if u.has(NBD) && t.Exists("/pve-installer.squashfs") {
-		return newBoot("Proxmox VE", f, "ro "+args).withVerbose("proxdebug").withExtra(u, c.proxmoxExtra), true
+		return newBoot("Proxmox VE", f, "ro "+args).withExtra(u, c.proxmoxExtra), true
 	}
-	b := newBoot("Proxmox VE", f, "ro ramdisk_size=16777216 "+args).withVerbose("proxdebug")
+	b := newBoot("Proxmox VE", f, "ro ramdisk_size=16777216 "+args)
 	return b.before("initrd --name /proxmox.iso " + u.ISO + " /proxmox.iso mode=0644"), true
 }
 
