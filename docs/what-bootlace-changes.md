@@ -40,7 +40,7 @@ This page lists what, and says for each point whether it was checked on a real r
    them; not checked on a complete install of each).
 5. **The distribution's own boot loader and menu are not used.** iPXE loads the kernel, so what that menu would have offered (language and "safe graphics" choices, OEM
    install, memtest, persistence) is not shown as such. Instead, the entries of the ISO's own menu that can be started the same way (by the same strategy as the usual start, with that entry's kernel, start-up disk and arguments
-   minus the ones that say where the medium is) are offered on the menu line "Other ways to start an ISO" (**checked** on a UEFI VM: Clonezilla's VGA 800x600 entry reaches its language page).
+   minus the ones that say where the medium is) are offered on the menu line "Other ways to start an ISO" (**checked** on a UEFI VM and on a BIOS VM: Clonezilla's VGA 800x600 entry reaches its language page).
    Entries that depend on the medium (persistence, `toram`, a chain to another disk, memtest images) are left out; "check the disc" is offered but reads the ISO over the network. Extra arguments can be added per ISO (and per PC) in the web interface. Some systems start
    in another video mode than from their own boot loader (**expected**).
 6. **Network card drivers may be loaded earlier than usual.** A few start-up disks (Tails, Alpine, Proxmox VE, ChimeraOS) have no network drivers because they were made for

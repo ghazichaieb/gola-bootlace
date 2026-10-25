@@ -87,6 +87,7 @@ func (s *Server) entryForPC(cfg config.Config, isoID string, e menu.Entry, pc co
 var (
 	wordHostname = regexp.MustCompile(`[^a-z0-9-]+`)
 	wordSerial   = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+	wordAlnum    = regexp.MustCompile(`[^a-z0-9]+`)
 )
 
 // hostnameFor is the name for a PC in a file: the name a person gave it made into a host name, or pc- and the end of its address.
@@ -98,7 +99,7 @@ func hostnameFor(name, mac string) string {
 	if h != "" {
 		return h
 	}
-	flat := strings.ReplaceAll(mac, ":", "")
+	flat := wordAlnum.ReplaceAllString(strings.ToLower(mac), "")
 	if len(flat) >= 6 {
 		return "pc-" + flat[len(flat)-6:]
 	}

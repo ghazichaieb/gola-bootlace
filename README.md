@@ -137,6 +137,13 @@ When Windows asks, allow it through the firewall on **private** networks. Window
 
 In all four, check it from a PC: restart it, choose **boot from network**, and the Bootlace menu should appear. If it does not, the web page's **Log** shows what the PC asked for.
 
+### A PC that can only boot over HTTP
+
+Some newer PCs and servers have no PXE but have **HTTP Boot** (a UEFI feature: *Boot from HTTP* or *UEFI HTTP(S) Boot* in the firmware's boot menu; some need "Network stack" and "HTTP boot" switched on in the setup first).
+Bootlace answers them like any PXE PC: its proxy DHCP tells the firmware to load `http://<server>:8080/ipxe/ipxe.efi`, which then starts the same menu. The network's own DHCP server still gives the PC its address, so no router
+change is needed. It works for x64 UEFI PCs; BIOS and ARM64 PCs are not answered. UEFI Secure Boot has to be off, as for PXE ([#10](https://github.com/ghazichaieb/gola-bootlace/issues/10)). The answer has been checked on the wire,
+**not yet on real firmware**: if your PC does not take it, a note with the PC's model and what its boot menu says is welcome on [#19](https://github.com/ghazichaieb/gola-bootlace/issues/19).
+
 ### Good to know
 
 - **Which systems work, and how well:** [docs/compatibility.md](docs/compatibility.md) lists every ISO tried and what happened. An ISO is marked as working only after it started in the test lab.

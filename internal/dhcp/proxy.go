@@ -17,13 +17,25 @@ const (
 	ArchX64EFI  Arch = 7
 	ArchX64EFI2 Arch = 9 // also seen from some firmware
 	ArchARM64   Arch = 11
-	archUnknown Arch = 0xffff
+	// UEFI firmware that boots over HTTP reports its own codes (IANA, RFC 4578 and later): 15 x86, 16 x64, 19 ARM64, 20 BIOS.
+	ArchIA32HTTP  Arch = 15
+	ArchX64HTTP   Arch = 16
+	ArchARM64HTTP Arch = 19
+	ArchBIOSHTTP  Arch = 20
+	archUnknown   Arch = 0xffff
 )
 
-// Canonical folds the codes that mean the same thing (EFI x64 is reported as 7 by most firmware and 9 by some) into one.
+// Canonical folds the codes that mean the same thing (EFI x64 is reported as 7 by most firmware and 9 by some, and as 16 by firmware doing an HTTP boot) into one.
 func (a Arch) Canonical() Arch {
-	if a == ArchX64EFI2 {
+	switch a {
+	case ArchX64EFI2, ArchX64HTTP:
 		return ArchX64EFI
+	case ArchIA32HTTP:
+		return ArchIA32EFI
+	case ArchARM64HTTP:
+		return ArchARM64
+	case ArchBIOSHTTP:
+		return ArchBIOS
 	}
 	return a
 }
@@ -34,7 +46,7 @@ func (a Arch) String() string {
 		return "bios"
 	case ArchIA32EFI:
 		return "ia32-efi"
-	case ArchX64EFI, ArchX64EFI2:
+	case ArchX64EFI, ArchX64EFI2, ArchX64HTTP:
 		return "x64-efi"
 	case ArchARM64:
 		return "arm64-efi"

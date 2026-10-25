@@ -19,6 +19,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/ipxesafe"
+
 	"github.com/ghazichaieb/gola-bootlace/internal/access"
 )
 
@@ -214,6 +216,9 @@ func CleanArgs(a string) (string, error) {
 	if strings.ContainsAny(a, "\r\n") || len(a) > MaxArgs {
 		return "", fmt.Errorf("extra kernel arguments must be one line of at most %d characters", MaxArgs)
 	}
+	if why := ipxesafe.UnsafeArgs(a); why != "" {
+		return "", errors.New(why)
+	}
 	return a, nil
 }
 
@@ -331,10 +336,11 @@ func (c *Config) Validate() error {
 			delete(c.Args, id)
 			continue
 		}
-		if strings.ContainsAny(a, "\r\n") || len(a) > 300 {
-			return errors.New("extra kernel arguments must be one line of at most 300 characters")
+		clean, err := CleanArgs(a)
+		if err != nil {
+			return err
 		}
-		c.Args[id] = a
+		c.Args[id] = clean
 	}
 	for id, h := range c.BootPasswords {
 		if !idPattern.MatchString(id) || h == "" {

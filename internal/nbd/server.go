@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 const (
@@ -48,6 +49,9 @@ const (
 	errInval = 22
 
 	maxRead = 32 << 20
+
+	maxSessions   = 256              // clients at once
+	handshakeTime = 60 * time.Second // the whole handshake; the connection then lives as long as the PC's disk does (no limit on a quiet one)
 )
 
 // Export is one thing that can be read: an ISO.
@@ -68,12 +72,23 @@ type Server struct {
 
 // Serve accepts clients until the listener is closed.
 func (s *Server) Serve(l net.Listener) error {
+	slots := make(chan struct{}, maxSessions)
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			return err
 		}
+		select {
+		case slots <- struct{}{}:
+		default: // (every client holds buffers and may hold reads of megabytes: a flood of connections must not take the server's memory)
+			if s.Logf != nil {
+				s.Logf("nbd: %s: refused, %d clients are connected already", c.RemoteAddr(), maxSessions)
+			}
+			c.Close()
+			continue
+		}
 		go func() {
+			defer func() { <-slots }()
 			defer c.Close()
 			if err := s.handle(c); err != nil && !errors.Is(err, io.EOF) && s.Logf != nil {
 				s.Logf("nbd: %s: %v", c.RemoteAddr(), err)
@@ -86,6 +101,7 @@ func (s *Server) handle(c net.Conn) error {
 	if tc, ok := c.(*net.TCPConn); ok {
 		_ = tc.SetNoDelay(true)
 	}
+	c.SetDeadline(time.Now().Add(handshakeTime)) //nolint:errcheck // (a client that does not finish the handshake is dropped; transmit lifts the limit)
 	r := bufio.NewReaderSize(c, 64<<10)
 	var hello [18]byte
 	binary.BigEndian.PutUint64(hello[0:], magicInit)
@@ -210,6 +226,7 @@ func (e Export) done() {
 // transmit answers requests: they may be many at once, and the answers may go in any order.
 func (s *Server) transmit(c net.Conn, r *bufio.Reader, e Export) error {
 	defer e.done()
+	c.SetDeadline(time.Time{}) //nolint:errcheck // (the handshake is over: a quiet disk is a disk nobody reads at the moment)
 	var wmu sync.Mutex
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, 64)
@@ -241,7 +258,7 @@ func (s *Server) transmit(c net.Conn, r *bufio.Reader, e Export) error {
 		}
 		switch q.Type {
 		case cmdRead:
-			if int64(q.Offset)+int64(q.Length) > e.Size || q.Length > maxRead {
+			if e.Size < 0 || q.Offset > uint64(e.Size) || uint64(q.Length) > uint64(e.Size)-q.Offset || q.Length > maxRead {
 				respond(q.Handle, errInval, nil)
 				continue
 			}
@@ -250,7 +267,7 @@ func (s *Server) transmit(c net.Conn, r *bufio.Reader, e Export) error {
 			go func(handle, off uint64, n uint32) {
 				defer func() { <-slots; wg.Done() }()
 				buf := make([]byte, n)
-				if _, err := e.R.ReadAt(buf, int64(off)); err != nil && !(errors.Is(err, io.EOF) && int64(off)+int64(n) == e.Size) {
+				if got, err := e.R.ReadAt(buf, int64(off)); got != len(buf) || (err != nil && !errors.Is(err, io.EOF)) {
 					respond(handle, errIO, nil)
 					return
 				}

@@ -14,6 +14,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // BlockSize is the size of a block of an ISO (and of a CD-ROM); DiskBlockSize that of a hard disk image.
@@ -76,14 +77,34 @@ const (
 	opReject     = 0x3f
 )
 
+// Limits against an initiator that asks for too much of the server's memory or time: sessions open at once, how long a login or a quiet session may take, and the most one read command
+// may ask for (initiators read a few hundred KB at a time, 1 to 4 MB at the most).
+const (
+	maxSessions = 256
+	loginTime   = 30 * time.Second
+	idleTime    = 6 * time.Hour // (a PC may sit at the first screen of an installer for hours with its disk on the network; initiators ping, but not all of them)
+	maxRead     = 8 << 20
+)
+
 // Serve accepts initiators until the listener is closed.
 func (t *Target) Serve(l net.Listener) error {
+	slots := make(chan struct{}, maxSessions)
 	for {
 		c, err := l.Accept()
 		if err != nil {
 			return err
 		}
+		select {
+		case slots <- struct{}{}:
+		default: // (every session holds a few hundred KB of buffers and may hold a read of megabytes: a flood of connections must not take the server's memory)
+			if t.Logf != nil {
+				t.Logf("iscsi: %s: refused, %d sessions are open already", c.RemoteAddr(), maxSessions)
+			}
+			c.Close()
+			continue
+		}
 		go func() {
+			defer func() { <-slots }()
 			defer c.Close()
 			if err := t.session(c); err != nil && !errors.Is(err, io.EOF) && t.Logf != nil {
 				t.Logf("iscsi: %s: %v", c.RemoteAddr(), err)
@@ -138,10 +159,12 @@ func (t *Target) session(c net.Conn) error {
 			s.disc.Done()
 		}
 	}()
+	c.SetReadDeadline(time.Now().Add(loginTime)) //nolint:errcheck // (a login that does not finish is dropped)
 	if err := s.login(); err != nil {
 		return err
 	}
 	for {
+		c.SetReadDeadline(time.Now().Add(idleTime)) //nolint:errcheck // (a session that says nothing for this long is dropped)
 		p, err := readPDU(r)
 		if err != nil {
 			return err
@@ -532,12 +555,16 @@ func (s *conn) command(p *pdu) error {
 		default:
 			lba, n = binary.BigEndian.Uint64(cdb[2:]), binary.BigEndian.Uint32(cdb[10:])
 		}
-		if lba+uint64(n) > blocks {
+		if lba > blocks || uint64(n) > blocks-lba {
 			s.respond(itt, statusCheckCondition, &senseOutOfRange, expected, 0)
 			break
 		}
+		if uint64(n)*uint64(bs) > maxRead { // (the buffer for the whole read is made at once: without a limit one command could ask for the size of the disk)
+			s.respond(itt, statusCheckCondition, &senseInvalidField, expected, 0)
+			break
+		}
 		buf := make([]byte, int64(n)*bs)
-		if _, err := s.disc.R.ReadAt(buf, int64(lba)*bs); err != nil && !errors.Is(err, io.EOF) {
+		if got, err := s.disc.R.ReadAt(buf, int64(lba)*bs); got != len(buf) || (err != nil && !errors.Is(err, io.EOF)) {
 			s.respond(itt, statusCheckCondition, &senseMediumError, expected, 0)
 			break
 		}

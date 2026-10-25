@@ -1,9 +1,14 @@
 package nbd
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/binary"
+	"io"
 	"net"
+	"strconv"
 	"testing"
+	"time"
 )
 
 func startServer(t *testing.T, data []byte) string {
@@ -21,6 +26,56 @@ func startServer(t *testing.T, data []byte) string {
 	}
 	go s.Serve(l)
 	return l.Addr().String()
+}
+
+func TestInvalidReadsDoNotReachTheExport(t *testing.T) {
+	for _, off := range []uint64{1<<63 - 1, 1 << 63, ^uint64(0)} {
+		t.Run(strconv.FormatUint(off, 10), func(t *testing.T) {
+			if errno, calls := readReply(t, off, Export{R: &countReader{}, Size: 512}); errno != errInval || calls != 0 {
+				t.Fatalf("invalid offset reached reader: errno=%d calls=%d", errno, calls)
+			}
+		})
+	}
+}
+
+type countReader struct{ calls int }
+
+func (r *countReader) ReadAt(p []byte, off int64) (int, error) {
+	r.calls++
+	return 0, io.EOF
+}
+
+func TestShortReadAtExportEndReturnsIOError(t *testing.T) {
+	if errno, _ := readReply(t, 0, Export{R: &countReader{}, Size: 512}); errno != errIO {
+		t.Fatalf("a truncated export must not return successful zero-filled data: errno=%d", errno)
+	}
+}
+
+func readReply(t *testing.T, off uint64, exp Export) (uint32, int) {
+	t.Helper()
+	server, client := net.Pipe()
+	defer client.Close()
+	_ = client.SetDeadline(time.Now().Add(5 * time.Second))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer server.Close()
+		_ = (&Server{}).transmit(server, bufio.NewReader(server), exp)
+	}()
+	var req [28]byte
+	binary.BigEndian.PutUint32(req[:], magicRequest)
+	binary.BigEndian.PutUint64(req[16:], off)
+	binary.BigEndian.PutUint32(req[24:], 512)
+	if _, err := client.Write(req[:]); err != nil {
+		t.Fatal(err)
+	}
+	var reply [16]byte
+	if _, err := io.ReadFull(client, reply[:]); err != nil {
+		t.Fatal(err)
+	}
+	client.Close()
+	<-done
+	return binary.BigEndian.Uint32(reply[4:]), exp.R.(*countReader).calls
 }
 
 func TestAClientReadsAnExportByName(t *testing.T) {

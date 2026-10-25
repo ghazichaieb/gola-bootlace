@@ -110,17 +110,27 @@ func (m *Manager) partPath(s *Session) (string, error) {
 	return filepath.Join(dir, s.Part), nil
 }
 
-// StartUpload checks the request like a single-request upload does and opens a session for it. An upload of the same name, folder and size that is still open is
+// StartUpload checks the request like a single-request upload does and opens a session for it. An upload of the same name, folder, size and checksum that is still open is
 // continued instead of started again, so a page that was reloaded finds its upload.
 func (m *Manager) StartUpload(u UploadRequest) (*Session, Check, error) {
-	c := m.CheckUpload(u)
+	var existing *Session
+	for _, s := range m.Uploads() {
+		if s.Request.Name == u.Name && s.Request.Folder == u.Folder && s.Request.Size == u.Size &&
+			strings.EqualFold(strings.TrimSpace(s.Request.SHA256), strings.TrimSpace(u.SHA256)) {
+			existing = &s
+			break
+		}
+	}
+	var received int64
+	if existing != nil {
+		received = existing.Received
+	}
+	c := m.checkUpload(u, received)
 	if len(c.Problems) > 0 {
 		return nil, c, errors.New(strings.Join(c.Problems, "; "))
 	}
-	for _, s := range m.Uploads() {
-		if s.Request.Name == u.Name && s.Request.Folder == u.Folder && s.Request.Size == u.Size {
-			return &s, c, nil
-		}
+	if existing != nil {
+		return existing, c, nil
 	}
 	if len(m.Uploads()) >= MaxSessions {
 		return nil, c, fmt.Errorf("%d uploads are open already: finish or cancel one first", MaxSessions)
@@ -261,7 +271,7 @@ func (m *Manager) FinishUpload(id string) (dest string, warnings []string, err e
 	if s.Received != s.Request.Size {
 		return "", nil, fmt.Errorf("the upload is incomplete: %d of %d bytes are here", s.Received, s.Request.Size)
 	}
-	c := m.CheckUpload(s.Request)
+	c := m.checkUpload(s.Request, s.Received)
 	if len(c.Problems) > 0 { // (a file of that name has appeared since the upload was started, or the library has no room left)
 		return "", nil, errors.New(strings.Join(c.Problems, "; "))
 	}
