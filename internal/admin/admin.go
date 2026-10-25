@@ -1066,7 +1066,7 @@ func (a *Admin) pcOptions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.o.Logf != nil {
-		a.o.Logf("web interface: kernel options of %s: arguments %q, verbose %v, serial %v", mac, strings.TrimSpace(in.Args), in.Debug.Verbose, in.Debug.Serial)
+		a.o.Logf("web interface: kernel options of %s: arguments %q, verbose %v, serial %v, shell %v", mac, strings.TrimSpace(in.Args), in.Debug.Verbose, in.Debug.Serial, in.Debug.Shell)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

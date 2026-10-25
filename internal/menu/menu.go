@@ -59,7 +59,7 @@ type Options struct {
 	Page, Pages int
 	Prev, Next  string
 	// Focus is the line that starts highlighted when nothing else is chosen by default: "next" or "prev" (the page buttons), for the pages a person
-	// reached with the buttons, so that going on through the pages takes one key press each.
+	// reached with the buttons: the button that was pressed, so that going on through the pages in that direction takes one key press each.
 	Focus string
 
 	// Ascii draws the text screen as a minimal list on black, with the logo (see Logo) above it. For a BIOS PC, whose screen is code page 437: the blanks
@@ -192,9 +192,15 @@ func plainRow(text string) string { return blank + blank + cell(text, lineLen-2,
 func ScriptWith(title string, entries []Entry, o Options) string {
 	var b strings.Builder
 	b.WriteString("#!ipxe\n")
-	// a page reached with the page buttons keeps the highlight on the button that goes on (Previous on the last page); it comes before the PC's default, otherwise the
-	// usual default "start from the PC's own disk" would pull the highlight back to that line on every page
+	// a page reached with a page button keeps the highlight on the button that was pressed, so that going on in the same direction takes one key press per page: forward
+	// lands on Next page, backward on Previous page. Where that button does not exist (page 1 reached backwards has no Previous page, the last page reached forwards has no
+	// Next page) the other one is highlighted. It comes before the PC's default, otherwise the usual default "start from the PC's own disk" would pull the highlight back
+	// to that line on every page
 	if o.Focus == "next" && o.Next != "" {
+		b.WriteString("set menu-default next\n")
+	} else if o.Focus == "prev" && o.Prev != "" {
+		b.WriteString("set menu-default prev\n")
+	} else if o.Focus != "" && o.Next != "" {
 		b.WriteString("set menu-default next\n")
 	} else if o.Focus != "" && o.Prev != "" {
 		b.WriteString("set menu-default prev\n")

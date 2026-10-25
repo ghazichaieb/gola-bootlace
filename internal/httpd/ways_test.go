@@ -1,6 +1,7 @@
 package httpd
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -21,9 +22,9 @@ func waysISO(id, title string, ways ...family.Way) entryInfo {
 
 var safeWay = family.Way{Title: "Safe graphics", Family: "Ubuntu-style (casper), by its boot menu", Special: true, Commands: []string{"kernel http://s/vmlinuz boot=casper nomodeset quiet", "initrd http://s/initrd", "boot"}}
 
-func waysPage(s *Server, cfg config.Config, visible []entryInfo, pc config.PCOptions, platform, which string, page int) string {
+func waysPage(s *Server, cfg config.Config, visible []entryInfo, pc config.PCOptions, platform, which string, page int, focus ...string) string {
 	rec := httptest.NewRecorder()
-	s.waysMenu(rec, cfg, visible, pc, "", platform, which, page)
+	s.waysMenu(rec, cfg, visible, pc, "", platform, which, page, strings.Join(focus, ""))
 	return strings.ReplaceAll(rec.Body.String(), "\xff", " ") // (a BIOS table lines things up with the byte 0xFF)
 }
 
@@ -81,7 +82,7 @@ func TestALongListOfWaysIsPagedAndTheBackLineIsOnEveryPage(t *testing.T) {
 	}
 	visible := []entryInfo{waysISO("b2", "Ubuntu", ways...)}
 	first := waysPage(s, config.Config{}, visible, config.PCOptions{}, "pcbios", "b2", 1)
-	second := waysPage(s, config.Config{}, visible, config.PCOptions{}, "pcbios", "b2", 2)
+	second := waysPage(s, config.Config{}, visible, config.PCOptions{}, "pcbios", "b2", 2, "next") // (reached with Next page)
 	if !strings.Contains(first, "page 1 of 2") || !strings.Contains(first, "Next page >>") || strings.Contains(first, "Previous page") {
 		t.Fatalf("first page:\n%s", first)
 	}
@@ -103,5 +104,31 @@ func TestTheMainMenuHasALineForTheWaysOnlyWhenAnIsoHasSome(t *testing.T) {
 	}
 	if strings.Contains(without, "Other ways") || strings.Contains(without, ":ways") {
 		t.Fatalf("%s", without)
+	}
+}
+
+func TestThePagesOfTheWaysKeepTheDirectionOfTheButtonThatWasPressed(t *testing.T) {
+	s := &Server{Base: "http://10.0.0.1:8080"}
+	var ways []family.Way
+	for i := 0; i < 25; i++ {
+		ways = append(ways, family.Way{Title: fmt.Sprintf("Way %02d", i), Commands: []string{fmt.Sprintf("kernel http://s/v a%02d", i), "boot"}})
+	}
+	visible := []entryInfo{waysISO("b2", "Ubuntu", ways...)}
+	for _, tc := range []struct {
+		page  int
+		focus string
+		want  string
+	}{
+		{2, "next", "next"}, {3, "next", "next"}, {4, "next", "prev"}, // forwards: Next page until there is none
+		{3, "prev", "prev"}, {2, "prev", "prev"}, {1, "prev", "next"}, // backwards: Previous page until there is none
+	} {
+		got := waysPage(s, config.Config{}, visible, config.PCOptions{}, "pcbios", "b2", tc.page, tc.focus)
+		if !strings.Contains(got, "set menu-default "+tc.want+"\n") {
+			t.Errorf("page %d reached with %s: want the highlight on %s:\n%.400s", tc.page, tc.focus, tc.want, got)
+		}
+	}
+	middle := waysPage(s, config.Config{}, visible, config.PCOptions{}, "pcbios", "b2", 2)
+	if !strings.Contains(middle, "&focus=prev") || !strings.Contains(middle, "&focus=next") {
+		t.Errorf("the page buttons must carry their direction:\n%s", middle)
 	}
 }

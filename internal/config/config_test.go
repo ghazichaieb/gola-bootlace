@@ -223,7 +223,8 @@ func TestPCOptionsAreKeyedByNormalisedMACAndCheckedLikeTheArgumentsOfAnISO(t *te
 		c.PCOptions = map[string]PCOptions{
 			"AA-BB-CC-DD-EE-01": {Args: "  nomodeset  "},
 			"aa:bb:cc:dd:ee:02": {Debug: DebugMode{Serial: true}},
-			"aa:bb:cc:dd:ee:03": {}, // nothing set: not kept
+			"aa:bb:cc:dd:ee:03": {},                              // nothing set: not kept
+			"aa:bb:cc:dd:ee:04": {Debug: DebugMode{Shell: true}}, // the shell switch alone is a setting
 		}
 		return nil
 	})
@@ -231,7 +232,7 @@ func TestPCOptionsAreKeyedByNormalisedMACAndCheckedLikeTheArgumentsOfAnISO(t *te
 		t.Fatal(err)
 	}
 	got := s.Get().PCOptions
-	if len(got) != 2 || got["aa:bb:cc:dd:ee:01"].Args != "nomodeset" || !got["aa:bb:cc:dd:ee:02"].Debug.Serial {
+	if len(got) != 3 || got["aa:bb:cc:dd:ee:01"].Args != "nomodeset" || !got["aa:bb:cc:dd:ee:02"].Debug.Serial || !got["aa:bb:cc:dd:ee:04"].Debug.Shell {
 		t.Fatalf("%+v", got)
 	}
 	if again, _, _ := Open(p, Config{}); again.Get().PCOptions["aa:bb:cc:dd:ee:01"].Args != "nomodeset" {
@@ -245,11 +246,31 @@ func TestPCOptionsAreKeyedByNormalisedMACAndCheckedLikeTheArgumentsOfAnISO(t *te
 	if err := s.Update(func(c *Config) error { c.PCOptions["not-a-mac"] = PCOptions{Args: "x"}; return nil }); err == nil {
 		t.Error("a key that is not a MAC address was accepted")
 	}
-	if got := s.Get().PCOptions; len(got) != 2 {
+	if got := s.Get().PCOptions; len(got) != 3 {
 		t.Fatalf("a refused change must change nothing: %+v", got)
 	}
 	got["aa:bb:cc:dd:ee:01"] = PCOptions{Args: "changed"}
 	if s.Get().PCOptions["aa:bb:cc:dd:ee:01"].Args != "nomodeset" {
 		t.Fatal("Get must return a copy")
+	}
+}
+
+func TestAnISOWithOnlyTheDebugShellSwitchKeepsItAndOneWithNothingDoesNot(t *testing.T) {
+	s, p := open(t)
+	err := s.Update(func(c *Config) error {
+		c.Debug = map[string]DebugMode{"0123456789": {Shell: true}, "abcdef0123": {}}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Get().Debug; len(got) != 1 || !got["0123456789"].Shell {
+		t.Fatalf("%+v", got)
+	}
+	if again, _, _ := Open(p, Config{}); !again.Get().Debug["0123456789"].Shell {
+		t.Fatal("the switch is kept in the file")
+	}
+	if (PCOptions{Debug: DebugMode{Shell: true}}).Empty() {
+		t.Fatal("options with only the shell switch are not empty")
 	}
 }

@@ -67,9 +67,10 @@ func addArgs(commands []string, extra string) []string {
 }
 
 // debugArgs changes the kernel command of an ISO's start for finding faults: the quiet start-up words go, the kernel's messages are turned up and, if asked, the console
-// goes to the first serial port as well (the last console= is the one the kernel treats as its main console).
+// goes to the first serial port as well (the last console= is the one the kernel treats as its main console). The shell switch is separate: it adds the word that makes the
+// system's start-up stop at a shell (family.ShellWords), whether verbose is on or not.
 func debugArgs(commands []string, d config.DebugMode, fam string) []string {
-	if !d.Verbose && !d.Serial {
+	if !d.On() {
 		return commands
 	}
 	out := append([]string(nil), commands...)
@@ -97,6 +98,14 @@ func debugArgs(commands []string, d config.DebugMode, fam string) []string {
 				}
 			}
 		}
+		if d.Shell {
+			for _, w := range family.ShellWords(fam) {
+				if !have[w] {
+					have[w] = true
+					words = append(words, w)
+				}
+			}
+		}
 		if d.Serial {
 			words = append(words, "console=tty0", "console=ttyS0,115200n8")
 		}
@@ -108,7 +117,7 @@ func debugArgs(commands []string, d config.DebugMode, fam string) []string {
 
 // forPC is the entry as one PC gets it: the PC's own extra arguments and debug switches come after the ISO's, on the kernel line of every ISO that is started from its files.
 func forPC(e menu.Entry, o config.PCOptions) menu.Entry {
-	if o.Args == "" && !o.Debug.Verbose && !o.Debug.Serial {
+	if o.Args == "" && !o.Debug.On() {
 		return e
 	}
 	e.Commands = debugArgs(addArgs(e.Commands, o.Args), o.Debug, e.Kind)
@@ -235,7 +244,7 @@ func (s *Server) waysURL(which string, page int) string {
 // waysMenu is the menu of the other ways to start ISOs (issue #35). "list" shows the ISOs whose own boot menu has more than one entry that can be started; one ISO's page shows the
 // usual start first and then each entry of its menu, in the order the menu gives them, the ordinary ones first. The ISO's password, extra arguments and the PC's own options apply
 // as they do to the usual start. Nothing here starts by itself: a person is looking through.
-func (s *Server) waysMenu(w http.ResponseWriter, cfg config.Config, visible []entryInfo, pc config.PCOptions, mac, platform, which string, page int) {
+func (s *Server) waysMenu(w http.ResponseWriter, cfg config.Config, visible []entryInfo, pc config.PCOptions, mac, platform, which string, page int, focus string) {
 	opts := menu.Options{Accent: cfg.MenuAccent, Again: s.menuURL(1), Back: s.menuURL(1), Default: 1}
 	if platform == "efi" {
 		opts.Picture, opts.Width, opts.Height, opts.Top = s.Base+"/bg.png", gfx.Width, gfx.Height, gfx.LogoBottom+16
@@ -282,11 +291,13 @@ func (s *Server) waysMenu(w http.ResponseWriter, cfg config.Config, visible []en
 	opts.Page = page
 	first, last := (page-1)*perPage, min(page*perPage, len(entries))
 	if page > 1 {
-		opts.Prev = s.waysURL(which, page-1)
-		opts.Focus, opts.Default = "next", 0
+		opts.Prev = s.waysURL(which, page-1) + "&focus=prev"
 	}
 	if page < opts.Pages {
-		opts.Next = s.waysURL(which, page+1)
+		opts.Next = s.waysURL(which, page+1) + "&focus=next"
+	}
+	if focus != "" { // reached with a page button: the highlight stays on that button (see menu.Options.Focus)
+		opts.Focus, opts.Default = focus, 0
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	fmt.Fprint(w, menu.ScriptWith(title, entries[first:last], opts))
@@ -373,7 +384,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if ways != "" {
-		s.waysMenu(w, cfg, visible, pc, pcMAC, client.Platform, ways, page)
+		s.waysMenu(w, cfg, visible, pc, pcMAC, client.Platform, ways, page, pageFocus(r.URL.Query()))
 		return
 	}
 	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout, Again: s.menuURL(1), Accent: cfg.MenuAccent}
@@ -422,18 +433,31 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 		opts.Timeout = 0 // the PC is being looked through, not left alone
 	}
 	if page > 1 {
-		opts.Prev = s.menuURL(page - 1)
+		opts.Prev = s.menuURL(page-1) + "&focus=prev"
 	}
 	if page < opts.Pages {
-		opts.Next = s.menuURL(page + 1)
+		opts.Next = s.menuURL(page+1) + "&focus=next"
 	}
-	if paged { // reached with the buttons: the highlight stays on the one that goes on (the last page: the one that goes back)
-		opts.Focus = "next"
+	if paged { // reached with a button: the highlight stays on that button, so that going on in the same direction is one key press per page
+		if opts.Focus = pageFocus(r.URL.Query()); opts.Focus == "" {
+			opts.Focus = "next" // (an address from before the direction was carried)
+		}
 	}
 	if !paged {
 		s.logf("menu for %s: %d ISO file(s)", s.who(client), len(entries))
 	}
 	fmt.Fprint(w, menu.ScriptWith("Gola Bootlace", entries[first:last], opts))
+}
+
+// pageFocus is the page button a person pressed to reach this page: "next", "prev" or "" (the address says nothing, or something else).
+func pageFocus(q url.Values) string {
+	switch q.Get("focus") {
+	case "next":
+		return "next"
+	case "prev":
+		return "prev"
+	}
+	return ""
 }
 
 // queryValue is a value iPXE put in the web address, without anything that could break a line of the log.

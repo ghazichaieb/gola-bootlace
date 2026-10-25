@@ -188,11 +188,16 @@ func glob(p, s string) bool {
 }
 
 // DebugMode is how an ISO is started when it does not start well: Verbose takes out the quiet start-up (no `quiet`, `splash`, `rhgb`) and turns the kernel's messages
-// up; Serial also sends the console to the first serial port (115200 baud), for a PC or a virtual machine whose serial port is being recorded.
+// up; Serial also sends the console to the first serial port (115200 baud), for a PC or a virtual machine whose serial port is being recorded; Shell makes the start-up stop
+// at a shell before the system goes on (the word depends on the kind of system, see family.ShellWords). The three work alone or together: verbose alone never opens a shell.
 type DebugMode struct {
 	Verbose bool `json:"verbose,omitempty"`
 	Serial  bool `json:"serial,omitempty"`
+	Shell   bool `json:"shell,omitempty"`
 }
+
+// On says that at least one switch is set.
+func (d DebugMode) On() bool { return d.Verbose || d.Serial || d.Shell }
 
 // PCOptions are how one PC is started when it needs it (a graphics card that wants `nomodeset`, a PC whose serial port is being recorded): the arguments come after the ones
 // of the ISO itself and the switches work like those of an ISO (see DebugMode), on the kernel line of every ISO that PC starts from its own files.
@@ -204,7 +209,7 @@ type PCOptions struct {
 
 // Empty says that nothing is set: such an entry is not kept.
 func (o PCOptions) Empty() bool {
-	return o.Args == "" && !o.Debug.Verbose && !o.Debug.Serial && o.Answer == ""
+	return o.Args == "" && !o.Debug.On() && o.Answer == ""
 }
 
 // MaxArgs is the longest extra kernel arguments line.
@@ -348,7 +353,7 @@ func (c *Config) Validate() error {
 		}
 	}
 	for id, d := range c.Debug {
-		if !idPattern.MatchString(id) || (!d.Verbose && !d.Serial) {
+		if !idPattern.MatchString(id) || !d.On() {
 			delete(c.Debug, id)
 		}
 	}

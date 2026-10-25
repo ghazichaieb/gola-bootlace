@@ -215,3 +215,48 @@ func TestADiskImageStartsAsAHardDiskOverIscsi(t *testing.T) {
 	}
 	d.Done()
 }
+
+func TestPageButtonsKeepTheirDirectionOnBothKindsOfMenu(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 40; i++ {
+		_ = os.WriteFile(filepath.Join(dir, fmt.Sprintf("iso%02d.iso", i)), []byte("0123456789"), 0o644)
+	}
+	s := &Server{ISODir: dir, Base: "http://10.0.0.1:8080"}
+	ts := httptest.NewServer(s.Handler())
+	defer ts.Close()
+	for _, plat := range []string{"pcbios", "efi"} { // 8 a page on BIOS (5 pages), 12 on UEFI (4 pages)
+		pages := 5
+		if plat == "efi" {
+			pages = 4
+		}
+		at := func(page int, focus string) string {
+			u := fmt.Sprintf("%s/menu?mac=aa:bb:cc:dd:ee:31&plat=%s&page=%d", ts.URL, plat, page)
+			if focus != "" {
+				u += "&focus=" + focus
+			}
+			_, body := get(t, u, nil)
+			return body
+		}
+		_, first := get(t, ts.URL+"/menu?mac=aa:bb:cc:dd:ee:31&plat="+plat, nil)
+		if !strings.Contains(first, "page=2&focus=next") || strings.Contains(first, "focus=prev") {
+			t.Fatalf("%s: the first page links forward only, with its direction:\n%s", plat, first)
+		}
+		for _, tc := range []struct {
+			page  int
+			focus string
+			want  string
+		}{
+			{2, "next", "next"}, {3, "next", "next"}, {pages, "next", "prev"}, // forwards, and the last page has no Next page
+			{pages - 1, "prev", "prev"}, {2, "prev", "prev"}, {1, "prev", "next"}, // backwards, and the first page has no Previous page
+			{3, "", "next"}, // an address from before the direction was carried
+		} {
+			if got := at(tc.page, tc.focus); !strings.Contains(got, "set menu-default "+tc.want+"\n") {
+				t.Errorf("%s page %d reached with %q: the highlight should be on %s:\n%.300s", plat, tc.page, tc.focus, tc.want, got)
+			}
+		}
+		middle := at(3, "next")
+		if !strings.Contains(middle, "page=2&focus=prev") || !strings.Contains(middle, "page=4&focus=next") {
+			t.Errorf("%s: each page button carries the direction it goes in:\n%s", plat, middle)
+		}
+	}
+}

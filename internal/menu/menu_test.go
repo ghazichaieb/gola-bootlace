@@ -165,3 +165,31 @@ func TestEveryTestCommandHasAFallback(t *testing.T) {
 		}
 	}
 }
+
+// A page reached with a page button highlights that same button (forwards: Next page, backwards: Previous page), and the other one where that one does not exist.
+func TestThePageButtonThatWasPressedStaysHighlightedInTheSameDirection(t *testing.T) {
+	entries := []Entry{{Name: "a.iso", Commands: []string{"echo a"}}, {Name: "b.iso", Commands: []string{"echo b"}}}
+	for _, ascii := range []bool{false, true} {
+		for _, def := range []int{-1, 0, 1} { // the PC's own disk, nothing, the first ISO: the buttons win over each of them
+			for _, tc := range []struct {
+				name       string
+				focus      string
+				prev, next string
+				want       string
+			}{
+				{"forwards, middle page", "next", "http://x/menu?page=1", "http://x/menu?page=3", "next"},
+				{"forwards, last page", "next", "http://x/menu?page=2", "", "prev"},
+				{"backwards, middle page", "prev", "http://x/menu?page=1", "http://x/menu?page=3", "prev"},
+				{"backwards, first page", "prev", "", "http://x/menu?page=2", "next"},
+			} {
+				got := ScriptWith("Gola Bootlace", entries, Options{Default: def, Prev: tc.prev, Next: tc.next, Focus: tc.focus, Ascii: ascii, Pages: 3, Page: 2})
+				if !strings.Contains(got, "set menu-default "+tc.want+"\n") {
+					t.Errorf("ascii=%v default=%d %s: want the highlight on %s:\n%.200s", ascii, def, tc.name, tc.want, got)
+				}
+			}
+		}
+	}
+	if got := ScriptWith("x", entries, Options{Default: -1, Next: "http://x/menu?page=2", Pages: 2, Page: 1}); !strings.Contains(got, "set menu-default local\n") {
+		t.Errorf("the first page, not reached with a button, keeps the PC's default:\n%.200s", got)
+	}
+}

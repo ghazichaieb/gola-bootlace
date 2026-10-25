@@ -104,3 +104,51 @@ func TestAPCsOwnOptionsComeAfterThoseOfTheISO(t *testing.T) {
 		t.Fatalf("an ISO that is handed over as a disk has no kernel line: %v", got.Commands)
 	}
 }
+
+func TestTheDebugShellIsItsOwnSwitchAndVerboseNeverOpensOne(t *testing.T) {
+	for _, tc := range []struct{ family, kernel, shell string }{
+		{"Proxmox VE", "kernel http://s/linux quiet splash=silent ramdisk_size=16777216", "proxdebug"},
+		{"Fedora (live)", "kernel http://s/linux quiet rd.live.image", "rd.break=pre-mount"},
+		{"Debian live", "kernel http://s/vmlinuz boot=live quiet splash", "break=premount"},
+		{"Ubuntu (casper)", "kernel http://s/vmlinuz boot=casper quiet splash ---", "break=premount"},
+	} {
+		commands := []string{"echo Starting", tc.kernel, "initrd http://s/initrd", "boot"}
+		original := append([]string(nil), commands...)
+		verbose := debugArgs(commands, config.DebugMode{Verbose: true}, tc.family)
+		if strings.Contains(verbose[1], tc.shell) || strings.Contains(verbose[1], "proxdebug") || strings.Contains(verbose[1], "break=") {
+			t.Errorf("%s: verbose start-up alone opened a shell: %s", tc.family, verbose[1])
+		}
+		shell := debugArgs(commands, config.DebugMode{Shell: true}, tc.family)
+		if !strings.HasSuffix(shell[1], " "+tc.shell) || strings.Count(shell[1], tc.shell) != 1 {
+			t.Errorf("%s: the shell switch alone: %s", tc.family, shell[1])
+		}
+		if strings.Contains(shell[1], "loglevel=7") || !strings.Contains(shell[1], "quiet") {
+			t.Errorf("%s: the shell switch alone must not change the logging: %s", tc.family, shell[1])
+		}
+		all := config.DebugMode{Verbose: true, Shell: true, Serial: true}
+		both := debugArgs(commands, all, tc.family)
+		if !strings.Contains(both[1], tc.shell) || !strings.Contains(both[1], "loglevel=7") || !strings.HasSuffix(both[1], "console=tty0 console=ttyS0,115200n8") || strings.Contains(both[1], "quiet") {
+			t.Errorf("%s: all three: %s", tc.family, both[1])
+		}
+		if again := debugArgs(both, all, tc.family); !reflect.DeepEqual(again, both) {
+			t.Errorf("%s: a second pass changed the line: %v / %v", tc.family, both, again)
+		}
+		if !reflect.DeepEqual(commands, original) {
+			t.Errorf("%s: the original commands were changed", tc.family)
+		}
+		entry := menu.Entry{Kind: tc.family, Commands: commands}
+		if pc := forPC(entry, config.PCOptions{Debug: config.DebugMode{Shell: true}}); !reflect.DeepEqual(pc.Commands, shell) {
+			t.Errorf("%s: a PC switch differs from an ISO switch: %v", tc.family, pc.Commands)
+		}
+	}
+	for _, family := range []string{"Alpine Linux", "Arch Linux", "Tails", "Windows setup", ""} {
+		commands := []string{"kernel http://s/linux quiet", "boot"}
+		if got := debugArgs(commands, config.DebugMode{Shell: true}, family); !reflect.DeepEqual(got, commands) {
+			t.Errorf("%q has no shell word: the kernel line must stay as it is, got %v", family, got)
+		}
+	}
+	disk := []string{"sanboot --drive 0x80 x"}
+	if got := debugArgs(disk, config.DebugMode{Shell: true}, "as a disk"); !reflect.DeepEqual(got, disk) {
+		t.Errorf("a disk has no kernel line: %v", got)
+	}
+}
