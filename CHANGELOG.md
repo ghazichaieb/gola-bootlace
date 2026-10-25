@@ -3,6 +3,10 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **Configured PCs keep their history when the list is full (#61).** A PC with an administrator-assigned name, MAC rule or non-empty kernel/answer options is no longer evicted by new MAC addresses. The 200-PC cap stays: if every slot is protected, new PCs can still boot but are not recorded until a slot is available. Automatic age-based cleanup and explicit Forget actions are unchanged.
+
 ## 0.3.0 - 2026-10-25
 
 **Security: please update from 0.2.x.** A file name in the library (or an entry title of an ISO's own boot menu) could chain iPXE commands that then ran on every PC that showed the menu; anyone who can write into the library folder, for example through an open network share, could use it. Fixed in this release (details below), together with limits on what a network disk client can ask of the server.
