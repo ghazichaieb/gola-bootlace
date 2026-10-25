@@ -85,16 +85,39 @@ func (s *Server) noteClient(r *http.Request) Client {
 	c := s.clients[mac]
 	if c == nil {
 		if len(s.clients) >= maxClients {
+			// Only administrative settings pin a PC; firmware-provided names
+			// and hostnames are untrusted and must not prevent eviction.
+			cfg := s.settings()
+			pinned := map[string]bool{}
+			for mac, name := range cfg.PCNames {
+				if name != "" {
+					pinned[mac] = true
+				}
+			}
+			for _, rule := range cfg.Rules {
+				pinned[rule.MAC] = true
+			}
+			for mac, options := range cfg.PCOptions {
+				if !options.Empty() {
+					pinned[mac] = true
+				}
+			}
 			var oldest string
 			for k, v := range s.clients {
-				if oldest == "" || v.LastSeen.Before(s.clients[oldest].LastSeen) {
+				if !pinned[k] && (oldest == "" || v.LastSeen.Before(s.clients[oldest].LastSeen)) {
 					oldest = k
 				}
 			}
-			delete(s.clients, oldest)
+			if oldest != "" {
+				delete(s.clients, oldest)
+			}
 		}
 		c = &Client{MAC: mac, FirstSeen: now}
-		s.clients[mac] = c
+		// If every slot is pinned, still serve this request and its rules,
+		// but do not grow the list or discard an existing PC's history.
+		if len(s.clients) < maxClients {
+			s.clients[mac] = c
+		}
 	}
 	c.IP, c.LastSeen = ip, now
 	c.Count++

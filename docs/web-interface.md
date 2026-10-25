@@ -55,6 +55,8 @@ A UEFI PC shows the Gola Bootlace logo with the menu on top of it (iPXE's graphi
 
 ## The list of PCs
 
+The list records at most 200 PCs. At capacity, a new MAC address replaces the least recently seen PC without an administrator-assigned name, per-MAC rule, or non-empty kernel/answer options. Firmware host names and asset tags do not protect a record. If all 200 records are protected, new PCs still receive their menu and rules but are not added to the list; existing PCs continue updating. Removing those settings makes a record eligible for capacity eviction again. This protects configured history from random-MAC floods, but does not authenticate a MAC address. Explicit Forget actions and the age-based cleanup below still apply.
+
 - It is kept in `pcs.json` next to the settings file, so a restart does not empty it.
 - A PC's address is the one its request came from.
 - The page is paged (10, 25, 50 or 100 per page; the choice is remembered in the browser, and the first guess comes from the window's height, because the number that fits cannot be known) and has a search box. `/api/pcs` takes `limit`, `offset` and `q`.
