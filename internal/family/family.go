@@ -8,12 +8,14 @@
 package family
 
 import (
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/disc"
 	"github.com/ghazichaieb/gola-bootlace/internal/initrd"
+	"github.com/ghazichaieb/gola-bootlace/internal/ipxesafe"
 )
 
 // Tree is the files of one ISO, or of one partition of a disk image.
@@ -169,13 +171,18 @@ func (c *Context) in(kernel, initrd string) files { return files{c.URLs.FS, kern
 
 // newBoot is the usual start: load the kernel with the arguments and the start-up disk, and boot.
 func newBoot(family string, f files, args string) Boot {
-	b := Boot{Family: family, Kernel: f.kernel, Initrd: f.initrd, Args: args, Commands: []string{"kernel " + f.base + f.kernel + " " + args}}
+	args = ipxesafe.Args(args) // (words of an ISO's own menu: nothing in them may start another iPXE command)
+	b := Boot{Family: family, Kernel: f.kernel, Initrd: f.initrd, Args: args, Commands: []string{"kernel " + f.base + urlPath(f.kernel) + " " + args}}
 	if f.initrd != "" {
-		b.Commands = append(b.Commands, "initrd "+f.base+f.initrd)
+		b.Commands = append(b.Commands, "initrd "+f.base+urlPath(f.initrd))
 	}
 	b.Commands = append(b.Commands, "boot")
 	return b
 }
+
+// urlPath is the path of a file of the ISO as it goes into an address: a name that holds a space or another character an address cannot carry is escaped, so that it stays one word
+// of the command (the server reads it back).
+func urlPath(p string) string { return (&url.URL{Path: p}).EscapedPath() }
 
 // withExtra adds the extra initramfs archive after the ISO's own. build says how it is made when it is not the usual one.
 func (b Boot) withExtra(u URLs, build ExtraBuilder) Boot {

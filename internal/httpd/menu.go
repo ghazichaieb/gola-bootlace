@@ -13,6 +13,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/family"
 	"github.com/ghazichaieb/gola-bootlace/internal/gfx"
+	"github.com/ghazichaieb/gola-bootlace/internal/ipxesafe"
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
 )
@@ -52,7 +53,7 @@ func (s *Server) settings() config.Config {
 
 // addArgs puts extra kernel arguments (the person's, for this ISO) at the end of the kernel command of an ISO's start.
 func addArgs(commands []string, extra string) []string {
-	if extra == "" {
+	if extra = ipxesafe.Args(extra); extra == "" { // (the settings check them when they are saved; a settings file from before that check is cleaned here)
 		return commands
 	}
 	out := append([]string(nil), commands...)

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/ghazichaieb/gola-bootlace/internal/ipxesafe"
 )
 
 // Entry is one line of the menu: a name to show and the iPXE commands that boot it.
@@ -34,8 +36,7 @@ func label(name string, index int) string {
 
 // clean keeps a name on one line and free of anything iPXE would read as a command.
 func clean(s string) string {
-	s = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ", "${", "$ {").Replace(s)
-	return strings.TrimSpace(s)
+	return strings.TrimSpace(ipxesafe.Text(s)) // (no line break, no ${...}, and no word that iPXE would take as the start of another command)
 }
 
 // Script is the iPXE script: a menu with one item per entry, a way to the iPXE shell, and a timeout-free choice. The commands of an entry
@@ -144,7 +145,7 @@ const blank = "\xff"
 
 // cell cuts s to n characters (ending in ".." when it was longer) and fills it up with blanks; right puts the text at the right.
 func cell(s string, n int, right bool) string {
-	s = strings.NewReplacer("\r", " ", "\n", " ", "\t", " ", "${", "$ {").Replace(strings.TrimSpace(s))
+	s = ipxesafe.Text(strings.TrimSpace(s))
 	if len(s) > n {
 		s = s[:n-2] + ".."
 	}
