@@ -113,6 +113,10 @@ type Boot struct {
 	// arguments. Empty for the kinds that cannot be started that way.
 	Kernel, Initrd, Args string
 
+	// Kind is the strategy that built the start ("casper", "live-boot", "archiso", "dracut-live"), empty for a start of any other kind: the other ways an ISO's own menu offers are
+	// only the same kind as the usual start (see Ways).
+	Kind string
+
 	ExtraInitrd string       // an address: a second initramfs archive to load after the ISO's own
 	extra       ExtraBuilder // how that archive is made; nil for the usual one
 }
@@ -177,6 +181,12 @@ func newBoot(family string, f files, args string) Boot {
 func (b Boot) withExtra(u URLs, build ExtraBuilder) Boot {
 	b.ExtraInitrd, b.extra = u.Extra, build
 	return b.before("initrd " + u.Extra)
+}
+
+// kind names the strategy that built the start.
+func (b Boot) kind(k string) Boot {
+	b.Kind = k
+	return b
 }
 
 // before adds an iPXE command just before the final "boot".

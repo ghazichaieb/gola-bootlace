@@ -27,7 +27,8 @@ type entryInfo struct {
 	Protected bool // the menu asks for a password before it starts this ISO
 	ByRule    bool // hidden by a pattern of the settings, not by the ISO's own switch
 	Entry     menu.Entry
-	Display   string // the title and what kind of start it gets, as the menu shows it
+	Display   string       // the title and what kind of start it gets, as the menu shows it
+	Ways      []family.Way // the other entries of the ISO's own boot menu that can start it (empty until the background look has finished)
 }
 
 // settings are the current settings: from the settings file when there is one, otherwise from the fields the program was started with.
@@ -137,6 +138,7 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 				where += ", from a disk image"
 			}
 			e.Boot, e.Known = b, true
+			e.Ways = s.waysOf(iso, b)
 			e.Display = fmt.Sprintf("%s  [%s, %s]", e.Title, where, size)
 			e.Entry = menu.Entry{Name: e.Display, Commands: debugArgs(addArgs(b.Commands, cfg.Args[iso.ID]), cfg.Debug[iso.ID], b.Family), Title: e.Title, Kind: b.Family, Size: size}
 		} else if iso.Disk {
@@ -224,6 +226,71 @@ func (s *Server) menuURL(page int) string {
 	return u
 }
 
+// waysURL is the address of the menu of other ways to start the ISOs ("list": the ISOs that have some) or of one ISO's (its id), as iPXE asks for it.
+func (s *Server) waysURL(which string, page int) string {
+	return s.menuURL(page) + "&ways=" + url.QueryEscape(which)
+}
+
+// waysMenu is the menu of the other ways to start ISOs (issue #35). "list" shows the ISOs whose own boot menu has more than one entry that can be started; one ISO's page shows the
+// usual start first and then each entry of its menu, in the order the menu gives them, the ordinary ones first. The ISO's password, extra arguments and the PC's own options apply
+// as they do to the usual start. Nothing here starts by itself: a person is looking through.
+func (s *Server) waysMenu(w http.ResponseWriter, cfg config.Config, visible []entryInfo, pc config.PCOptions, platform, which string, page int) {
+	opts := menu.Options{Accent: cfg.MenuAccent, Again: s.menuURL(1), Back: s.menuURL(1), Default: 1}
+	if platform == "efi" {
+		opts.Picture, opts.Width, opts.Height, opts.Top = s.Base+"/bg.png", gfx.Width, gfx.Height, gfx.LogoBottom+16
+	} else if platform == "pcbios" {
+		opts.Ascii = true
+	}
+	var entries []menu.Entry
+	title := "Gola Bootlace"
+	if which == "list" {
+		opts.Heading = "Other ways to start an ISO"
+		for _, e := range visible {
+			if len(e.Ways) > 0 {
+				entries = append(entries, menu.Entry{Name: e.Display, Title: e.Title, Kind: fmt.Sprintf("%d ways", len(e.Ways)+1), Commands: []string{"chain " + s.waysURL(e.ISO.ID, 1)}})
+			}
+		}
+	} else {
+		var found *entryInfo
+		for i := range visible {
+			if visible[i].ISO.ID == which && len(visible[i].Ways) > 0 {
+				found = &visible[i]
+			}
+		}
+		if found == nil { // gone or not known any more: back to the list
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			fmt.Fprintf(w, "#!ipxe\nchain %s || shell\n", s.menuURL(1))
+			return
+		}
+		opts.Heading = "How to start " + found.Title
+		title = "Gola Bootlace - " + found.Title
+		usual := forPC(found.Entry, pc)
+		usual.Name, usual.Title, usual.Kind, usual.Size = "The usual start", "The usual start", found.Boot.Family, ""
+		entries = append(entries, usual)
+		for _, way := range found.Ways {
+			cmds := debugArgs(addArgs(way.Commands, cfg.Args[found.ISO.ID]), cfg.Debug[found.ISO.ID], way.Family)
+			entries = append(entries, forPC(menu.Entry{Name: way.Title, Title: way.Title, Kind: way.Family, Commands: cmds, Guard: found.Entry.Guard}, pc))
+		}
+	}
+	perPage := entriesPerPage(platform) - 1 // one line goes to the way back
+	opts.Pages = (len(entries) + perPage - 1) / perPage
+	if opts.Pages < 1 {
+		opts.Pages = 1
+	}
+	page = min(max(page, 1), opts.Pages)
+	opts.Page = page
+	first, last := (page-1)*perPage, min(page*perPage, len(entries))
+	if page > 1 {
+		opts.Prev = s.waysURL(which, page-1)
+		opts.Focus, opts.Default = "next", 0
+	}
+	if page < opts.Pages {
+		opts.Next = s.waysURL(which, page+1)
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	fmt.Fprint(w, menu.ScriptWith(title, entries[first:last], opts))
+}
+
 // entriesPerPage is how many ISOs one page of the menu holds. The screen's size is known here: a UEFI PC shows the picture (a text area of 24 lines under
 // the logo) and a BIOS PC has the 25 lines of its text mode; the heading, the lace mark, the buttons to other pages and the three fixed lines take the rest.
 func entriesPerPage(platform string) int {
@@ -245,7 +312,8 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	paged := page > 0                                                     // a later page of a menu already shown: not a new start, and the PC's rule was applied at the first
+	ways := queryValue(r.URL.Query(), "ways", 64)                         // "list" or an ISO's id: the menu of other ways to start the ISOs (their own boot menu entries)
+	paged := page > 0 || ways != ""                                       // a later page of a menu already shown: not a new start, and the PC's rule was applied at the first
 	pcMAC, _ := config.NormalizeMAC(queryValue(r.URL.Query(), "mac", 17)) // (the pages carry it too: the PC's own kernel arguments go with every ISO it starts)
 	pc := cfg.PCOptions[pcMAC]
 	var client Client
@@ -303,13 +371,26 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			entries = append(entries, forPC(e.Entry, pc))
 		}
 	}
+	if ways != "" {
+		s.waysMenu(w, cfg, visible, pc, client.Platform, ways, page)
+		return
+	}
 	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout, Again: s.menuURL(1), Accent: cfg.MenuAccent}
+	for _, e := range visible { // an ISO whose own boot menu has other ways to start it: one line opens them
+		if len(e.Ways) > 0 {
+			opts.Ways = s.waysURL("list", 1)
+			break
+		}
+	}
 	if client.Platform == "efi" {
 		opts.Picture, opts.Width, opts.Height, opts.Top = s.Base+"/bg.png", gfx.Width, gfx.Height, gfx.LogoBottom+16
 	} else if client.Platform == "pcbios" {
 		opts.Ascii = true // a BIOS PC gets the ASCII frame and table
 	}
 	perPage := entriesPerPage(client.Platform)
+	if opts.Ways != "" {
+		perPage-- // the line to the other ways takes one of the lines of the screen
+	}
 	opts.Pages = (len(entries) + perPage - 1) / perPage
 	if opts.Pages < 1 {
 		opts.Pages = 1

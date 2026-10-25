@@ -85,11 +85,12 @@ type Server struct {
 	saveMu       sync.Mutex
 	savePending  bool
 	mu           sync.Mutex
-	extras       []extraCache          // the last few extra initramfs archives that take long to make (see extraArchive)
-	known        map[string]recognised // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
-	looking      map[string]bool       // the ISOs that are being looked into for what no family is known by (see recogniseGeneric)
-	lookMu       sync.Mutex            // one such look at a time: it reads the whole start-up disk
-	findings     family.Findings       // what those looks found
+	extras       []extraCache            // the last few extra initramfs archives that take long to make (see extraArchive)
+	known        map[string]recognised   // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
+	waysKnown    map[string][]family.Way // the other entries of each ISO's own boot menu that it can be started with (see waysOf), by path, size and time
+	looking      map[string]bool         // the ISOs that are being looked into for what no family is known by (see recogniseGeneric)
+	lookMu       sync.Mutex              // one such look at a time: it reads the whole start-up disk
+	findings     family.Findings         // what those looks found
 	// Handoff holds the PCs that iPXE sent to FreeBSD's loader; their TFTP requests are answered from the ISO they chose.
 	Handoff *handoff.Registry
 	// TFTPAhead is how many blocks to send ahead of the acknowledgements to FreeBSD's loader, which reads its kernel and the whole ISO by TFTP (1 or less: none).

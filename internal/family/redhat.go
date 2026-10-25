@@ -13,11 +13,11 @@ func (c *Context) dracutLive(family string, f files, extra string) Boot {
 	switch u.pick(NBD, ISCSI, Memory) {
 	case NBD:
 		args := "ip=dhcp rd.neednet=1 netroot=nbd:" + u.NBDHost + ":" + u.nbdPort() + ":" + u.NBDName + " root=live:/dev/nbd0 rd.live.image console=tty0" + extra
-		return newBoot(family, f, args).withExtra(u, nil)
+		return newBoot(family, f, args).withExtra(u, nil).kind("dracut-live")
 	case ISCSI:
-		return newBoot(family, f, dracutISCSI(u)+" rd.live.image console=tty0"+extra)
+		return newBoot(family, f, dracutISCSI(u)+" rd.live.image console=tty0"+extra).kind("dracut-live")
 	}
-	return newBoot(family, f, "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"+extra)
+	return newBoot(family, f, "ip=dhcp root=live:"+u.ISO+" rd.live.image console=tty0"+extra).kind("dracut-live")
 }
 
 // dracutISCSI is how a dracut live system is told to find its ISO as a network CD-ROM: it logs in over iSCSI and looks for the disk by its path.
