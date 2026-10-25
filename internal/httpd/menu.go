@@ -234,7 +234,7 @@ func (s *Server) waysURL(which string, page int) string {
 // waysMenu is the menu of the other ways to start ISOs (issue #35). "list" shows the ISOs whose own boot menu has more than one entry that can be started; one ISO's page shows the
 // usual start first and then each entry of its menu, in the order the menu gives them, the ordinary ones first. The ISO's password, extra arguments and the PC's own options apply
 // as they do to the usual start. Nothing here starts by itself: a person is looking through.
-func (s *Server) waysMenu(w http.ResponseWriter, cfg config.Config, visible []entryInfo, pc config.PCOptions, platform, which string, page int) {
+func (s *Server) waysMenu(w http.ResponseWriter, cfg config.Config, visible []entryInfo, pc config.PCOptions, mac, platform, which string, page int) {
 	opts := menu.Options{Accent: cfg.MenuAccent, Again: s.menuURL(1), Back: s.menuURL(1), Default: 1}
 	if platform == "efi" {
 		opts.Picture, opts.Width, opts.Height, opts.Top = s.Base+"/bg.png", gfx.Width, gfx.Height, gfx.LogoBottom+16
@@ -264,12 +264,12 @@ func (s *Server) waysMenu(w http.ResponseWriter, cfg config.Config, visible []en
 		}
 		opts.Heading = "How to start " + found.Title
 		title = "Gola Bootlace - " + found.Title
-		usual := forPC(found.Entry, pc)
+		usual := s.entryForPC(cfg, found.ISO.ID, found.Entry, pc, mac)
 		usual.Name, usual.Title, usual.Kind, usual.Size = "The usual start", "The usual start", found.Boot.Family, ""
 		entries = append(entries, usual)
 		for _, way := range found.Ways {
 			cmds := debugArgs(addArgs(way.Commands, cfg.Args[found.ISO.ID]), cfg.Debug[found.ISO.ID], way.Family)
-			entries = append(entries, forPC(menu.Entry{Name: way.Title, Title: way.Title, Kind: way.Family, Commands: cmds, Guard: found.Entry.Guard}, pc))
+			entries = append(entries, s.entryForPC(cfg, found.ISO.ID, menu.Entry{Name: way.Title, Title: way.Title, Kind: way.Family, Commands: cmds, Guard: found.Entry.Guard}, pc, mac))
 		}
 	}
 	perPage := entriesPerPage(platform) - 1 // one line goes to the way back
@@ -356,7 +356,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			if "iso:"+e.ISO.ID == rule.Action || "native:"+e.ISO.ID == rule.Action { // (a native rule that reaches iPXE: Secure Boot is off, the usual way does)
 				s.logf("%s: its rule starts %s", s.who(client), e.Title)
 				s.setAction(client.MAC, "rule: "+e.Title)
-				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", forPC(e.Entry, pc), s.menuURL(1)))
+				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", s.entryForPC(cfg, e.ISO.ID, e.Entry, pc, pcMAC), s.menuURL(1)))
 				return
 			}
 		}
@@ -368,11 +368,11 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 	for _, e := range infos {
 		if !e.Hidden {
 			visible = append(visible, e)
-			entries = append(entries, forPC(e.Entry, pc))
+			entries = append(entries, s.entryForPC(cfg, e.ISO.ID, e.Entry, pc, pcMAC))
 		}
 	}
 	if ways != "" {
-		s.waysMenu(w, cfg, visible, pc, client.Platform, ways, page)
+		s.waysMenu(w, cfg, visible, pc, pcMAC, client.Platform, ways, page)
 		return
 	}
 	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout, Again: s.menuURL(1), Accent: cfg.MenuAccent}

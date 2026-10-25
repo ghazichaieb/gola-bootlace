@@ -29,7 +29,8 @@ Ubuntu or a rescue tool, and the PC runs it, reading the ISO from the server acr
 You get:
 - one folder of ISOs instead of a drawer of sticks; add an ISO by copying a file, remove it by deleting the file;
 - the same menu on every PC, UEFI or older BIOS, without touching its settings beyond "boot from network";
-- ISOs that start **as they are**: nothing is unpacked or edited on the way.
+- ISOs that start **as they are**: nothing is unpacked or edited on the way;
+- **unattended installs** where you want them: keep answer files (Debian preseed, Ubuntu autoinstall, Red Hat kickstart, openSUSE AutoYaST) on the *Unattended* page and attach one to an ISO or to a single PC; the installer is pointed at it on its kernel line (see [the web interface](docs/web-interface.md#unattended-installs)).
 
 ### What you need
 

@@ -129,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/next", s.next)
 	mux.HandleFunc("/unpack/", s.unpack)
 	mux.HandleFunc("/auth", s.authBoot)
+	mux.HandleFunc(answerPath, s.answers)
 	for path, h := range s.Mount {
 		mux.Handle(path, h)
 	}

@@ -23,7 +23,7 @@ var safeWay = family.Way{Title: "Safe graphics", Family: "Ubuntu-style (casper),
 
 func waysPage(s *Server, cfg config.Config, visible []entryInfo, pc config.PCOptions, platform, which string, page int) string {
 	rec := httptest.NewRecorder()
-	s.waysMenu(rec, cfg, visible, pc, platform, which, page)
+	s.waysMenu(rec, cfg, visible, pc, "", platform, which, page)
 	return strings.ReplaceAll(rec.Body.String(), "\xff", " ") // (a BIOS table lines things up with the byte 0xFF)
 }
 

@@ -217,3 +217,13 @@ the tables above; Alpine, Proxmox VE, ChimeraOS and Lakka were started again aft
 ## Windows Setup in a Proxmox VM (2026-10-24)
 
 Windows 11 (a custom-built English ISO, build 26300.9711, 7.9 GB) started from the network in a UEFI Proxmox VM (OVMF, 6 GB, a 64 MB EFI disk with Bootlace's `ipxe.efi`) and **reached the first page of Windows Setup** (language, time and keyboard) with the **Intel e1000 network card** (`PVE_NIC=e1000` for `tools/proxmox/pve_run.sh`). The card matters: Setup's own environment has no driver for QEMU's e1000e (the earlier "installation files could not be reached" in these VMs), and Proxmox's virtio card needs a driver that is not in Setup either. Not run to the end of an installation here (the Hyper-V runs above did that). A new UEFI VM also waits at its firmware's boot manager for a key: `pve_run.sh` now presses Enter twice, 80 and 120 seconds after the start.
+
+## Unattended installs (2026-10-25, Proxmox VM, UEFI)
+
+- **Ubuntu Server 26.04.1 live server**, autoinstall file attached to the ISO (`autoinstall ds=nocloud-net;s=http://server/answers/<id>/<MAC>/`): cloud-init fetched `meta-data`, `user-data` and `vendor-data`,
+  subiquity read the file and installed onto the second disk by itself, and the installed system booted as `pc-980101` (the `hostname` word of the file). Two things were found on the way and fixed: the file's
+  user name must not be one Ubuntu reserves (`admin`: the template now says `ubuntu`), and **over the network disk subiquity's disk probe fails** ("Invalid dep_id (disk-nbd0) not in storage config"), so Ubuntu
+  Server ISOs are now downloaded whole into memory (the VM had 9 GB for the 2.7 GB ISO). With the network disk on and a server ISO, the menu now picks that way by itself.
+- **Debian 13.7 netinst**, preseed attached: the installer starts, but its first step ("Detect and mount installation media") needs a CD and, with `cdrom-detect/retry=false`, it ends in the
+  installer's manual main menu with no network setup. The preseed is never reached. [#59](https://github.com/ghazichaieb/gola-bootlace/issues/59).
+- Kickstart (`inst.ks=`) and AutoYaST (`autoyast=`): the arguments and the served files were checked by the tests only.

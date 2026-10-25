@@ -15,10 +15,15 @@ func TestCasperReadsTheIsoFromTheNetworkDiskWhenItCan(t *testing.T) {
 	detect(t, "no network disk", tree, urls, "Ubuntu (casper)", "url=http://s/iso/x.iso boot=casper", "cloud-init=disabled", "!netboot", "!extra.cpio")
 }
 
-func TestCloudInitStaysOnForTheServerIsos(t *testing.T) {
-	// casper hands a server ISO the network settings of the start-up, which the network disk needs kept
+func TestUbuntuServerIsosAreDownloadedWholeAndKeepCloudInitOn(t *testing.T) {
+	// the installer of the server ISOs (subiquity) fails its disk probe on the network disk that holds the ISO ("Invalid dep_id (disk-nbd0)"): they go into memory, and cloud-init
+	// stays on because it is what hands the installer an autoinstall file
 	tree := fake{"/casper/vmlinuz": true, "/casper/initrd": true, "/casper/ubuntu-server-minimal.squashfs": true}
-	detect(t, "server", tree, withNBD(urls), "Ubuntu (casper)", "netboot=nfs", "!cloud-init=disabled")
+	detect(t, "server, with a network disk", tree, withNBD(urls), "Ubuntu (casper)", "url=http://s/iso/x.iso boot=casper", "!cloud-init=disabled", "!netboot", "!extra.cpio")
+	detect(t, "server in memory", tree, urls, "Ubuntu (casper)", "url=http://s/iso/x.iso boot=casper", "!cloud-init=disabled", "!netboot")
+	// a desktop ISO keeps the network disk
+	desktop := fake{"/casper/vmlinuz": true, "/casper/initrd": true}
+	detect(t, "desktop", desktop, withNBD(urls), "Ubuntu (casper)", "netboot=nfs", "cloud-init=disabled")
 }
 
 func TestPopOSKeepsItsLiveSystemInAFolderOfItsOwnName(t *testing.T) {

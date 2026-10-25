@@ -68,6 +68,29 @@ the list of those ISOs, and an ISO opens its entries: "The usual start" first, t
 check of the disc and such. The ISO's boot password, its extra arguments and the PC's own options apply to every one. The ISOs page lists the entries of an ISO under "other ways to start
 it". They are looked for in the background after the server starts or the library changes ("Look again" on the ISOs page makes it forget them), so a new ISO shows its ways after a minute.
 
+## Unattended installs
+
+The **Unattended** page keeps *answer files*, the files an installer reads so that it asks nothing: Debian's preseed, Ubuntu Server's autoinstall (cloud-init `user-data`), Red Hat's kickstart and
+openSUSE's AutoYaST. "New answer file" starts from a template for the kind; each template says at the top that **it erases the disk** and has a password to change.
+
+- **Attaching.** Nothing is attached by itself. Choose a file for an ISO on the ISOs page ("Unattended install"), or for one PC with *Kernel options* on the PCs page ("Follow the ISO's setting",
+  "No answer file for this PC" or a file); a PC's own choice wins over its ISO's. Attaching asks for a confirmation, because every PC that starts that ISO from the menu (or by a rule) then
+  installs without asking.
+- **How the installer gets it.** The kernel line of the ISO gets the argument of the kind (`auto=true priority=critical cdrom-detect/retry=false url=...` for preseed, `autoinstall ds=nocloud-net;s=...`
+  for autoinstall, `inst.ks=...`, `autoyast=...`), placed before a `---` where the line has one. The address is `/answers/<file id>/<MAC>/<name>` on the server: the id cannot be guessed, the file is only
+  given while it is attached to an ISO or a PC, and, like the rest of the server, only to the networks that may use it.
+- **One file for many PCs.** In the text, the words `hostname`, `name`, `mac`, `mac-dash`, `ip` and `serial` between double curly braces are replaced for the PC that asks: `hostname` is the name given
+  on the PCs page made into a host name, or `pc-` and the last six digits of its address.
+- **Passwords.** A file can hold passwords. They are shown as `********` on the page and in the API unless "Show the passwords" is ticked; a file saved with the stars left as they were keeps its
+  values, and a save that would turn a value into the stars is refused. The files are kept in the settings file (so not in a backup made without secrets, nor in the copy beside the library), and
+  the log only says which file was given to which PC, never its text.
+- **What was checked.** Ubuntu Server 26.04.1 installed by itself in a UEFI VM from an autoinstall file (the disk was partitioned, the system installed and it booted under the PC's `hostname`).
+  The kernel arguments of the other kinds are right for their installers but were not run to the end: the Debian *netinst* installer cannot install when it is started this way (it has no CD, see
+  [#59](https://github.com/ghazichaieb/gola-bootlace/issues/59)), and kickstart and AutoYaST were not tried. A Windows `autounattend.xml` is not part of this: Windows Setup still takes the file that
+  sits in the ISO's own folder.
+- **Ubuntu Server** ISOs are now downloaded whole into the PC's memory (the PC needs about the size of the ISO and 2 GB more) instead of being read from the network disk: Ubuntu's installer stops on
+  the network disk with "Invalid dep_id (disk-nbd0)".
+
 ## Long menus
 
 The menu on the PC is shown a page at a time when there are more ISOs than fit: 12 per page on a UEFI PC (the picture leaves 24 text lines) and 8 on a BIOS PC (80 x 25), with "Previous page" and "Next page" lines and "page 2 of 3" in the heading. Flipping pages is not counted as a new start in the PCs list, a timeout never fires while someone is looking through the pages, and the menu opens on the page that holds the entry that starts by itself. A BIOS PC gets a minimal list on black instead: the ASCII lace mark with the name beside it, a line "ISO Boot Menu", one row per ISO (size, name, kind of start), a line "Tools" and the three fixed lines, with Gola's red for the logo, the lines and the chosen row. 8 ISOs fit a page. iPXE's BIOS build cannot draw a picture in the VMs tried (the VESA picture path failed in Hyper-V's BIOS VM), block characters and large letters showed badly on a BIOS text screen, and the blanks that line things up are the byte 0xFF, because iPXE joins words with single spaces.

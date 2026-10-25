@@ -50,7 +50,8 @@ func Strip(c config.Config, secrets bool) config.Config {
 	c.PasswordChosen, c.FirstStartDone = false, false // (belong to this container)
 	if !secrets {
 		c.AdminHash, c.SMBPassword = "", ""
-		c.BootPasswords = nil // (hashes of the passwords the menu asks for: kept out of the library copy and of a backup without secrets)
+		c.BootPasswords = nil              // (hashes of the passwords the menu asks for: kept out of the library copy and of a backup without secrets)
+		c.Answers, c.ISOAnswers = nil, nil // (answer files can hold passwords)
 	}
 	return c
 }

@@ -29,6 +29,8 @@ This page lists what, and says for each point whether it was checked on a real r
 3. **The network is up before the system starts, and its address is kept.** The PC takes the address its DHCP server gave it, and for Ubuntu and its relatives the live session
    keeps exactly that address (the live system would otherwise ask again, get another one, and lose the ISO). So the live session has a fixed address instead of a leased one
    (**checked** that the session works; **expected**: Ubuntu Server's installer may show the network card as set by hand: look at that screen before accepting it).
+3b. **Ubuntu Server ISOs are loaded into memory.** Their installer (subiquity) stops when it finds the network disk that carries the ISO, so Bootlace downloads these ISOs whole into the PC's memory
+   (about the size of the ISO and 2 GB more is needed). Ubuntu desktop ISOs still use the network disk (**checked**: an autoinstall of Ubuntu Server 26.04.1 completed this way in a UEFI VM).
 4. **The kernel gets different arguments from the ones in its own boot menu.** Bootlace takes out the ones that say where the medium is (`findiso=`, `toram`,
    `live-media=`, `root=LABEL...`, `archisolabel=`, ...) and adds the ones that point at the network disk (`ip=dhcp`, `netboot=nfs`, `console=tty0`, ...). The rest of the menu's own
    arguments are kept. Whatever follows a `---` is left to the distribution: Debian's and Ubuntu's installers copy those arguments into the installed system's kernel command

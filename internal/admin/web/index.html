@@ -132,7 +132,7 @@ td.k{color:var(--muted);white-space:nowrap}
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const state = { setupDone: undefined, libPath: "", polling: false, view: "dash", isos: [], defaultAction: "", pcs: [], status: null, settings: null, logLast: 0, logLines: [], timers: [], authed: false, version: "" };
-const views = [["dash", "Dashboard"], ["server", "Server"], ["library", "Library"], ["isos", "ISOs"], ["pcs", "PCs"], ["menu", "Menu"], ["log", "Log"], ["account", "Account"]];
+const views = [["dash", "Dashboard"], ["server", "Server"], ["library", "Library"], ["isos", "ISOs"], ["answers", "Unattended"], ["pcs", "PCs"], ["menu", "Menu"], ["log", "Log"], ["account", "Account"]];
 
 async function api(path, method = "GET", body) {
   const opt = { method, headers: { "X-Bootlace": "1" }, credentials: "same-origin" };
@@ -204,7 +204,7 @@ function render() {
   }
   if (state.setupDone === false && !views.some(v => v[0] === "start")) views.unshift(["start", "Start here"]);
   if (state.setupDone === true) { const i = views.findIndex(v => v[0] === "start"); if (i >= 0) views.splice(i, 1); }
-  ({ start: pageStart, dash: pageDash, server: pageServer, library: pageLibrary, isos: pageISOs, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
+  ({ start: pageStart, dash: pageDash, server: pageServer, library: pageLibrary, isos: pageISOs, answers: pageAnswers, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
 }
 
 function toggleTheme() {
@@ -235,6 +235,8 @@ function wireLogin() {
 async function loadCommon() {
   const isos = await api("/api/isos");
   state.isos = isos.isos || []; state.defaultAction = isos.default || "";
+  const answers = await api("/api/answers");
+  state.answers = answers.answers || []; state.answerKinds = answers.kinds || [];
 }
 async function pageDash() {
   const page = $("#page");
@@ -751,7 +753,8 @@ async function pageISOs() {
         <div class="row small" style="gap:14px;margin-top:4px"><label class="row small" style="margin:0;font-weight:500" title="Takes out quiet, splash and rhgb and turns the kernel's messages up (loglevel=7 debug): for finding why an ISO does not start"><input type="checkbox" data-debug="${i.id}" data-kind="verbose" ${i.debug && i.debug.verbose ? "checked" : ""}> Verbose start-up</label>
         <label class="row small" style="margin:0;font-weight:500" title="Also sends the console to the first serial port (115200 baud)"><input type="checkbox" data-debug="${i.id}" data-kind="serial" ${i.debug && i.debug.serial ? "checked" : ""}> Serial console</label></div>
         <details class="small" style="margin-top:4px"><summary>Show the commands a PC gets</summary><pre class="mono small" style="white-space:pre-wrap;word-break:break-all;margin:6px 0 0">${esc((i.commands || []).join("\n"))}</pre></details>
-        ${i.ways && i.ways.length ? `<details class="small" style="margin-top:4px"><summary>${i.ways.length} other way${i.ways.length === 1 ? "" : "s"} to start it (from its own boot menu)</summary><ul class="small" style="margin:6px 0 0 18px;padding:0">${i.ways.map(w => `<li>${esc(w.title)}${w.special ? ' <span class="muted">(special)</span>' : ""}</li>`).join("")}</ul><div class="muted small">A PC reaches them from the menu line "Other ways to start an ISO".</div></details>` : ""}` : ""}</td>
+        ${i.ways && i.ways.length ? `<details class="small" style="margin-top:4px"><summary>${i.ways.length} other way${i.ways.length === 1 ? "" : "s"} to start it (from its own boot menu)</summary><ul class="small" style="margin:6px 0 0 18px;padding:0">${i.ways.map(w => `<li>${esc(w.title)}${w.special ? ' <span class="muted">(special)</span>' : ""}</li>`).join("")}</ul><div class="muted small">A PC reaches them from the menu line "Other ways to start an ISO".</div></details>` : ""}
+        ${answerSelect(i)}` : ""}</td>
       <td class="hide-s" data-l="Starts as">${i.method === "recognised" ? `<span class="badge ok">${esc(i.family)}</span>` : `<span class="badge warn" title="Handed to the PC as a disk: needs a lot of memory and works for few systems">as a disk</span>`}</td>
       <td class="hide-s" data-l="Size">${bytes(i.size)}</td>
       <td data-l="In the menu"><label class="switch"${i.hiddenByRule ? ' title="Hidden by a pattern on the Menu page"' : ""}><input type="checkbox" data-hide="${i.id}" ${i.hidden ? "" : "checked"} ${i.hiddenByRule ? "disabled" : ""} aria-label="Show ${esc(i.title)} in the menu"><span></span></label>${i.hiddenByRule ? `<div class="muted small">by a pattern</div>` : ""}</td>
@@ -780,12 +783,91 @@ async function pageISOs() {
       const id = inp.dataset.debug, box = k => page.querySelector(`input[data-debug="${id}"][data-kind="${k}"]`).checked;
       await api("/api/isos/" + id, "PUT", { debug: { verbose: box("verbose"), serial: box("serial") } }); toast("Saved: used at the next start of this ISO"); await draw();
     }));
+    page.querySelectorAll("select[data-answer]").forEach(sel => sel.onchange = guard(async () => {
+      const i = state.isos.find(x => x.id === sel.dataset.answer) || {}, f = (state.answers || []).find(a => a.id === sel.value) || {};
+      if (sel.value && !await ask("Install without asking?", `Every PC that starts <b>${esc(i.title)}</b> from the menu will install with <b>${esc(f.name)}</b> without asking anything, and the file may erase its disks. One PC can be kept out of it with its own setting (Kernel options on the PCs page).`, "Attach")) { await draw(); return; }
+      await api("/api/isos/" + sel.dataset.answer, "PUT", { answer: sel.value }); toast(sel.value ? "Attached: used at the next start of this ISO" : "Detached"); await draw();
+    }));
     page.querySelectorAll("input[data-hide]").forEach(inp => inp.onchange = guard(async () => { await api("/api/isos/" + inp.dataset.hide, "PUT", { hidden: !inp.checked }); toast(inp.checked ? "Shown in the menu" : "Hidden from the menu"); await draw(); }));
     page.querySelectorAll("input[data-dflt]").forEach(inp => inp.onchange = guard(async () => { const s = await api("/api/settings"); await api("/api/settings", "PUT", { ...s, default: "iso:" + inp.dataset.dflt }); toast("Saved"); await draw(); }));
     page.querySelectorAll("input[data-dflt-other]").forEach(inp => inp.onchange = guard(async () => { const s = await api("/api/settings"); await api("/api/settings", "PUT", { ...s, default: inp.dataset.dfltOther }); toast("Saved"); await draw(); }));
     page.querySelectorAll("[data-go]").forEach(a => a.onclick = e => { e.preventDefault(); state.view = a.dataset.go; render(); });
   };
   await guard(draw)();
+}
+// ---- unattended installs: the answer file an ISO's installer is given (issue #17)
+const answerFamilies = { "Debian installer": "preseed", "Ubuntu (casper)": "autoinstall", "Ubuntu-style (casper), by its boot menu": "autoinstall", "Red Hat family (installer)": "kickstart", "openSUSE": "autoyast" };
+function kindLabel(id) { const k = (state.answerKinds || []).find(x => x.id === id); return k ? k.label : id; }
+function answerOptions(sel, first, withNone) {
+  return `<option value=""${!sel ? " selected" : ""}>${esc(first)}</option>` + (withNone ? `<option value="none"${sel === "none" ? " selected" : ""}>No answer file for this PC</option>` : "") +
+    (state.answers || []).map(a => `<option value="${esc(a.id)}"${sel === a.id ? " selected" : ""}>${esc(a.name)} (${esc(kindLabel(a.kind))})</option>`).join("");
+}
+function answerSelect(i) {
+  if (!answerFamilies[i.family] && !i.answer) return ""; // only the installers that read an answer file
+  if (!(state.answers || []).length && !i.answer) return "";
+  const file = (state.answers || []).find(a => a.id === i.answer), want = answerFamilies[i.family];
+  const hint = file && want && file.kind !== want ? `<div class="warn small">This is a ${esc(kindLabel(file.kind))}, but ${esc(i.family)} reads a ${esc(kindLabel(want))}: the installer will ignore it.</div>` : file ? `<div class="warn small">Every PC that starts this ISO from the menu installs without asking, and the file may erase its disks.</div>` : "";
+  return `<div class="small" style="margin-top:6px"><label style="font-weight:500">Unattended install <select data-answer="${esc(i.id)}" aria-label="Answer file for ${esc(i.title)}">${answerOptions(i.answer || "", "None: the installer asks", false)}</select></label>${hint}</div>`;
+}
+const answerTemplateCache = {};
+async function pageAnswers() {
+  const page = $("#page");
+  page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Unattended installs</h1><button class="btn primary" id="anew">New answer file</button></div>
+  <p class="muted small">An answer file is what an installer reads so that it asks nothing: Debian's preseed, Ubuntu Server's autoinstall, Red Hat's kickstart, openSUSE's AutoYaST. Keep them here, then attach one to an ISO (on the ISOs page) or to one PC (Kernel options on the PCs page). Nothing is attached by itself, and the file <b>may erase disks</b>: only the PCs you chose install without asking. Inside a file, <code>{{hostname}}</code> (the name given to the PC, or <code>pc-</code> and the end of its address), <code>{{mac}}</code>, <code>{{ip}}</code> and <code>{{serial}}</code> are replaced for the PC that asks.</p>
+  <div class="card tablewrap" id="atable"></div>
+  <p class="hint">Passwords in a file are shown as <code>********</code> on this page. They stay in the file when you save it with the stars left as they are. The files are kept in the settings (not in a backup made without secrets) and their text is never written to the log; the installer is given its file at an address only that PC needs, and only while the file is attached.</p>`;
+  const draw = async () => {
+    await loadCommon();
+    const list = state.answers;
+    $("#atable").innerHTML = list.length ? `<table class="rt"><thead><tr><th>Name</th><th>Kind</th><th>Attached to</th><th class="hide-s">Size</th><th></th></tr></thead><tbody>${list.map(a => {
+      const used = [...(a.isos || []).map(x => "ISO " + x.title), ...(a.pcs || []).map(x => "PC " + x.title)];
+      return `<tr><td data-l="Name"><b>${esc(a.name)}</b></td><td data-l="Kind">${esc(kindLabel(a.kind))}</td><td data-l="Attached to">${used.length ? esc(used.join(", ")) : '<span class="muted">nothing</span>'}</td><td class="hide-s" data-l="Size">${bytes(a.size)}</td>
+      <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-aedit="${esc(a.id)}">Edit</button><button class="btn small danger" data-adel="${esc(a.id)}">Delete</button></div></td></tr>`;
+    }).join("")}</tbody></table>` : `<div class="empty">No answer file yet. "New answer file" starts from a template.</div>`;
+    page.querySelectorAll("button[data-aedit]").forEach(b => b.onclick = guard(async () => { editAnswer(b.dataset.aedit, draw); }));
+    page.querySelectorAll("button[data-adel]").forEach(b => b.onclick = guard(async () => {
+      const a = list.find(x => x.id === b.dataset.adel) || {};
+      const used = [...(a.isos || []), ...(a.pcs || [])].length;
+      if (!await ask("Delete " + (a.name || "this file") + "?", used ? `It is attached to ${used} ISO${used === 1 ? "" : "s"} or PC${used === 1 ? "" : "s"}: they will install the usual way again.` : "It is attached to nothing.", "Delete")) return;
+      await api("/api/answers/" + b.dataset.adel, "DELETE"); toast("Deleted"); await draw();
+    }));
+  };
+  $("#anew").onclick = guard(async () => editAnswer("", draw));
+  await guard(draw)();
+}
+async function editAnswer(id, done) {
+  const kinds = state.answerKinds || [];
+  let cur = { name: "", kind: kinds.length ? kinds[0].id : "preseed", content: "" }, masked = false;
+  if (id) { cur = await api("/api/answers/" + encodeURIComponent(id)); masked = !!cur.masked; }
+  const m = modal(`<h2>${id ? "Answer file" : "New answer file"}</h2>
+    <div class="field"><label for="an">Name</label><input type="text" id="an" maxlength="80" value="${esc(cur.name)}" placeholder="Lab PCs, Debian" autocomplete="off"></div>
+    <div class="field"><label for="ak">Kind</label><select id="ak">${kinds.map(k => `<option value="${esc(k.id)}"${k.id === cur.kind ? " selected" : ""}>${esc(k.label)}: ${esc(k.hint)}</option>`).join("")}</select></div>
+    <div class="row small" style="gap:14px;margin:6px 0"><button class="btn small" id="at" type="button">Fill in a template for this kind</button>${masked ? '<label class="row small" style="margin:0;font-weight:500"><input type="checkbox" id="ar"> Show the passwords</label>' : ""}</div>
+    <div class="field"><label for="ac">The file</label><textarea id="ac" rows="20" spellcheck="false" style="width:100%;font-family:ui-monospace,Consolas,monospace;font-size:12px;white-space:pre">${esc(cur.content)}</textarea></div>
+    <p class="err" id="ae" role="alert"></p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="acn">Cancel</button><button class="btn primary" id="asv">Save</button></div>`);
+  const q = s => m.el.querySelector(s);
+  q("#acn").onclick = m.close;
+  q("#at").onclick = async () => {
+    try {
+      if (!answerTemplateCache.t) answerTemplateCache.t = (await api("/api/answers/templates")).templates;
+      if (q("#ac").value.trim() && !await ask("Replace the text?", "The text in the box is replaced by the template.", "Replace")) return;
+      q("#ac").value = answerTemplateCache.t[q("#ak").value] || "";
+    } catch (e) { q("#ae").textContent = e.message; }
+  };
+  if (q("#ar")) q("#ar").onchange = async e => {
+    try {
+      if (e.target.checked) { const full = await api("/api/answers/" + encodeURIComponent(id) + "?reveal=1"); q("#ac").value = full.content; }
+      else { const hid = await api("/api/answers/" + encodeURIComponent(id)); q("#ac").value = hid.content; }
+    } catch (er) { q("#ae").textContent = er.message; }
+  };
+  q("#asv").onclick = async () => {
+    try {
+      const body = { name: q("#an").value, kind: q("#ak").value, content: q("#ac").value };
+      await api(id ? "/api/answers/" + encodeURIComponent(id) : "/api/answers", id ? "PUT" : "POST", body);
+      m.close(); toast("Saved"); await done();
+    } catch (e) { q("#ae").textContent = e.message; }
+  };
 }
 function defaultText() { const d = state.defaultAction; return !d ? "the menu waits for a choice" : d === "local" ? "the PC's own disk starts" : d.startsWith("iso:") ? actionLabel(d) : "set on the command line: " + d; }
 
@@ -879,18 +961,29 @@ async function pagePCs() {
       const save = async () => { try { await api("/api/pcs/" + encodeURIComponent(b.dataset.name) + "/name", "PUT", { name: q("#pn").value }); m.close(); toast("Saved"); await draw(); } catch (e) { q("#pe").textContent = e.message; } };
       q("#ps").onclick = save; q("#pn").onkeydown = e => { if (e.key === "Enter") save(); };
     });
-    page.querySelectorAll("button[data-kopt]").forEach(b => b.onclick = () => {
+    page.querySelectorAll("button[data-kopt]").forEach(b => b.onclick = guard(async () => {
+      await loadCommon();
       const p = state.pcs.find(x => x.mac === b.dataset.kopt) || {}, o = p.options || { args: "", debug: {} };
       const m = modal(`<h2>Kernel options of ${esc(p.name || p.mac || b.dataset.kopt)}</h2><p class="muted small">For this PC only, on the kernel line of every ISO it starts from the ISO's own files (not Windows, not a disk image): for a PC whose graphics need <code>nomodeset</code>, or that is being looked at over its serial port. They come after the arguments of the ISO itself and apply from the PC's next start. Leave everything empty to remove them.</p>
         <div class="field"><label for="ka">Extra kernel arguments (optional)</label><input type="text" id="ka" maxlength="300" value="${esc(o.args || "")}" placeholder="nomodeset" autocomplete="off"></div>
         <div class="row small" style="gap:14px;margin:6px 0"><label class="row small" style="margin:0;font-weight:500" title="Takes out quiet, splash and rhgb, turns the kernel's messages up and adds the debug words of the kind of system"><input type="checkbox" id="kv" ${o.debug && o.debug.verbose ? "checked" : ""}> Verbose start-up</label>
-        <label class="row small" style="margin:0;font-weight:500" title="Also sends the console to the first serial port (115200 baud)"><input type="checkbox" id="ks" ${o.debug && o.debug.serial ? "checked" : ""}> Serial console</label></div><p class="err" id="ke" role="alert"></p>
+        <label class="row small" style="margin:0;font-weight:500" title="Also sends the console to the first serial port (115200 baud)"><input type="checkbox" id="ks" ${o.debug && o.debug.serial ? "checked" : ""}> Serial console</label></div>
+        ${(state.answers || []).length || o.answer ? `<div class="field"><label for="kans">Unattended install for this PC</label><select id="kans">${answerOptions(o.answer || "", "Follow the ISO's setting", true)}</select><p class="hint" style="margin:4px 0 0">An answer file makes the installer of an ISO ask nothing, and it may erase the PC's disks. Files are kept on the Unattended page.</p></div>` : ""}
+        <p class="err" id="ke" role="alert"></p>
         <div class="row" style="justify-content:flex-end"><button class="btn" id="kc">Cancel</button><button class="btn primary" id="kk">Save</button></div>`);
       const q = s => m.el.querySelector(s);
       q("#kc").onclick = m.close;
-      const save = async () => { try { await api("/api/pcs/" + encodeURIComponent(b.dataset.kopt) + "/options", "PUT", { args: q("#ka").value, debug: { verbose: q("#kv").checked, serial: q("#ks").checked } }); m.close(); toast("Saved: used at the next start of this PC"); await draw(); } catch (e) { q("#ke").textContent = e.message; } };
+      const save = async () => {
+        try {
+          const pick = q("#kans") ? q("#kans").value : (o.answer || "");
+          if (pick !== (o.answer || "") && pick && pick !== "none" && !await ask("Install without asking?", `This PC will install with the chosen answer file the next time it starts an ISO from the menu, without asking anything, and the file may erase its disks.`, "Use it")) return;
+          await api("/api/pcs/" + encodeURIComponent(b.dataset.kopt) + "/options", "PUT", { args: q("#ka").value, debug: { verbose: q("#kv").checked, serial: q("#ks").checked } });
+          if (pick !== (o.answer || "")) await api("/api/pcs/" + encodeURIComponent(b.dataset.kopt) + "/answer", "PUT", { answer: pick });
+          m.close(); toast("Saved: used at the next start of this PC"); await draw();
+        } catch (e) { q("#ke").textContent = e.message; }
+      };
       q("#kk").onclick = save; q("#ka").onkeydown = e => { if (e.key === "Enter") save(); };
-    });
+    }));
     page.querySelectorAll("button[data-del]").forEach(b => b.onclick = guard(async () => { await api("/api/rules/" + encodeURIComponent(b.dataset.del), "DELETE"); toast("Rule removed"); await draw(); }));
     page.querySelectorAll("button[data-forget]").forEach(b => b.onclick = guard(async () => { await api("/api/pcs/" + encodeURIComponent(b.dataset.forget), "DELETE"); toast("Forgotten"); await draw(); }));
   };
