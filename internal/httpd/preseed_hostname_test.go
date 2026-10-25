@@ -36,6 +36,9 @@ func TestPreseedHostnameIsSentBeforeNetworkingAndMatchesRenderedFile(t *testing.
 					t.Fatal("shared or unrelated commands changed")
 				}
 			}
+			if tc.mac == "" {
+				return // an installer always has a MAC, and the answer gate (#60) refuses a file to a MAC that never asked for the menu
+			}
 			rec := httptest.NewRecorder()
 			s.answers(rec, httptest.NewRequest("GET", s.answerBase(ansID, tc.mac)+"preseed.cfg", nil))
 			if rec.Code != 200 || rec.Body.String() != "d-i netcfg/get_hostname string "+tc.hostname+"\n" {
