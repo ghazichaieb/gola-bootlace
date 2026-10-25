@@ -17,6 +17,10 @@ program is not yet in its final form and any release may change how it is set up
 - **The DHCP listener can no longer grow the list of PCs without limit (#61).** The menu path was bounded and protected the configured PCs (#62), but a PC that only asked for a boot file was added by a second piece of code with no bound at all, so a flood of DHCP requests with made-up MAC addresses still grew the list (and `pcs.json`) without end. Both paths now go through one function that applies the same bound and the same protection.
 - **Verbose start-up removes silent splash settings (#28).** Valued splash options such as Proxmox's `splash=silent` are removed and other kernel log levels are replaced by `loglevel=7`. The same correction applies to per-PC verbose options. Thanks to @omar-akermi (#58).
 
+## Unreleased
+
+- **Debian preseed installs get the PC's hostname before networking (#64).** When a preseed is attached, the kernel line carries the same sanitized PC name (or MAC-based fallback) as the answer file's hostname word, including an override of DHCP-provided names. Explicit ISO or PC hostname arguments are preserved. Network answers inside a network-fetched preseed arrive too late to configure the initial network.
+
 ## 0.3.0 - 2026-10-25
 
 **Security: please update from 0.2.x.** A file name in the library (or an entry title of an ISO's own boot menu) could chain iPXE commands that then ran on every PC that showed the menu; anyone who can write into the library folder, for example through an open network share, could use it. Fixed in this release (details below), together with limits on what a network disk client can ask of the server.

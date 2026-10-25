@@ -161,7 +161,7 @@ func TestAnEntryGetsTheFileOfItsPCOrItsIsoAndNoneKeepsItAway(t *testing.T) {
 	if got := line("aa:bb:cc:dd:ee:09"); !strings.Contains(got, "autoinstall ds=nocloud-net;s=http://10.0.0.1:8080/answers/"+ansID+"/aa-bb-cc-dd-ee-09/ ---") {
 		t.Errorf("the ISO's file for any PC: %q", got)
 	}
-	if got := line("aa:bb:cc:dd:ee:02"); !strings.Contains(got, "auto=true priority=critical cdrom-detect/retry=false url=http://10.0.0.1:8080/answers/ba9876543210/aa-bb-cc-dd-ee-02/preseed.cfg ---") || strings.Contains(got, "autoinstall") {
+	if got := line("aa:bb:cc:dd:ee:02"); !strings.Contains(got, "auto=true priority=critical cdrom-detect/retry=false url=http://10.0.0.1:8080/answers/ba9876543210/aa-bb-cc-dd-ee-02/preseed.cfg hostname=pc-ddee02 netcfg/hostname=pc-ddee02 ---") || strings.Contains(got, "autoinstall") {
 		t.Errorf("the PC's own file wins: %q", got)
 	}
 	if got := line("aa:bb:cc:dd:ee:03"); got != entry.Commands[0] {
