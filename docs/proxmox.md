@@ -65,8 +65,13 @@ server (PCs that are installing from it are interrupted), checks the download ag
 not answer, it goes back to the old one by itself. The old program is kept as `/usr/local/bin/bootlace.previous`. `update --check` only looks, `update -v 0.2.0` goes to a given
 version, `update -y` does not ask.
 
+Before it asks, `update` (and `update --check`) lists **what is new**, as one short line for each entry of the changelog: every release after the installed one, up to the one
+that is offered. A server that is one release behind sees that release, one that is three behind sees all three (a line starting with `!` is a security note). It compares the
+versions, so a test build such as `0.3.0-9-gabc` counts as newer than 0.3.0; nothing is shown when going back to an older version or when the changelog cannot be fetched.
+
 To change how the container is set up (the unit, the library), run the script again with `CTID=<number>`; it recognises its own container, replaces the program and the
-`update` command, and leaves the settings, the library and the mount alone.
+`update` command, and leaves the settings, the library and the mount alone. When it updates the program it shows the same list, read from the changelog inside the download,
+for the versions between the one installed in the container and the new one.
 
 ### Other things
 

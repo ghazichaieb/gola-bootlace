@@ -73,12 +73,72 @@ arm64) ARCH=arm64 ;;
 *) die "only amd64 and arm64 hosts are supported" ;;
 esac
 
+# ---- "what's new": one short line for each entry of the changelog that is newer than the installed version (the bold start of the entry). The function is written to a file
+# once: this script sources it, and the container's "update" command gets the same text.
+write_whatsnew() {
+	cat >"$tmp/whatsnew.sh" <<'WHATSNEW'
+# whatsnew CHANGELOG.md installed-version new-version
+# Every release AFTER the installed one, up to and including the new one, is listed: a server that is three releases behind sees all three, one that is a single release
+# behind sees one. The releases are compared as versions (sort -V), not looked up by name, so an installed version that is not in the changelog (a test build such as
+# 0.3.0-9-gabc, which counts as newer than 0.3.0) still gets the right ones. With no installed version known, only the new release is shown.
+whatsnew() {
+	[ "$2" != "$3" ] || return 0 # nothing is new
+	if [ -n "$2" ] && [ "$(printf '%s\n%s\n' "$2" "$3" | sort -V | tail -n 1)" != "$3" ]; then return 0; fi # the offered version is older than the installed one
+	wanted=" "
+	for v in $(grep '^## [0-9]' "$1" 2>/dev/null | awk '{print $2}'); do
+		if [ "$v" = "$3" ]; then wanted="$wanted$v "; continue; fi
+		[ -n "$2" ] || continue
+		[ "$v" != "$2" ] || continue
+		[ "$(printf '%s\n%s\n' "$v" "$2" | sort -V | tail -n 1)" = "$v" ] || continue # not newer than the installed one
+		[ "$(printf '%s\n%s\n' "$v" "$3" | sort -V | tail -n 1)" = "$3" ] || continue # newer than the one that is offered
+		wanted="$wanted$v "
+	done
+	awk -v wanted="$wanted" '
+	BEGIN { printing = 0; sections = 0 }
+	/^## / {
+		version = $2
+		printing = (index(wanted, " " version " ") > 0)
+		if (printing) {
+			if (sections >= 10) { more++; printing = 0; next }
+			sections++
+			date = ""
+			if (NF >= 4) date = " (" $4 ")"
+			print "  " version date
+		}
+		next
+	}
+	printing && /^- [*][*]/ {
+		line = $0
+		sub(/^- [*][*]/, "", line)
+		sub(/[*][*].*$/, "", line)
+		sub(/[.]$/, "", line)
+		if (length(line) > 90) line = substr(line, 1, 87) "..."
+		print "    - " line
+		next
+	}
+	printing && /^[*][*]Security/ {
+		line = $0
+		sub(/^[*][*]/, "", line)
+		sub(/[*][*].*$/, "", line)
+		print "    ! " line
+	}
+	END { if (more > 0) print "  (and " more " older " (more == 1 ? "release" : "releases") ": see the full notes)" }
+	' "$1"
+}
+WHATSNEW
+}
+write_whatsnew
+. "$tmp/whatsnew.sh"
+
 # ---- the program: download, check, unpack
 fetch_program() {
 	if [ -n "$BOOTLACE_FILE" ]; then
 		[ -f "$BOOTLACE_FILE" ] || die "no file $BOOTLACE_FILE"
 		case $BOOTLACE_FILE in
-		*.tar.gz | *.tgz) tar -xzf "$BOOTLACE_FILE" -C "$tmp" --wildcards '*/bootlace' --strip-components=1 || die "no program in $BOOTLACE_FILE" ;;
+		*.tar.gz | *.tgz)
+			tar -xzf "$BOOTLACE_FILE" -C "$tmp" --wildcards '*/bootlace' --strip-components=1 || die "no program in $BOOTLACE_FILE"
+			tar -xzf "$BOOTLACE_FILE" -C "$tmp" --wildcards '*/CHANGELOG.md' --strip-components=1 2>/dev/null || true
+			;;
 		*) cp "$BOOTLACE_FILE" "$tmp/bootlace" ;;
 		esac
 	else
@@ -96,6 +156,7 @@ fetch_program() {
 		have=$(sha256sum "$tmp/$file" | awk '{print $1}')
 		[ "$want" = "$have" ] || die "the download is damaged (checksum $have, expected $want)"
 		tar -xzf "$tmp/$file" -C "$tmp" --wildcards '*/bootlace' --strip-components=1
+		tar -xzf "$tmp/$file" -C "$tmp" --wildcards '*/CHANGELOG.md' --strip-components=1 2>/dev/null || true
 	fi
 	chmod 755 "$tmp/bootlace"
 	"$tmp/bootlace" --version | head -n 1
@@ -110,6 +171,7 @@ write_update() {
 # BOOTLACE_BASE=<web folder with SHA256SUMS and the archives> takes the files from there instead of GitHub (a mirror, a test).
 set -eu
 . /etc/bootlace-update.conf
+#WHATSNEW#
 CHECK=0 ASSUME=0 WANT=latest
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -141,6 +203,14 @@ NEW=${NEW%-linux-$ARCH.tar.gz}
 CUR=$(/usr/local/bin/bootlace --version 2>/dev/null | head -n 1 | awk '{print $3}')
 echo "installed: ${CUR:-unknown}   available: $NEW"
 if [ "$CUR" = "$NEW" ]; then echo "Already up to date."; exit 0; fi
+# what is new: a short line for each entry of that release's changelog that is newer than the installed version; nothing when it cannot be fetched or when going back to an older version
+if [ -n "${BOOTLACE_BASE:-}" ]; then CHLOG=$BASE/CHANGELOG.md; else CHLOG=https://raw.githubusercontent.com/$REPO/v$NEW/CHANGELOG.md; fi
+if [ -z "$CUR" ] || [ "$(printf '%s\n%s\n' "$CUR" "$NEW" | sort -V | tail -n 1)" = "$NEW" ]; then
+	if curl -fsSL "$CHLOG" -o "$TMP/CHANGELOG.md" 2>/dev/null; then
+		echo "What's new${CUR:+ since $CUR}:"
+		whatsnew "$TMP/CHANGELOG.md" "$CUR" "$NEW"
+	fi
+fi
 [ "$CHECK" = 1 ] && { echo "A newer version can be installed with: update    (notes: https://github.com/$REPO/releases/tag/v$NEW)"; exit 0; }
 if [ "$ASSUME" = 0 ] && [ -t 0 ]; then
 	echo "The server restarts: PCs that are installing from it are interrupted."
@@ -171,6 +241,7 @@ mv /usr/local/bin/bootlace.previous /usr/local/bin/bootlace
 systemctl start bootlace
 exit 1
 UPDATE
+	sed -i -e "/^#WHATSNEW#\$/{r $tmp/whatsnew.sh" -e 'd}' "$tmp/update" # the same function text as this script uses
 	printf 'REPO=%s\n' "$BOOTLACE_REPO" >"$tmp/bootlace-update.conf"
 }
 
@@ -201,12 +272,26 @@ BOOTLACE_ARGS="$BOOTLACE_ARGS"
 ENVFILE
 }
 
+# show_changes CTID: what the new program brings (from the changelog in its archive), for the versions after the one installed in the container; nothing for a downgrade
+show_changes() {
+	[ -f "$tmp/CHANGELOG.md" ] || return 0
+	local cur new
+	cur=$(pct exec "$1" -- /usr/local/bin/bootlace --version 2>/dev/null | head -n 1 | awk '{print $3}') || cur=""
+	new=$("$tmp/bootlace" --version | head -n 1 | awk '{print $3}')
+	{ [ -n "$new" ] && [ "$cur" != "$new" ]; } || return 0
+	if [ -n "$cur" ] && [ "$(printf '%s\n%s\n' "$cur" "$new" | sort -V | tail -n 1)" != "$new" ]; then return 0; fi
+	say "What's new${cur:+ since $cur}:"
+	whatsnew "$tmp/CHANGELOG.md" "$cur" "$new"
+	echo "Full notes: https://github.com/$BOOTLACE_REPO/releases/tag/v$new"
+}
+
 # ---- update an existing container
 if [ -n "${CTID:-}" ] && pct status "$CTID" >/dev/null 2>&1; then
 	pct config "$CTID" | grep -qE '^description:.*Gola(%20| )Bootlace' || die "container $CTID exists but was not made by this script"
 	fetch_program
 	say "Updating the Bootlace container $CTID ..."
 	pct status "$CTID" | grep -q running || pct start "$CTID"
+	show_changes "$CTID"
 	pct exec "$CTID" -- systemctl stop bootlace || true
 	# wimlib-imagex lets Bootlace start Windows with UEFI Secure Boot on (it puts its files into a copy of boot.wim)
 	pct exec "$CTID" -- env LC_ALL=C DEBIAN_FRONTEND=noninteractive sh -c '(command -v wimlib-imagex >/dev/null && command -v curl >/dev/null) || (apt-get update -qq && apt-get install -y -qq wimtools curl ca-certificates >/dev/null 2>&1)' || true

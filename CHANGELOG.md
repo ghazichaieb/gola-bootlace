@@ -3,6 +3,10 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **The Proxmox update shows what is new.** `update` in the container (and `update --check`), and the script that updates a container from the host, now list a short line for each changelog entry between the installed version and the offered one, not just the latest release: a server three releases behind sees all three, security notes are marked with `!`, a test build counts as newer than the release it came from, and nothing is shown for an older version or when the changelog cannot be read. (A script change: it takes effect when the host script runs, no release is needed.)
+
 ## 0.3.1 - 2026-10-25
 
 - **A separate debug shell switch (#28).** Verbose start-up no longer opens a shell: Proxmox's `proxdebug` (and the shells of the other systems) now belong to a new *Debug shell* switch next to *Verbose start-up* and *Serial console*, on the ISOs page and in a PC's *Kernel options*. It adds the word that stops the start-up at a shell: `proxdebug` (Proxmox VE), `rd.break=pre-mount` (Fedora and the other dracut systems), `break=premount` (Debian live, Ubuntu); systems without such a word ignore it. Each word was checked on a real UEFI virtual machine started through Bootlace (Proxmox VE 9.1, Debian 13 live, Fedora 44 live, Ubuntu 22.04). Settings made before keep working; a PC or ISO with only this switch is kept like one with the others.
