@@ -216,13 +216,9 @@ func (s *Server) NoteDHCP(mac string, efi, ipxe bool) {
 	now := time.Now()
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
-	if s.clients == nil {
-		s.clients = map[string]*Client{}
-	}
 	c := s.clients[m]
 	if c == nil {
-		c = &Client{MAC: m, FirstSeen: now}
-		s.clients[m] = c
+		c = s.admitLocked(m, now) // bounded like the menu path: a flood of DHCP requests with made-up MAC addresses cannot grow the list
 		c.LastAction = "asked for a boot file"
 	}
 	c.LastSeen = now

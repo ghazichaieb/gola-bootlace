@@ -6,6 +6,7 @@ program is not yet in its final form and any release may change how it is set up
 ## Unreleased
 
 - **Configured PCs keep their history when the list is full (#61).** A PC with an administrator-assigned name, MAC rule or non-empty kernel/answer options is no longer evicted by new MAC addresses. The 200-PC cap stays: if every slot is protected, new PCs can still boot but are not recorded until a slot is available. Automatic age-based cleanup and explicit Forget actions are unchanged. Thanks to @omar-akermi (#62).
+- **The DHCP listener can no longer grow the list of PCs without limit (#61).** The menu path was bounded and protected the configured PCs (#62), but a PC that only asked for a boot file was added by a second piece of code with no bound at all, so a flood of DHCP requests with made-up MAC addresses still grew the list (and `pcs.json`) without end. Both paths now go through one function that applies the same bound and the same protection.
 - **Verbose start-up removes silent splash settings (#28).** Valued splash options such as Proxmox's `splash=silent` are removed and other kernel log levels are replaced by `loglevel=7`. The same correction applies to per-PC verbose options. Thanks to @omar-akermi (#58).
 
 ## 0.3.0 - 2026-10-25

@@ -64,6 +64,56 @@ func (c *Client) note(what string, now time.Time) {
 	}
 }
 
+// admitLocked returns the record of a PC, adding it to the list when it is new (the caller holds clientsMu). When the list is full, a new PC replaces the least recently seen
+// PC that no administrator has configured. Only administrative settings pin a PC: a firmware-provided host name or asset tag is untrusted and must not keep a record. When every
+// slot is pinned the PC still gets a record to serve its request, but that record is not put in the list, so the list neither grows nor loses a configured PC's history.
+// Every path that adds a PC (the menu, the DHCP listener) goes through here, so the bound holds for all of them.
+func (s *Server) admitLocked(mac string, now time.Time) *Client {
+	if s.clients == nil {
+		s.clients = map[string]*Client{}
+	}
+	if c := s.clients[mac]; c != nil {
+		return c
+	}
+	if len(s.clients) >= maxClients {
+		pinned := s.pinnedPCs()
+		var oldest string
+		for k, v := range s.clients {
+			if !pinned[k] && (oldest == "" || v.LastSeen.Before(s.clients[oldest].LastSeen)) {
+				oldest = k
+			}
+		}
+		if oldest != "" {
+			delete(s.clients, oldest)
+		}
+	}
+	c := &Client{MAC: mac, FirstSeen: now}
+	if len(s.clients) < maxClients {
+		s.clients[mac] = c
+	}
+	return c
+}
+
+// pinnedPCs is the set of MAC addresses an administrator has configured: a name, a rule, or kernel/debug/answer options.
+func (s *Server) pinnedPCs() map[string]bool {
+	cfg := s.settings()
+	pinned := map[string]bool{}
+	for mac, name := range cfg.PCNames {
+		if name != "" {
+			pinned[mac] = true
+		}
+	}
+	for _, rule := range cfg.Rules {
+		pinned[rule.MAC] = true
+	}
+	for mac, options := range cfg.PCOptions {
+		if !options.Empty() {
+			pinned[mac] = true
+		}
+	}
+	return pinned
+}
+
 // noteClient records the PC behind a menu request and returns what is known of it.
 func (s *Server) noteClient(r *http.Request) Client {
 	q := r.URL.Query()
@@ -82,43 +132,7 @@ func (s *Server) noteClient(r *http.Request) Client {
 	if s.clients == nil {
 		s.clients = map[string]*Client{}
 	}
-	c := s.clients[mac]
-	if c == nil {
-		if len(s.clients) >= maxClients {
-			// Only administrative settings pin a PC; firmware-provided names
-			// and hostnames are untrusted and must not prevent eviction.
-			cfg := s.settings()
-			pinned := map[string]bool{}
-			for mac, name := range cfg.PCNames {
-				if name != "" {
-					pinned[mac] = true
-				}
-			}
-			for _, rule := range cfg.Rules {
-				pinned[rule.MAC] = true
-			}
-			for mac, options := range cfg.PCOptions {
-				if !options.Empty() {
-					pinned[mac] = true
-				}
-			}
-			var oldest string
-			for k, v := range s.clients {
-				if !pinned[k] && (oldest == "" || v.LastSeen.Before(s.clients[oldest].LastSeen)) {
-					oldest = k
-				}
-			}
-			if oldest != "" {
-				delete(s.clients, oldest)
-			}
-		}
-		c = &Client{MAC: mac, FirstSeen: now}
-		// If every slot is pinned, still serve this request and its rules,
-		// but do not grow the list or discard an existing PC's history.
-		if len(s.clients) < maxClients {
-			s.clients[mac] = c
-		}
-	}
+	c := s.admitLocked(mac, now)
 	c.IP, c.LastSeen = ip, now
 	c.Count++
 	c.note("asked for the menu", now)
