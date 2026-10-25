@@ -56,7 +56,7 @@ It suits what boots and then runs from memory or only needs its loader's disk: r
 
 ### Run C and the Windows tests (2026-10-22, Hyper-V lab, UEFI, Secure Boot off)
 
-- Working: CachyOS (4 GB VM, network block disk), Debian 13.7 and Kali 2026.2 netinst (installer starts, language page), SystemRescue (a graphical session via `startx` works).
+- Working: CachyOS (4 GB VM, network block disk), Debian 13.7 and Kali 2026.2 netinst (the installer starts and shows its language page, but cannot complete an install, see #59), SystemRescue (a graphical session via `startx` works).
 - **ShredOS** needs more memory than it looks: its kernel is 352 MB with the whole system inside, iPXE holds it and the kernel unpacks it. With 2 GB nothing appears on screen
   (no message at all); with 4 GB it boots to nwipe. There is no streaming alternative (one file), so the menu cannot do better than "needs about 4 GB".
 - **Hiren's BootCD PE** (a Windows PE with no installation image): through wimboot it failed with `0xc0000017 not enough memory to create a ramdisk` even with 4 GB, because the
@@ -226,4 +226,11 @@ Windows 11 (a custom-built English ISO, build 26300.9711, 7.9 GB) started from t
   Server ISOs are now downloaded whole into memory (the VM had 9 GB for the 2.7 GB ISO). With the network disk on and a server ISO, the menu now picks that way by itself.
 - **Debian 13.7 netinst**, preseed attached: the installer starts, but its first step ("Detect and mount installation media") needs a CD and, with `cdrom-detect/retry=false`, it ends in the
   installer's manual main menu with no network setup. The preseed is never reached. [#59](https://github.com/ghazichaieb/gola-bootlace/issues/59).
+  **Why (read from the ISO's `install.amd/gtk/initrd.gz`, 2026-10-25):** it is the CD flavour of the installer. Its start-up disk holds `cdrom-detect` and `load-cdrom` but no `iso-scan`, no network block
+  device or loop driver, no iSCSI initiator, and not even the udebs that set up the network (`netcfg`, `choose-mirror`, `download-installer`): it loads those from the CD itself, so it cannot go one step
+  without a device the kernel calls a CD. Bootlace hands the ISO over as a network disk (`/dev/nbd0`) and the installer does not look there. **What would make it work:** an extra start-up archive that adds
+  the NBD driver (`nbd-modules-<kernel>-di`, `loop`/`isofs` modules, which the ISO carries as udebs in its pool), a client for the network disk (the Go client of this project is static) and an early
+  command that connects it and tells `cdrom-detect` to use that device (`cdrom-detect/manual_cdrom`, `cdrom-detect/cdrom_device`): a new start strategy for this installer that has to follow the kernel of each
+  Debian release. Another way is Debian's own *netboot* installer (its kernel and start-up disk are on the Debian mirror, not on the ISO), which needs the mirror reachable. Neither is built: use
+  Debian's or Kali's **live** ISOs (they start and run) or the full Kali installer ISO, and do not attach a preseed to a netinst ISO.
 - Kickstart (`inst.ks=`) and AutoYaST (`autoyast=`): the arguments and the served files were checked by the tests only.
