@@ -77,7 +77,29 @@ func (s *Server) withAnswer(cfg config.Config, isoID string, e menu.Entry, mac s
 	if !ok {
 		return e
 	}
-	e.Commands = insertArgs(e.Commands, answerArgs(a.Kind, s.answerBase(id, mac)))
+	args := answerArgs(a.Kind, s.answerBase(id, mac))
+	if a.Kind == "preseed" {
+		// Network preseeding arrives after netcfg; the hostname must be
+		// supplied at boot, using the same value as {{hostname}} in the file.
+		// Keep an explicit ISO/PC hostname choice instead of overriding it.
+		explicit := false
+		for _, command := range e.Commands {
+			if !strings.HasPrefix(command, "kernel ") {
+				continue
+			}
+			for _, word := range strings.Fields(command) {
+				if strings.HasPrefix(word, "hostname=") || strings.HasPrefix(word, "netcfg/get_hostname=") || strings.HasPrefix(word, "netcfg/hostname=") {
+					explicit = true
+				}
+			}
+			break
+		}
+		if !explicit {
+			hostname := hostnameFor(cfg.PCNames[mac], mac)
+			args += " hostname=" + hostname + " netcfg/hostname=" + hostname
+		}
+	}
+	e.Commands = insertArgs(e.Commands, args)
 	return e
 }
 
