@@ -80,7 +80,7 @@ func debugArgs(commands []string, d config.DebugMode, fam string) []string {
 		var words []string
 		have := map[string]bool{}
 		for _, w := range strings.Fields(c) {
-			if d.Verbose && (w == "quiet" || w == "splash" || w == "rhgb") {
+			if d.Verbose && (w == "quiet" || w == "splash" || w == "rhgb" || strings.HasPrefix(w, "splash=") || (strings.HasPrefix(w, "loglevel=") && w != "loglevel=7")) {
 				continue
 			}
 			if d.Serial && strings.HasPrefix(w, "console=") {

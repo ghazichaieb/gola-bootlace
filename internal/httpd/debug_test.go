@@ -9,6 +9,34 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
 )
 
+func TestVerboseRemovesValuedSplashAndOverridesLogLevels(t *testing.T) {
+	for _, fam := range []string{"Proxmox VE", "Fedora (live)"} {
+		commands := []string{"kernel http://s/kernel quiet splash=silent loglevel=3 console=tty0", "initrd http://s/initrd", "boot"}
+		for _, mode := range []config.DebugMode{{}, {Serial: true}} {
+			got := debugArgs(commands, mode, fam)
+			if !strings.Contains(got[0], "splash=silent") || !strings.Contains(got[0], "loglevel=3") {
+				t.Fatalf("non-verbose mode changed logging: %v", got)
+			}
+		}
+		mode := config.DebugMode{Verbose: true, Serial: true}
+		got := debugArgs(commands, mode, fam)
+		if strings.Contains(got[0], "splash=") || strings.Contains(got[0], "loglevel=3") || strings.Count(got[0], "loglevel=7") != 1 {
+			t.Fatalf("unexpected verbose command: %s", got[0])
+		}
+		if again := debugArgs(got, mode, fam); !reflect.DeepEqual(got, again) {
+			t.Fatalf("not idempotent: %v / %v", got, again)
+		}
+		if got[1] != commands[1] || got[2] != commands[2] || !strings.Contains(commands[0], "splash=silent") {
+			t.Fatal("changed other commands or original input")
+		}
+		entry := menu.Entry{Kind: fam, Commands: commands}
+		pc := forPC(entry, config.PCOptions{Debug: mode})
+		if !reflect.DeepEqual(pc.Commands, got) {
+			t.Fatalf("PC options differ: %v", pc.Commands)
+		}
+	}
+}
+
 func TestDebugModeLoudensTheKernelLineAndMovesTheConsoleToTheSerialPort(t *testing.T) {
 	commands := []string{"echo Starting", "kernel http://s/vmlinuz boot=casper quiet splash console=tty0 ---", "initrd http://s/initrd", "boot"}
 	if got := debugArgs(commands, config.DebugMode{}, ""); !reflect.DeepEqual(got, commands) {

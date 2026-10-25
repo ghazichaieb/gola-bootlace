@@ -36,6 +36,8 @@ minutes. Anyone on the network can reach the login page, so use a password you w
 
 Everything applies at the next start of a PC: the menu is made again for each one.
 
+Verbose start-up also removes valued splash options such as `splash=silent` and replaces other kernel log levels with `loglevel=7`, for both ISO and PC options. Proxmox's verbose mode opens debug shells: type `exit` or press Ctrl+D to continue installation.
+
 ## Settings file
 
 Settings made in the interface are kept in the file given by `-config` (default `bootlace.json`; `/var/lib/bootlace/config.json` in the Proxmox
