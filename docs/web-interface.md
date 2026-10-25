@@ -77,11 +77,12 @@ openSUSE's AutoYaST. "New answer file" starts from a template for the kind; each
   "No answer file for this PC" or a file); a PC's own choice wins over its ISO's. Attaching asks for a confirmation, because every PC that starts that ISO from the menu (or by a rule) then
   installs without asking.
 - **How the installer gets it.** The kernel line of the ISO gets the argument of the kind (`auto=true priority=critical cdrom-detect/retry=false url=...` for preseed, `autoinstall ds=nocloud-net;s=...`
-  for autoinstall, `inst.ks=...`, `autoyast=...`), placed before a `---` where the line has one. The address is `/answers/<file id>/<MAC>/<name>` on the server: the id cannot be guessed, the file is only
-  given while it is attached to an ISO or a PC, and, like the rest of the server, only to the networks that may use it.
+  for autoinstall, `inst.ks=...`, `autoyast=...`), placed before a `---` where the line has one. The address is `/answers/<file id>/<MAC>/<name>` on the server: the id cannot be guessed and the file is only
+  given while it is attached to an ISO or a PC, but **an installer cannot log in, so the file is not secret from the local network**: anyone who can reach the server and asks the menu for that ISO sees
+  the address in its kernel line and can read the file (with any MAC address in the path). Like the rest of the server it is only given to the networks that may use it (Server > Access).
 - **One file for many PCs.** In the text, the words `hostname`, `name`, `mac`, `mac-dash`, `ip` and `serial` between double curly braces are replaced for the PC that asks: `hostname` is the name given
   on the PCs page made into a host name, or `pc-` and the last six digits of its address.
-- **Passwords.** A file can hold passwords. They are shown as `********` on the page and in the API unless "Show the passwords" is ticked; a file saved with the stars left as they were keeps its
+- **Passwords.** Put password *hashes* in a file, not passwords (the templates ask for hashes: `openssl passwd -6` or `mkpasswd -m sha-512`, or an SSH key), because of the point above. A file can hold secrets. They are shown as `********` on the page and in the API unless "Show the passwords" is ticked; a file saved with the stars left as they were keeps its
   values, and a save that would turn a value into the stars is refused. The files are kept in the settings file (so not in a backup made without secrets, nor in the copy beside the library), and
   the log only says which file was given to which PC, never its text.
 - **What was checked.** Ubuntu Server 26.04.1 installed by itself in a UEFI VM from an autoinstall file (the disk was partitioned, the system installed and it booted under the PC's `hostname`).

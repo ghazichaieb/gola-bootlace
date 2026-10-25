@@ -15,7 +15,8 @@ import (
 
 // answerTemplates are starting points, one per kind. Each one erases a disk: the first lines of every file say so, and the passwords in them have to be changed.
 var answerTemplates = map[string]string{
-	"preseed": `# Debian preseed: an unattended install. IT ERASES THE DISK of every PC that starts with it. Change the password below before using it.
+	"preseed": `# Debian preseed: an unattended install. IT ERASES THE DISK of every PC that starts with it. Put a password HASH in the line below first (mkpasswd -m sha-512):
+# anyone on the network can read this file, so never type a plain password into it. Until then nobody can sign in with a password.
 # The words hostname, name, mac, mac-dash, ip and serial between double curly braces are replaced for the PC that asks (hostname: the name given on the PCs page, or pc- and the end of its address).
 d-i debian-installer/locale string en_US.UTF-8
 d-i keyboard-configuration/xkb-keymap select us
@@ -30,8 +31,7 @@ d-i mirror/http/proxy string
 d-i passwd/root-login boolean false
 d-i passwd/user-fullname string Administrator
 d-i passwd/username string admin
-d-i passwd/user-password password CHANGE-ME-NOW
-d-i passwd/user-password-again password CHANGE-ME-NOW
+d-i passwd/user-password-crypted password PUT-A-PASSWORD-HASH-HERE
 d-i clock-setup/utc boolean true
 d-i time/zone string UTC
 d-i partman-auto/method string regular
@@ -48,7 +48,8 @@ d-i grub-installer/bootdev string default
 d-i finish-install/reboot_in_progress note
 `,
 	"autoinstall": `#cloud-config
-# Ubuntu Server autoinstall. IT ERASES THE DISK of every PC that starts with it. Put a crypted password in "password" first (openssl passwd -6).
+# Ubuntu Server autoinstall. IT ERASES THE DISK of every PC that starts with it. Put a crypted password in "password" first (openssl passwd -6); anyone on the network can read this file,
+# so never type a plain password into it.
 # The words hostname, name, mac, mac-dash, ip and serial between double curly braces are replaced for the PC that asks (hostname: the name given on the PCs page, or pc- and the end of its address).
 autoinstall:
   version: 1
@@ -67,7 +68,8 @@ autoinstall:
       name: direct
   shutdown: reboot
 `,
-	"kickstart": `# Red Hat kickstart (Fedora, Alma, Rocky, CentOS). IT ERASES THE DISKS of every PC that starts with it. Change the password below before using it.
+	"kickstart": `# Red Hat kickstart (Fedora, Alma, Rocky, CentOS). IT ERASES THE DISKS of every PC that starts with it. Put a password HASH in the rootpw line first (openssl passwd -6): anyone on the network
+# can read this file, so never type a plain password into it. Until then nobody can sign in as root with a password.
 # The words hostname, name, mac, mac-dash, ip and serial between double curly braces are replaced for the PC that asks (hostname: the name given on the PCs page, or pc- and the end of its address).
 # Where the packages come from is already on the kernel line (inst.repo).
 text
@@ -75,7 +77,7 @@ lang en_US.UTF-8
 keyboard us
 timezone UTC
 network --bootproto=dhcp --hostname={{hostname}}
-rootpw --plaintext CHANGE-ME-NOW
+rootpw --iscrypted PUT-A-PASSWORD-HASH-HERE
 zerombr
 clearpart --all --initlabel
 autopart
@@ -87,7 +89,8 @@ reboot
 `,
 	"autoyast": `<?xml version="1.0"?>
 <!DOCTYPE profile>
-<!-- openSUSE AutoYaST. IT ERASES THE DISKS of every PC that starts with it. Change the password below before using it.
+<!-- openSUSE AutoYaST. IT ERASES THE DISKS of every PC that starts with it. Put a password HASH in user_password first (openssl passwd -6): anyone on the network can read this file,
+     so never type a plain password into it.
      The words hostname, name, mac, mac-dash, ip and serial between double curly braces are replaced for the PC that asks (hostname: the name given on the PCs page, or pc- and the end of its address). -->
 <profile xmlns="http://www.suse.com/1.0/yast2ns" xmlns:config="http://www.suse.com/1.0/configns">
   <general>
@@ -103,8 +106,8 @@ reboot
   <users config:type="list">
     <user>
       <username>root</username>
-      <user_password>CHANGE-ME-NOW</user_password>
-      <encrypted config:type="boolean">false</encrypted>
+      <user_password>PUT-A-PASSWORD-HASH-HERE</user_password>
+      <encrypted config:type="boolean">true</encrypted>
     </user>
   </users>
   <partitioning config:type="list">
