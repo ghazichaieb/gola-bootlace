@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
@@ -69,7 +70,10 @@ func answerServer(t *testing.T, mutate func(*config.Config)) (*Server, *[]string
 	}
 	var log []string
 	s := &Server{Base: "http://10.0.0.1:8080", Config: store, Logf: func(f string, a ...any) { log = append(log, fmt.Sprintf(f, a...)) }}
-	s.clients = map[string]*Client{ansMAC: {MAC: ansMAC, Serial: "SN 42/x"}}
+	s.clients = map[string]*Client{}
+	for _, mac := range []string{ansMAC, "aa:bb:cc:dd:ee:99"} {
+		s.clients[mac] = &Client{MAC: mac, Serial: "SN 42/x", MenuIP: "10.0.0.9", MenuAt: time.Now(), AnswersLeft: answerFetches}
+	}
 	return s, &log
 }
 
@@ -110,7 +114,9 @@ func TestAnAnswerFileIsOnlyGivenWhenItIsAttachedAndTheAddressIsRight(t *testing.
 	s, _ := answerServer(t, nil)
 	status := func(path string) int {
 		rec := httptest.NewRecorder()
-		s.answers(rec, httptest.NewRequest("GET", path, nil))
+		req := httptest.NewRequest("GET", path, nil)
+		req.RemoteAddr = "10.0.0.9:5555"
+		s.answers(rec, req)
 		return rec.Code
 	}
 	good := "/answers/" + ansID + "/aa-bb-cc-dd-ee-01/user-data"

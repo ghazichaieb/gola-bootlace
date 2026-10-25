@@ -67,34 +67,35 @@ func (g GroupRule) Describe() string { return g.Kind + ` "` + g.Match + `"` }
 
 // Config is the whole file.
 type Config struct {
-	MenuTimeout     int                   `json:"menuTimeout"`   // seconds before the default entry starts; 0 waits for a choice
-	PCDays          int                   `json:"pcDays"`        // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
-	Default         string                `json:"default"`       // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
-	Hidden          map[string]bool       `json:"hidden"`        // ISO id -> not in the menu
-	Titles          map[string]string     `json:"titles"`        // ISO id -> the name shown instead of the file name
-	Debug           map[string]DebugMode  `json:"debug"`         // ISO id -> how to start it for finding faults (see DebugMode)
-	Args            map[string]string     `json:"args"`          // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
-	BootPasswords   map[string]string     `json:"bootPasswords"` // ISO id -> hash of the password the menu asks for before it starts that ISO (see package admin); a secret, not in backups without secrets
-	Rules           []Rule                `json:"rules"`
-	GroupRules      []GroupRule           `json:"groupRules"`      // rules for every PC of a kind (model, manufacturer, platform); a rule for one PC wins
-	PCNames         map[string]string     `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
-	PCOptions       map[string]PCOptions  `json:"pcOptions"`       // MAC address -> extra kernel arguments and debug switches for every ISO that PC starts from its files (see PCOptions)
-	AdminHash       string                `json:"adminHash"`       // see package admin
-	SMBPassword     string                `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
-	Library         Library               `json:"library"`         // the folder with the ISOs; empty until one is chosen
-	NoAutoStart     bool                  `json:"noAutoStart"`     // the services stay stopped when the program starts, until they are started in the web interface
-	Access          Access                `json:"access"`          // which addresses may use the server, besides the local network
-	ImportLimitMBps int                   `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
-	Cache           CacheSettings         `json:"cache"`
-	Tuning          Tuning                `json:"tuning"`
-	SetupChecks     SetupChecks           `json:"setupChecks"`    // checks of Windows 11 Setup to skip
-	PasswordChosen  bool                  `json:"passwordChosen"` // the person set the web interface's password (it was not only made up at the first start)
-	FirstStartDone  bool                  `json:"firstStartDone"` // the first-start guide was finished or skipped
-	LibrarySync     string                `json:"librarySync"`    // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
-	MenuAccent      string                `json:"menuAccent"`     // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
-	HidePatterns    []string              `json:"hidePatterns"`   // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
-	Answers         map[string]AnswerFile `json:"answers"`        // answer file id -> the file (a secret: it can hold passwords; see answers.go)
-	ISOAnswers      map[string]string     `json:"isoAnswers"`     // ISO id -> the answer file every PC that starts that ISO gets (a PC's own choice wins)
+	MenuTimeout        int                   `json:"menuTimeout"`   // seconds before the default entry starts; 0 waits for a choice
+	PCDays             int                   `json:"pcDays"`        // PCs not seen for this many days are dropped from the list of PCs; 0 keeps them for ever
+	Default            string                `json:"default"`       // "" (wait), "local", "iso:<id>"; older command lines also gave "index:<n>" and "pick:<text>"
+	Hidden             map[string]bool       `json:"hidden"`        // ISO id -> not in the menu
+	Titles             map[string]string     `json:"titles"`        // ISO id -> the name shown instead of the file name
+	Debug              map[string]DebugMode  `json:"debug"`         // ISO id -> how to start it for finding faults (see DebugMode)
+	Args               map[string]string     `json:"args"`          // ISO id -> extra kernel arguments added to the ones its kind of ISO gets (for finding faults, or a setting that one ISO needs)
+	BootPasswords      map[string]string     `json:"bootPasswords"` // ISO id -> hash of the password the menu asks for before it starts that ISO (see package admin); a secret, not in backups without secrets
+	Rules              []Rule                `json:"rules"`
+	GroupRules         []GroupRule           `json:"groupRules"`      // rules for every PC of a kind (model, manufacturer, platform); a rule for one PC wins
+	PCNames            map[string]string     `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
+	PCOptions          map[string]PCOptions  `json:"pcOptions"`       // MAC address -> extra kernel arguments and debug switches for every ISO that PC starts from its files (see PCOptions)
+	AdminHash          string                `json:"adminHash"`       // see package admin
+	SMBPassword        string                `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
+	Library            Library               `json:"library"`         // the folder with the ISOs; empty until one is chosen
+	NoAutoStart        bool                  `json:"noAutoStart"`     // the services stay stopped when the program starts, until they are started in the web interface
+	Access             Access                `json:"access"`          // which addresses may use the server, besides the local network
+	ImportLimitMBps    int                   `json:"importLimitMBps"` // most MB a second that an import may use while PCs are installing; 0 is no limit
+	Cache              CacheSettings         `json:"cache"`
+	Tuning             Tuning                `json:"tuning"`
+	SetupChecks        SetupChecks           `json:"setupChecks"`                  // checks of Windows 11 Setup to skip
+	PasswordChosen     bool                  `json:"passwordChosen"`               // the person set the web interface's password (it was not only made up at the first start)
+	FirstStartDone     bool                  `json:"firstStartDone"`               // the first-start guide was finished or skipped
+	LibrarySync        string                `json:"librarySync"`                  // fingerprint of the copy of the settings that was last written to, or taken from, the library (see package backup)
+	MenuAccent         string                `json:"menuAccent"`                   // the colour of the highlighted line in the menu: "" (Gola's red) or one of AccentNames
+	HidePatterns       []string              `json:"hidePatterns"`                 // ISOs whose path in the library matches one of these are not in the menu (see MatchesHide)
+	Answers            map[string]AnswerFile `json:"answers"`                      // answer file id -> the file (a secret: it can hold passwords; see answers.go)
+	ISOAnswers         map[string]string     `json:"isoAnswers"`                   // ISO id -> the answer file every PC that starts that ISO gets (a PC's own choice wins)
+	AnswersSameAddress bool                  `json:"answersSameAddress,omitempty"` // an installer is only given its answer file at the address its PC asked for the menu from (see package httpd, answergate.go); off by default because a router can give the installer another address than iPXE got
 }
 
 // AccentNames are the colours the menu's highlighted line may have (see package menu).

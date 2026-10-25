@@ -32,6 +32,10 @@ type Client struct {
 	Count        int            `json:"count"` // how many times it asked for a menu
 	LastAction   string         `json:"lastAction"`
 	History      []HistoryEvent `json:"history,omitempty"` // the last things that happened to this PC, oldest first
+	// What lets this PC's installer fetch its answer file (see answergate.go): the address it last asked for the menu from, when, and how many files it may still be given.
+	MenuIP      string    `json:"menuIp,omitempty"`
+	MenuAt      time.Time `json:"menuAt,omitempty"`
+	AnswersLeft int       `json:"answersLeft,omitempty"`
 }
 
 const maxClients = 200
@@ -133,6 +137,9 @@ func (s *Server) noteClient(r *http.Request) Client {
 		s.clients = map[string]*Client{}
 	}
 	c := s.admitLocked(mac, now)
+	if warn := s.openAnswerGrant(c, ip, now); warn != "" {
+		s.logf("%s", warn)
+	}
 	c.IP, c.LastSeen = ip, now
 	c.Count++
 	c.note("asked for the menu", now)
@@ -183,6 +190,7 @@ func (s *Server) noteFetch(remoteAddr, title string) {
 	defer s.clientsMu.Unlock()
 	for _, c := range s.clients {
 		if c.IP == host {
+			s.keepAnswerGrant(c, host, time.Now())
 			c.LastAction = "booting " + title
 			c.LastSeen = time.Now()
 			c.note(c.LastAction, c.LastSeen)

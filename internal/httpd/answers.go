@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
@@ -139,6 +140,12 @@ func (s *Server) answers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	allowed, note := s.takeAnswer(cfg, mac, host, time.Now(), r.Method == http.MethodGet)
+	if !allowed {
+		s.logf("answer file %q (%s) refused to %s: %s", a.Name, name, s.who(Client{MAC: mac, IP: host}), note) // (the requester is told nothing more than "not found")
+		http.NotFound(w, r)
+		return
+	}
 	var serial string
 	s.clientsMu.Lock()
 	if c := s.clients[mac]; c != nil {
@@ -154,7 +161,10 @@ func (s *Server) answers(w http.ResponseWriter, r *http.Request) {
 	case a.Kind == "autoinstall" && name == "vendor-data":
 		body = "#cloud-config\n{}\n"
 	}
-	s.logf("answer file %q (%s, %s) served to %s", a.Name, kind.Label, name, s.who(Client{MAC: mac, IP: host})) // (never its text)
+	if note != "" {
+		note = " (" + note + ")"
+	}
+	s.logf("answer file %q (%s, %s) served to %s%s", a.Name, kind.Label, name, s.who(Client{MAC: mac, IP: host}), note) // (never its text)
 	if mac != "" {
 		s.setAction(mac, "unattended install: "+a.Name)
 	}

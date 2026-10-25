@@ -137,16 +137,17 @@ func (a *Admin) answersList(w http.ResponseWriter, _ *http.Request) {
 		Title string `json:"title"`
 	}
 	type entry struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-		Kind string `json:"kind"`
-		Size int    `json:"size"`
-		ISOs []used `json:"isos"`
-		PCs  []used `json:"pcs"`
+		ID    string   `json:"id"`
+		Name  string   `json:"name"`
+		Kind  string   `json:"kind"`
+		Size  int      `json:"size"`
+		ISOs  []used   `json:"isos"`
+		PCs   []used   `json:"pcs"`
+		Plain []string `json:"plain"` // lines that hold a password in plain text (issue #60)
 	}
 	list := []entry{}
 	for id, f := range c.Answers {
-		e := entry{ID: id, Name: f.Name, Kind: f.Kind, Size: len(f.Content), ISOs: []used{}, PCs: []used{}}
+		e := entry{ID: id, Name: f.Name, Kind: f.Kind, Size: len(f.Content), ISOs: []used{}, PCs: []used{}, Plain: plainWarnings(f)}
 		for iso, aid := range c.ISOAnswers {
 			if aid == id {
 				title := titles[iso]
@@ -170,7 +171,7 @@ func (a *Admin) answersList(w http.ResponseWriter, _ *http.Request) {
 		list = append(list, e)
 	}
 	sort.Slice(list, func(i, j int) bool { return strings.ToLower(list[i].Name) < strings.ToLower(list[j].Name) })
-	writeJSON(w, http.StatusOK, map[string]any{"kinds": config.AnswerKinds, "answers": list, "pcAnswers": pcAnswerChoices(c)})
+	writeJSON(w, http.StatusOK, map[string]any{"kinds": config.AnswerKinds, "answers": list, "pcAnswers": pcAnswerChoices(c), "sameAddress": c.AnswersSameAddress})
 }
 
 // pcAnswerChoices is the answer file choice of each PC that has one (a MAC address and the id, or "none"), for the PCs page.
@@ -197,7 +198,7 @@ func (a *Admin) answerGet(w http.ResponseWriter, r *http.Request) {
 	if !reveal {
 		text = config.MaskAnswer(f.Content)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": f.Name, "kind": f.Kind, "content": text, "masked": !reveal && text != f.Content})
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "name": f.Name, "kind": f.Kind, "content": text, "masked": !reveal && text != f.Content, "warnings": plainWarnings(f)})
 }
 
 func newAnswerID() (string, error) {
@@ -236,7 +237,7 @@ func (a *Admin) answerCreate(w http.ResponseWriter, r *http.Request) {
 	if a.o.Logf != nil {
 		a.o.Logf("web interface: answer file %q (%s) created", strings.TrimSpace(in.Name), in.Kind)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id, "warnings": plainWarnings(a.o.Store.Get().Answers[id])})
 }
 
 // answerUpdate changes the name, the kind or the text. A text that was shown masked and saved as it is keeps the old values; a line that still shows the mask after that is refused,
@@ -286,7 +287,7 @@ func (a *Admin) answerUpdate(w http.ResponseWriter, r *http.Request) {
 	if a.o.Logf != nil {
 		a.o.Logf("web interface: answer file %q changed", name)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "warnings": plainWarnings(a.o.Store.Get().Answers[id])})
 }
 
 func (a *Admin) answerDelete(w http.ResponseWriter, r *http.Request) {
@@ -358,6 +359,34 @@ func (a *Admin) pcAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.o.Logf != nil {
 		a.o.Logf("web interface: answer file of %s: %s", mac, in.Answer)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "warnings": plainWarnings(a.o.Store.Get().Answers[in.Answer])})
+}
+
+// plainWarnings says, line by line, where an answer file holds a password in plain text. The address of an answer file works without a login: any host of the network that
+// fetches it reads the password. Nothing is refused: a lab may want it, and it is said plainly.
+func plainWarnings(f config.AnswerFile) []string {
+	out := []string{}
+	for _, p := range config.PlainPasswords(f.Kind, f.Content) {
+		out = append(out, p.String())
+	}
+	return out
+}
+
+// answerSettings is the one switch of the answer files: whether an installer may fetch its file from another address than the one its PC asked for the menu from.
+func (a *Admin) answerSettings(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		SameAddress bool `json:"sameAddress"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	if err := a.o.Store.Update(func(c *config.Config) error { c.AnswersSameAddress = in.SameAddress; return nil }); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: answer files only at the address that asked for the menu: %v", in.SameAddress)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

@@ -227,6 +227,10 @@ Windows 11 (a custom-built English ISO, build 26300.9711, 7.9 GB) started from t
   subiquity read the file and installed onto the second disk by itself, and the installed system booted as `pc-980101` (the `hostname` word of the file). Two things were found on the way and fixed: the file's
   user name must not be one Ubuntu reserves (`admin`: the template now says `ubuntu`), and **over the network disk subiquity's disk probe fails** ("Invalid dep_id (disk-nbd0) not in storage config"), so Ubuntu
   Server ISOs are now downloaded whole into memory (the VM had 9 GB for the 2.7 GB ISO). With the network disk on and a server ISO, the menu now picks that way by itself.
+- **Narrowed access to the file (#60, same VM test, 2026-10-25):** with the gate on (a file only to a MAC that asked for the menu in the last two hours, twelve files per menu request) the autoinstall ran to the end again
+  and the system booted as `pc-600001`. The first attempt required the same network address as the menu request and **was refused to the PC it was meant for**: iPXE had 192.168.8.154, the installer (which identifies
+  itself to DHCP with a DUID, iPXE with the MAC) was given 192.168.8.155 by the router. That condition is therefore a switch ("Stricter" on the Unattended page), off by default. A fetch with a MAC that never asked for a
+  menu is refused (404), the thirteenth file after one menu request is refused, and a new menu request opens the address again (checked with curl against the running server).
 - **Debian 13.7 netinst**, preseed attached: stopped at the installer's first step (it needs a CD), see the next section: fixed 2026-10-25 ([#59](https://github.com/ghazichaieb/gola-bootlace/issues/59)), and the preseed is then read like any other.
 - Kickstart (`inst.ks=`) and AutoYaST (`autoyast=`): the arguments and the served files were checked by the tests only.
 

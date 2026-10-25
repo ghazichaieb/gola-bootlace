@@ -236,7 +236,7 @@ async function loadCommon() {
   const isos = await api("/api/isos");
   state.isos = isos.isos || []; state.defaultAction = isos.default || "";
   const answers = await api("/api/answers");
-  state.answers = answers.answers || []; state.answerKinds = answers.kinds || [];
+  state.answers = answers.answers || []; state.answerKinds = answers.kinds || []; state.answersSameAddress = !!answers.sameAddress;
 }
 async function pageDash() {
   const page = $("#page");
@@ -786,7 +786,7 @@ async function pageISOs() {
     }));
     page.querySelectorAll("select[data-answer]").forEach(sel => sel.onchange = guard(async () => {
       const i = state.isos.find(x => x.id === sel.dataset.answer) || {}, f = (state.answers || []).find(a => a.id === sel.value) || {};
-      if (sel.value && !await ask("Install without asking?", `Every PC that starts <b>${esc(i.title)}</b> from the menu will install with <b>${esc(f.name)}</b> without asking anything, and the file may erase its disks. One PC can be kept out of it with its own setting (Kernel options on the PCs page).`, "Attach")) { await draw(); return; }
+      if (sel.value && !await ask("Install without asking?", `Every PC that starts <b>${esc(i.title)}</b> from the menu will install with <b>${esc(f.name)}</b> without asking anything, and the file may erase its disks. One PC can be kept out of it with its own setting (Kernel options on the PCs page).${plainNote(f)}`, "Attach")) { await draw(); return; }
       await api("/api/isos/" + sel.dataset.answer, "PUT", { answer: sel.value }); toast(sel.value ? "Attached: used at the next start of this ISO" : "Detached"); await draw();
     }));
     page.querySelectorAll("input[data-hide]").forEach(inp => inp.onchange = guard(async () => { await api("/api/isos/" + inp.dataset.hide, "PUT", { hidden: !inp.checked }); toast(inp.checked ? "Shown in the menu" : "Hidden from the menu"); await draw(); }));
@@ -798,6 +798,11 @@ async function pageISOs() {
 }
 // ---- unattended installs: the answer file an ISO's installer is given (issue #17)
 const answerFamilies = { "Debian installer": "preseed", "Ubuntu (casper)": "autoinstall", "Ubuntu-style (casper), by its boot menu": "autoinstall", "Red Hat family (installer)": "kickstart", "openSUSE": "autoyast" };
+// plainNote is what to say about a file with a password in plain text: its address works without a login, so the network can read it (issue #60)
+function plainNote(f) {
+  const p = (f && f.plain) || [];
+  return p.length ? `<p class="bad"><b>This file holds a password in plain text</b> (${esc(p.join("; "))}). An installer cannot log in, so any computer of the network that asks for the file reads the password. Put a hash there instead, or use the file only on a network you trust.</p>` : "";
+}
 function kindLabel(id) { const k = (state.answerKinds || []).find(x => x.id === id); return k ? k.label : id; }
 function answerOptions(sel, first, withNone) {
   return `<option value=""${!sel ? " selected" : ""}>${esc(first)}</option>` + (withNone ? `<option value="none"${sel === "none" ? " selected" : ""}>No answer file for this PC</option>` : "") +
@@ -816,13 +821,14 @@ async function pageAnswers() {
   page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Unattended installs</h1><button class="btn primary" id="anew">New answer file</button></div>
   <p class="muted small">An answer file is what an installer reads so that it asks nothing: Debian's preseed, Ubuntu Server's autoinstall, Red Hat's kickstart, openSUSE's AutoYaST. Keep them here, then attach one to an ISO (on the ISOs page) or to one PC (Kernel options on the PCs page). Nothing is attached by itself, and the file <b>may erase disks</b>: only the PCs you chose install without asking. Inside a file, <code>{{hostname}}</code> (the name given to the PC, or <code>pc-</code> and the end of its address), <code>{{mac}}</code>, <code>{{ip}}</code> and <code>{{serial}}</code> are replaced for the PC that asks.</p>
   <div class="card tablewrap" id="atable"></div>
-  <p class="hint">Passwords in a file are shown as <code>********</code> on this page. They stay in the file when you save it with the stars left as they are. The files are kept in the settings (not in a backup made without secrets) and their text is never written to the log. <b>An installer cannot log in</b>, so a file is not secret from the network: anyone on the local network who asks the menu for an ISO that has a file attached learns its address and can read it. Put password <i>hashes</i> in a file, not passwords (the templates do), and keep the networks that may use the server to those you trust.</p>`;
+  <p class="hint">Passwords in a file are shown as <code>********</code> on this page. They stay in the file when you save it with the stars left as they are. The files are kept in the settings (not in a backup made without secrets) and their text is never written to the log. <b>An installer cannot log in</b>, so the address of a file has no password. What narrows it: a file is given only to a PC that asked the menu for an ISO in the last two hours, and only twelve files after each time it asked; then the address closes until the PC asks for the menu again. That stops a computer that never asked for a menu, <b>not one that asks the menu first with the MAC address it wants</b>: any computer of the local network can pose as a PC and read the file once. Put password <i>hashes</i> in a file, not passwords (the templates do), and keep the networks that may use the server to those you trust.</p>
+  <label class="row small" style="font-weight:500;margin:0"><span class="switch"><input type="checkbox" id="aany" aria-label="Only give a file to the network address the PC asked the menu from"><span></span></span> Stricter: only give a file to the network address the PC asked the menu from (off by default, because many routers give the installer another address than the one the PC had at the menu; turn it on if your PCs keep their address, then a refusal says "asked for the menu from ..., not from ..." in the Log)</label>`;
   const draw = async () => {
     await loadCommon();
     const list = state.answers;
     $("#atable").innerHTML = list.length ? `<table class="rt"><thead><tr><th>Name</th><th>Kind</th><th>Attached to</th><th class="hide-s">Size</th><th></th></tr></thead><tbody>${list.map(a => {
       const used = [...(a.isos || []).map(x => "ISO " + x.title), ...(a.pcs || []).map(x => "PC " + x.title)];
-      return `<tr><td data-l="Name"><b>${esc(a.name)}</b></td><td data-l="Kind">${esc(kindLabel(a.kind))}</td><td data-l="Attached to">${used.length ? esc(used.join(", ")) : '<span class="muted">nothing</span>'}</td><td class="hide-s" data-l="Size">${bytes(a.size)}</td>
+      return `<tr><td data-l="Name"><b>${esc(a.name)}</b>${(a.plain || []).length ? `<div class="bad small">Plain password in the file</div>` : ""}</td><td data-l="Kind">${esc(kindLabel(a.kind))}</td><td data-l="Attached to">${used.length ? esc(used.join(", ")) : '<span class="muted">nothing</span>'}</td><td class="hide-s" data-l="Size">${bytes(a.size)}</td>
       <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-aedit="${esc(a.id)}">Edit</button><button class="btn small danger" data-adel="${esc(a.id)}">Delete</button></div></td></tr>`;
     }).join("")}</tbody></table>` : `<div class="empty">No answer file yet. "New answer file" starts from a template.</div>`;
     page.querySelectorAll("button[data-aedit]").forEach(b => b.onclick = guard(async () => { editAnswer(b.dataset.aedit, draw); }));
@@ -834,6 +840,8 @@ async function pageAnswers() {
     }));
   };
   $("#anew").onclick = guard(async () => editAnswer("", draw));
+  $("#aany").checked = !!state.answersSameAddress;
+  $("#aany").onchange = guard(async () => { await api("/api/answers/settings", "PUT", { sameAddress: $("#aany").checked }); state.answersSameAddress = $("#aany").checked; toast("Saved"); });
   await guard(draw)();
 }
 async function editAnswer(id, done) {
@@ -865,8 +873,9 @@ async function editAnswer(id, done) {
   q("#asv").onclick = async () => {
     try {
       const body = { name: q("#an").value, kind: q("#ak").value, content: q("#ac").value };
-      await api(id ? "/api/answers/" + encodeURIComponent(id) : "/api/answers", id ? "PUT" : "POST", body);
+      const saved = await api(id ? "/api/answers/" + encodeURIComponent(id) : "/api/answers", id ? "PUT" : "POST", body);
       m.close(); toast("Saved"); await done();
+      if ((saved.warnings || []).length) await ask("A password in plain text", plainNote({ plain: saved.warnings }), "OK");
     } catch (e) { q("#ae").textContent = e.message; }
   };
 }
@@ -978,7 +987,7 @@ async function pagePCs() {
       const save = async () => {
         try {
           const pick = q("#kans") ? q("#kans").value : (o.answer || "");
-          if (pick !== (o.answer || "") && pick && pick !== "none" && !await ask("Install without asking?", `This PC will install with the chosen answer file the next time it starts an ISO from the menu, without asking anything, and the file may erase its disks.`, "Use it")) return;
+          if (pick !== (o.answer || "") && pick && pick !== "none" && !await ask("Install without asking?", `This PC will install with the chosen answer file the next time it starts an ISO from the menu, without asking anything, and the file may erase its disks.${plainNote((state.answers || []).find(a => a.id === pick))}`, "Use it")) return;
           await api("/api/pcs/" + encodeURIComponent(b.dataset.kopt) + "/options", "PUT", { args: q("#ka").value, debug: { verbose: q("#kv").checked, serial: q("#ks").checked, shell: q("#kh").checked } });
           if (pick !== (o.answer || "")) await api("/api/pcs/" + encodeURIComponent(b.dataset.kopt) + "/answer", "PUT", { answer: pick });
           m.close(); toast("Saved: used at the next start of this PC"); await draw();

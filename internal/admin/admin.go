@@ -132,6 +132,7 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("PUT /api/pcs/{mac}/answer", a.authed(a.pcAnswer))
 	api.HandleFunc("GET /api/answers", a.authed(a.answersList))
 	api.HandleFunc("GET /api/answers/templates", a.authed(a.answerTemplates))
+	api.HandleFunc("PUT /api/answers/settings", a.authed(a.answerSettings))
 	api.HandleFunc("POST /api/answers", a.authed(a.answerCreate))
 	api.HandleFunc("GET /api/answers/{id}", a.authed(a.answerGet))
 	api.HandleFunc("PUT /api/answers/{id}", a.authed(a.answerUpdate))
@@ -550,7 +551,11 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	warnings := []string{}
+	if in.Answer != nil && *in.Answer != "" {
+		warnings = plainWarnings(a.o.Store.Get().Answers[*in.Answer]) // (the password is readable from the network: see issue #60)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "warnings": warnings})
 }
 
 // pxeLast is the result of the last look for other PXE or DHCP servers (the one made at start, or the last button press).

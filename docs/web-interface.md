@@ -82,8 +82,21 @@ openSUSE's AutoYaST. "New answer file" starts from a template for the kind; each
   installs without asking.
 - **How the installer gets it.** The kernel line of the ISO gets the argument of the kind (`auto=true priority=critical cdrom-detect/retry=false url=...` for preseed, `autoinstall ds=nocloud-net;s=...`
   for autoinstall, `inst.ks=...`, `autoyast=...`), placed before a `---` where the line has one. The address is `/answers/<file id>/<MAC>/<name>` on the server: the id cannot be guessed and the file is only
-  given while it is attached to an ISO or a PC, but **an installer cannot log in, so the file is not secret from the local network**: anyone who can reach the server and asks the menu for that ISO sees
-  the address in its kernel line and can read the file (with any MAC address in the path). Like the rest of the server it is only given to the networks that may use it (Server > Access).
+  given while it is attached to an ISO or a PC, but **an installer cannot log in, so the file is not secret from the local network** (see the next point for what narrows that, and what it does not).
+  Like the rest of the server it is only given to the networks that may use it (Server > Access).
+- **Who can fetch it (issue #60).** The address has no password, so Bootlace narrows it: a file is given only to a MAC address that **asked for the menu in the last two hours** (an ISO's start
+  fetching files keeps the two hours open), and only **twelve files after each time that PC asked for the menu** (Ubuntu fetches three files and may ask for each again, Debian reads its preseed
+  twice, the others once); after that the address answers "not found" until the PC asks for the menu again. A refusal says why in the Log ("that PC never asked for the menu", "asked for the menu too
+  long ago", "was already given 12 files") and the requester only sees "not found".
+  **The network address is not part of the default check**, although it was the first idea: in a real run (Ubuntu Server 26.04.1 in a UEFI VM on a home router) iPXE had one address and the installer,
+  which identifies itself to DHCP differently, was given the next one, so a file that required the same address was refused to the PC it was meant for. The switch at the bottom of the Unattended page
+  ("Stricter") adds that condition for networks where a PC keeps its address; a file fetched from another address than the menu's is noted in the Log either way.
+  **What this stops:** a computer that never asked for a menu cannot read a file, and a file does not stay readable for ever. **What it does not stop:** any computer of the local network can ask
+  the menu with the MAC address of a PC and then read the file (once for that MAC and menu request, a dozen times at most); the log shows a menu request for one MAC from two addresses when it happens.
+  This is a limit of an installer that cannot log in, not something a setting removes: keep a password hash in the file, and the server on a network you trust.
+- **A warning for plain passwords.** Saving a file, listing it and attaching it say so when a line holds a password in plain text for its kind (`d-i passwd/user-password password ...`, autoinstall
+  `password:` or `plain_text_passwd:` or a `chpasswd` list entry, kickstart `rootpw`/`user --password=` without `--iscrypted`, AutoYaST `user_password` of a user that is not marked encrypted); a hash,
+  a locked password, a placeholder of a template or a `{{word}}` is not one. The warning names the line, never repeats the password, and refuses nothing.
 - **One file for many PCs.** In the text, the words `hostname`, `name`, `mac`, `mac-dash`, `ip` and `serial` between double curly braces are replaced for the PC that asks: `hostname` is the name given
   on the PCs page made into a host name, or `pc-` and the last six digits of its address.
 - **Passwords.** Put password *hashes* in a file, not passwords (the templates ask for hashes: `openssl passwd -6` or `mkpasswd -m sha-512`, or an SSH key), because of the point above. A file can hold secrets. They are shown as `********` on the page and in the API unless "Show the passwords" is ticked; a file saved with the stars left as they were keeps its

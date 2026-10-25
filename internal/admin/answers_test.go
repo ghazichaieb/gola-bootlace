@@ -170,3 +170,64 @@ func TestThePreseedTemplateDoesNotUseAReservedUserName(t *testing.T) {
 	}
 	t.Error("the preseed template has no user name line")
 }
+
+// The address of an answer file works without a login (issue #60): a plain password in one is said out loud when the file is saved, listed and attached. Nothing is refused.
+func TestAPlainPasswordInAnAnswerFileIsWarnedAboutWhereverItIsSavedListedOrAttached(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	code, out := r.do("POST", "/api/answers", map[string]any{"name": "Lab", "kind": "preseed", "content": answerText}, nil)
+	warn, _ := out["warnings"].([]any)
+	if code != 200 || len(warn) != 1 || !strings.Contains(warn[0].(string), "line 2") || !strings.Contains(warn[0].(string), "passwd/user-password") {
+		t.Fatalf("create: %d %v", code, out)
+	}
+	id := out["id"].(string)
+	if strings.Contains(walkStrings(out), "hunter2") {
+		t.Fatal("the warning repeats the password")
+	}
+	_, list := r.do("GET", "/api/answers", nil, nil)
+	if plain := list["answers"].([]any)[0].(map[string]any)["plain"].([]any); len(plain) != 1 {
+		t.Fatalf("the list says nothing: %v", list)
+	}
+	if _, got := r.do("GET", "/api/answers/"+id, nil, nil); len(got["warnings"].([]any)) != 1 {
+		t.Fatalf("get: %v", got)
+	}
+	if _, att := r.do("PUT", "/api/isos/0123456789", map[string]any{"answer": id}, nil); len(att["warnings"].([]any)) != 1 {
+		t.Fatalf("attaching to an ISO: %v", att)
+	}
+	if _, att := r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/answer", map[string]any{"answer": id}, nil); len(att["warnings"].([]any)) != 1 {
+		t.Fatalf("attaching to a PC: %v", att)
+	}
+	// a hash is not warned about, and the warning goes when the password is replaced
+	fixed := "d-i netcfg/get_hostname string {{hostname}}\nd-i passwd/user-password-crypted password $6$salt$hash\n"
+	if code, out := r.do("PUT", "/api/answers/"+id, map[string]any{"content": fixed}, nil); code != 200 || len(out["warnings"].([]any)) != 0 {
+		t.Fatalf("update: %d %v", code, out)
+	}
+	if _, att := r.do("PUT", "/api/isos/0123456789", map[string]any{"answer": id}, nil); len(att["warnings"].([]any)) != 0 {
+		t.Fatalf("attaching a clean file: %v", att)
+	}
+}
+
+func TestTheShippedTemplatesAreNotWarnedAbout(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	for kind, text := range answerTemplates {
+		code, out := r.do("POST", "/api/answers", map[string]any{"name": kind, "kind": kind, "content": text}, nil)
+		if code != 200 || len(out["warnings"].([]any)) != 0 {
+			t.Errorf("%s: %d %v", kind, code, out)
+		}
+	}
+}
+
+func TestTheSwitchForTheSameAddressIsSavedAndNeedsASignIn(t *testing.T) {
+	r := newRig(t)
+	if code, _ := r.do("PUT", "/api/answers/settings", map[string]any{"sameAddress": true}, nil); code != 401 {
+		t.Fatalf("%d", code)
+	}
+	r.login()
+	if code, _ := r.do("PUT", "/api/answers/settings", map[string]any{"sameAddress": true}, nil); code != 200 || !r.store.Get().AnswersSameAddress {
+		t.Fatal("not saved")
+	}
+	if _, out := r.do("GET", "/api/answers", nil, nil); out["sameAddress"] != true {
+		t.Fatalf("%v", out)
+	}
+}
