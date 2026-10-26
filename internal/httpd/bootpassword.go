@@ -29,6 +29,7 @@ func (s *Server) guardLines(id string) []string {
 		"echo This entry asks for a password. Press Enter at the user name, then type the password.",
 		"login || goto denied",
 		"imgfetch --name auth " + check + " || goto denied",
+		"imgfree auth || goto denied", // the answer is not an initrd: iPXE hands every image it holds to the Linux kernel as one, and the kernel then fails to unpack it
 		"clear password",
 		"clear username",
 	}

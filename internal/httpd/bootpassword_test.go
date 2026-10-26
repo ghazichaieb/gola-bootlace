@@ -51,7 +51,7 @@ func TestAProtectedIsoAsksForItsPasswordInTheMenuAndAnotherDoesNot(t *testing.T)
 		return rest
 	}
 	block := blockOf(":e1-wipe")
-	wantInOrder := []string{"login || goto denied", "imgfetch --name auth http://10.0.0.1:8080/auth?iso=" + id + "&mac=${mac}&pw=${password:uristring} || goto denied", "clear password", "sanboot"}
+	wantInOrder := []string{"login || goto denied", "imgfetch --name auth http://10.0.0.1:8080/auth?iso=" + id + "&mac=${mac}&pw=${password:uristring} || goto denied", "imgfree auth || goto denied", "clear password", "sanboot"}
 	pos := 0
 	for _, w := range wantInOrder {
 		j := strings.Index(block[pos:], w)
