@@ -95,6 +95,8 @@ type Server struct {
 	Handoff *handoff.Registry
 	// TFTPAhead is how many blocks to send ahead of the acknowledgements to FreeBSD's loader, which reads its kernel and the whole ISO by TFTP (1 or less: none).
 	TFTPAhead int
+	// SecureBoot is the signed-iPXE route for PCs with UEFI Secure Boot on (off unless it names a folder; see secureboot.go).
+	SecureBoot SecureBoot
 }
 
 type recognised struct {

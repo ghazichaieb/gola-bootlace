@@ -99,6 +99,9 @@ type Boot struct {
 	Script   string          // what a client that already runs iPXE should load, normally http://<server>:<port>/boot.ipxe
 	// Handoff may name another boot file for one PC (by MAC) that is starting for the second time because iPXE sent it away to run FreeBSD's loader.
 	Handoff func(mac string, efi bool) (string, bool)
+	// Shim may name a Microsoft-signed shim as the boot file of a 64-bit UEFI PC that has UEFI Secure Boot on (and so refuses the unsigned iPXE): the shim then fetches the
+	// iPXE that is signed with the owner's own key (grubx64.efi, next to it) by TFTP. It is asked after Handoff, and only for a PC that does not run iPXE yet. nil: not offered.
+	Shim func(mac string) (string, bool)
 	// Seen is told of every PXE client that asks, so that the web interface can list a PC that never gets as far as a menu (Secure Boot refusing iPXE).
 	Seen func(mac string, efi, ipxe bool)
 	// LoaderAddress gives the address of a PC that was sent to FreeBSD's loader. The loader makes a DHCP request of its own (with a vendor class of PXEClient but no
@@ -131,6 +134,8 @@ func (b Boot) Reply(req *Packet) (*Packet, bool) {
 	if !IsIPXE(req) {
 		a := ClientArch(req).Canonical()
 		if f, ok := b.handoff(req, a); ok {
+			file = f
+		} else if f, ok := b.shim(req, a); ok {
 			file = f
 		} else if file, ok = b.Files[a]; !ok {
 			return nil, false
@@ -206,6 +211,14 @@ func (b Boot) handoff(req *Packet, a Arch) (string, bool) {
 		return "", false
 	}
 	return b.Handoff(req.MAC().String(), a != ArchBIOS)
+}
+
+// shim is the signed shim to send a 64-bit UEFI PC to, when the server offers one and this PC is to use it.
+func (b Boot) shim(req *Packet, a Arch) (string, bool) {
+	if b.Shim == nil || a != ArchX64EFI {
+		return "", false
+	}
+	return b.Shim(req.MAC().String())
 }
 
 // loaderReply answers the DHCP request that FreeBSD's loader makes after the firmware has started it: the address the PC already had (the network's DHCP server gave it a

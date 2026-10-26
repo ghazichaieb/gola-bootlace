@@ -36,3 +36,15 @@ func TestAStrayWordAfterTheOptionsStopsTheStart(t *testing.T) {
 		t.Fatalf("code %d, stderr %q", code, errOut.String())
 	}
 }
+
+func TestTheSecureBootRouteIsReportedToTheWebInterfaceAsOffMarkedOrAll(t *testing.T) {
+	for _, tc := range []struct {
+		dir  string
+		all  bool
+		want string
+	}{{"", false, ""}, {"", true, ""}, {"/sb", false, "pcs"}, {"/sb", true, "all"}} {
+		if got := secureBootMode(tc.dir, tc.all); got != tc.want {
+			t.Errorf("%q %v: %q, want %q", tc.dir, tc.all, got, tc.want)
+		}
+	}
+}

@@ -220,3 +220,53 @@ func TestAnOrdinaryPXEBootOfThatPCIsStillAProxyAnswer(t *testing.T) {
 		t.Errorf("a PC with no hand-off gets the usual proxy answer, got %+v ok=%v", r, ok)
 	}
 }
+
+func TestAShimIsNamedOnlyFor64BitUEFIPCsThatAreToUseIt(t *testing.T) {
+	b := boot()
+	b.Shim = func(mac string) (string, bool) {
+		if mac != "00:15:5d:08:02:2d" {
+			return "", false
+		}
+		return "sb/shimx64.efi", true
+	}
+	req, _ := Parse(pxeRequest(Discover, 7, ""))
+	if reply, ok := b.Reply(req); !ok || reply.File != "sb/shimx64.efi" {
+		t.Fatalf("a 64-bit UEFI PC that uses the shim: %+v %v", reply, ok)
+	}
+	req, _ = Parse(pxeRequest(Discover, 9, ""))
+	if reply, _ := b.Reply(req); reply.File != "sb/shimx64.efi" {
+		t.Fatalf("the other code for 64-bit UEFI: %q", reply.File)
+	}
+	req, _ = Parse(pxeRequest(Discover, 0, ""))
+	if reply, _ := b.Reply(req); reply.File != "bootlace-bios.kpxe" {
+		t.Fatalf("a BIOS PC has no Secure Boot and keeps its file: %q", reply.File)
+	}
+	req, _ = Parse(pxeRequest(Discover, 7, "iPXE"))
+	if reply, _ := b.Reply(req); reply.File != "http://192.168.1.10:8080/boot.ipxe" {
+		t.Fatalf("once iPXE runs it gets its script, not the shim again: %q", reply.File)
+	}
+	b.Files[ArchARM64] = "arm.efi"
+	req, _ = Parse(pxeRequest(Discover, 11, ""))
+	if reply, _ := b.Reply(req); reply.File != "arm.efi" {
+		t.Fatalf("an x64 shim is never sent to an ARM PC: %q", reply.File)
+	}
+	b.Shim = func(string) (string, bool) { return "", false }
+	req, _ = Parse(pxeRequest(Discover, 7, ""))
+	if reply, _ := b.Reply(req); reply.File != "bootlace-x64.efi" {
+		t.Fatalf("a PC that does not use the shim: %q", reply.File)
+	}
+	b.Shim = nil
+	if reply, _ := b.Reply(req); reply.File != "bootlace-x64.efi" {
+		t.Fatalf("no shim offered at all: %q", reply.File)
+	}
+}
+
+func TestAHandoffInProgressWinsOverTheShim(t *testing.T) {
+	b := boot()
+	b.Shim = func(string) (string, bool) { return "sb/shimx64.efi", true }
+	b.Handoff = func(string, bool) (string, bool) { return "win/abc/bootmgfw.efi", true }
+	req, _ := Parse(pxeRequest(Discover, 7, ""))
+	if reply, _ := b.Reply(req); reply.File != "win/abc/bootmgfw.efi" {
+		t.Fatalf("a native start (Windows' own signed boot manager) is not sent through the shim: %q", reply.File)
+	}
+}

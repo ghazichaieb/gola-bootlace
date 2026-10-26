@@ -91,6 +91,9 @@ func (s *Server) TFTPMaxBlock() int { return s.settings().Tuning.TFTPBlockSize }
 
 // TFTPLookup answers a TFTP request from the ISO the client chose; it has no answer for clients that did not choose a FreeBSD ISO.
 func (s *Server) TFTPLookup(client net.IP, name string) (fs.File, bool) {
+	if rest, ok := strings.CutPrefix(name, secureBootPrefix); ok { // the shim and what it fetches next (Secure Boot route)
+		return s.secureBootTFTP(client, rest)
+	}
 	if s.Handoff == nil {
 		return nil, false
 	}

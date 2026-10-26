@@ -8,15 +8,19 @@
     powershell -File tools\pxe_vm.ps1 -Action type  -Name uefi1 -Text "ip link`n"                 # types text (a new line presses Enter)
     powershell -File tools\pxe_vm.ps1 -Action remove -Name uefi1                             # stops and deletes it
 
-  UEFI Secure Boot is switched off: the iPXE files Bootlace ships are not signed (issue #10). Needs an account in "Hyper-V Administrators".
+  UEFI Secure Boot is switched off unless -SecureBoot is given: the iPXE files Bootlace ships are not signed (issue #10). -SecureBootTemplate MicrosoftUEFICertificateAuthority is the
+  template that Linux shims need (the default MicrosoftWindows trusts Windows only). -DiskPath attaches an existing VHDX as a second disk (a FAT disk holding a certificate to
+  enrol, for instance); -Action stop turns the VM off, -Action start starts it again. Needs an account in "Hyper-V Administrators".
 #>
 param(
-    [Parameter(Mandatory)] [ValidateSet('create', 'shot', 'key', 'type', 'remove')] [string] $Action,
+    [Parameter(Mandatory)] [ValidateSet('create', 'shot', 'key', 'type', 'remove', 'stop', 'start')] [string] $Action,
     [Parameter(Mandatory)] [string] $Name,
     [string] $VSwitch = 'bootlace-lab',
     [int] $MemoryGB = 4,
     [switch] $Bios,            # a generation 1 (legacy BIOS) VM instead of a UEFI one
-    [switch] $SecureBoot,      # UEFI Secure Boot on (the Microsoft Windows template)
+    [switch] $SecureBoot,      # UEFI Secure Boot on
+    [string] $SecureBootTemplate = 'MicrosoftWindows',   # or MicrosoftUEFICertificateAuthority (what Linux shims need), OpenSourceShieldedVM
+    [string] $DiskPath = '',   # a VHDX to attach as an extra disk
     [string] $Out = '',
     [int] $Key = 0,
     [string] $Text = '',
@@ -43,7 +47,9 @@ switch ($Action) {
         } else {
             $sb = if ($SecureBoot) { 'On' } else { 'Off' }   # the default is off: iPXE is not signed (issue #10)
             Set-VMFirmware -VM $vm -EnableSecureBoot $sb -BootOrder @((Get-VMNetworkAdapter -VM $vm))
+            if ($SecureBoot) { Set-VMFirmware -VM $vm -SecureBootTemplate $SecureBootTemplate }
         }
+        if ($DiskPath) { Add-VMHardDiskDrive -VM $vm -Path $DiskPath }
         Start-VM -VM $vm
         "started $vmName"
     }
@@ -92,6 +98,8 @@ switch ($Action) {
         $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
         "saved $Out"
     }
+    'stop' { Stop-VM -Name $vmName -TurnOff -Force; "stopped $vmName" }
+    'start' { Start-VM -Name $vmName; "started $vmName" }
     'remove' {
         if (Get-VM -Name $vmName -ErrorAction SilentlyContinue) { Stop-VM -Name $vmName -TurnOff -Force -ErrorAction SilentlyContinue; Remove-VM -Name $vmName -Force }
         Remove-Item -Recurse -Force (Join-Path $Folder $vmName) -ErrorAction SilentlyContinue
