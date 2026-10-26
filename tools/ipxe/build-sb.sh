@@ -13,14 +13,13 @@
 #                      so the server answers a PC's request for grubx64.efi with this file.
 #   ipxe-unsigned.efi  the same build before signing (to compare, or to sign elsewhere)
 #   secureboot.crt, secureboot.cer
+# Two runs give different files (iPXE puts a build id into the file): to keep one build, keep the signed file, not the recipe.
 #
-# SECUREBOOT=0 in the environment builds the full feature set instead (Bootlace's usual ipxe.efi): it can be signed and started, but it holds commands that
-# can start unsigned code, which a signed binary must not do (a signed hole is a Secure Boot bypass for every PC that trusts the key).
+# Only the SECUREBOOT=1 build is made: the full feature set holds commands that can start unsigned code, and a signed hole is a Secure Boot bypass for every PC that trusts the key.
 set -eu
 COMMIT="${1:-a5eed98d964bc48790041aed41a8876fa0b7eba5}"   # the commit the shipped files are built from (NOTICE)
 KEY="${KEY:-/keys/db.key}"
 CERT="${CERT:-/keys/db.crt}"
-SECUREBOOT="${SECUREBOOT:-1}"
 [ -r "$KEY" ] || { echo "no signing key at $KEY (mount the folder with -v DIR:/keys:ro)"; exit 2; }
 [ -r "$CERT" ] || { echo "no certificate at $CERT"; exit 2; }
 apt-get update -qq
@@ -31,13 +30,8 @@ git checkout -q "$COMMIT"
 echo "iPXE commit: $(git rev-parse HEAD)"
 cp /work/config/*.h /work/config-sb/*.h src/config/local/
 cd src
-if [ "$SECUREBOOT" = 1 ]; then
-	make -j"$(nproc)" bin-x86_64-efi-sb/ipxe.efi
-	OUT=bin-x86_64-efi-sb/ipxe.efi
-else
-	make -j"$(nproc)" bin-x86_64-efi/ipxe.efi
-	OUT=bin-x86_64-efi/ipxe.efi
-fi
+make -j"$(nproc)" bin-x86_64-efi-sb/ipxe.efi
+OUT=bin-x86_64-efi-sb/ipxe.efi
 cp "$OUT" /out/ipxe-unsigned.efi
 sbsign --key "$KEY" --cert "$CERT" --output /out/ipxe-sb.efi /out/ipxe-unsigned.efi
 sbverify --cert "$CERT" /out/ipxe-sb.efi
