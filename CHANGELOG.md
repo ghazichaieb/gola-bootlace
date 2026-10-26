@@ -7,6 +7,7 @@ program is not yet in its final form and any release may change how it is set up
 
 - **PC cleanup tests no longer depend on clock precision (#34).** Their fixtures are kept away from the age cutoff, avoiding the intermittent 19-versus-20 failure on Windows. Thanks to @omar-akermi (#66).
 - **Zstandard image unpacking has a bounded window (#34).** Frames requiring more than 128 MiB of history are refused before decoding, and extraction uses one decoder worker. Ordinary images still stream to disk; this is a window limit, not a limit on unpacked image size. Thanks to @omar-akermi (#67).
+- **Manage the entries of an ISO's boot menu (#35).** The ISOs page can hide and rename compatible entries, add arguments to one entry, and select which entry starts when the ISO is chosen (including automatic starts and PC rules). The usual start remains available. Choices survive restarts, backups and library renames; a missing choice falls back to the usual start. Thanks to @omar-akermi (#68).
 
 ## 0.4.0 - 2026-10-25
 

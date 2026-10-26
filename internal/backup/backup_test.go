@@ -214,3 +214,21 @@ func TestNothingIsDoneWithoutALibrary(t *testing.T) {
 		t.Fatal("restore without a library")
 	}
 }
+
+func TestBootEntryChoicesRoundTripThroughBackup(t *testing.T) {
+	const way = "0123456789abcdef0123456789abcdef"
+	c := sample()
+	c.ISOEntries = map[string]config.ISOEntrySettings{"0123456789": {Default: way, Entries: map[string]config.EntryOptions{way: {Title: "Recovery", Args: "nomodeset"}}}}
+	var buf bytes.Buffer
+	if err := WriteZip(&buf, c, nil, false, "test", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := ReadZip(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := restored.Config.ISOEntries["0123456789"]
+	if got.Default != way || got.Entries[way].Title != "Recovery" || got.Entries[way].Args != "nomodeset" {
+		t.Fatalf("lost entry choices: %+v", got)
+	}
+}

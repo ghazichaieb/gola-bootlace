@@ -754,7 +754,7 @@ async function pageISOs() {
         <label class="row small" style="margin:0;font-weight:500" title="Also sends the console to the first serial port (115200 baud)"><input type="checkbox" data-debug="${i.id}" data-kind="serial" ${i.debug && i.debug.serial ? "checked" : ""}> Serial console</label>
         <label class="row small" style="margin:0;font-weight:500" title="Stops the start-up at a shell before the system goes on, to look around (network, disks, logs). Works for Proxmox VE, Fedora and the other dracut systems, Debian live and Ubuntu; other systems have no such word and ignore it. Type exit (or press Ctrl+D) to carry on."><input type="checkbox" data-debug="${i.id}" data-kind="shell" ${i.debug && i.debug.shell ? "checked" : ""}> Debug shell</label></div>
         <details class="small" style="margin-top:4px"><summary>Show the commands a PC gets</summary><pre class="mono small" style="white-space:pre-wrap;word-break:break-all;margin:6px 0 0">${esc((i.commands || []).join("\n"))}</pre></details>
-        ${i.ways && i.ways.length ? `<details class="small" style="margin-top:4px"><summary>${i.ways.length} other way${i.ways.length === 1 ? "" : "s"} to start it (from its own boot menu)</summary><ul class="small" style="margin:6px 0 0 18px;padding:0">${i.ways.map(w => `<li>${esc(w.title)}${w.special ? ' <span class="muted">(special)</span>' : ""}</li>`).join("")}</ul><div class="muted small">A PC reaches them from the menu line "Other ways to start an ISO".</div></details>` : ""}
+        ${i.ways && i.ways.length ? `<details class="small" style="margin-top:4px"><summary>${i.ways.length} other way${i.ways.length === 1 ? "" : "s"} to start it (from its own boot menu)</summary><ul class="small" style="margin:6px 0 0 18px;padding:0">${i.ways.map(w => `<li>${esc(w.title)}${w.special ? ' <span class="muted">(special)</span>' : ""}</li>`).join("")}</ul><div class="muted small">A PC reaches them from the menu line "Other ways to start an ISO".</div><button class="btn small" data-entries="${i.id}" style="margin-top:6px">Manage entries ...</button></details>` : ""}
         ${answerSelect(i)}` : ""}</td>
       <td class="hide-s" data-l="Starts as">${i.method === "recognised" ? `<span class="badge ok">${esc(i.family)}</span>` : `<span class="badge warn" title="Handed to the PC as a disk: needs a lot of memory and works for few systems">as a disk</span>`}</td>
       <td class="hide-s" data-l="Size">${bytes(i.size)}</td>
@@ -768,6 +768,25 @@ async function pageISOs() {
       const v = inp.value.trim() === inp.dataset.orig ? "" : inp.value.trim();
       await api("/api/isos/" + inp.dataset.id, "PUT", { title: v }); toast("Saved"); await draw();
     }));
+    page.querySelectorAll("button[data-entries]").forEach(b => b.onclick = () => {
+      const i = state.isos.find(x => x.id === b.dataset.entries);
+      const settings = i.entrySettings || {}, saved = settings.entries || {};
+      const m = modal(`<h2>Boot entries of ${esc(i.title)}</h2>
+        <p class="small muted">The default starts when this ISO is chosen, including automatic starts and PC rules. The usual start stays available under "Other ways to start an ISO". Extra arguments apply after the ISO's arguments, before PC options.</p>
+        <div class="field"><label for="entry-default">Default entry</label><select id="entry-default"><option value="">The usual start</option>${i.ways.map(w => `<option value="${esc(w.id)}" ${settings.default === w.id ? "selected" : ""}>${esc(saved[w.id]?.title || w.title)}</option>`).join("")}${settings.default && !i.ways.some(w => w.id === settings.default) ? `<option value="${esc(settings.default)}" selected>Unavailable entry (uses the usual start)</option>` : ""}</select></div>
+        ${i.ways.map((w, n) => { const o = saved[w.id] || {}; return `<fieldset class="card" data-entry="${esc(w.id)}"><legend>${esc(w.title)}</legend><div class="field"><label for="entry-title-${n}">Name in the menu (empty keeps the original)</label><input id="entry-title-${n}" data-title type="text" maxlength="120" value="${esc(o.title || "")}"></div><div class="field"><label for="entry-args-${n}">Extra kernel arguments</label><input id="entry-args-${n}" data-extra type="text" maxlength="300" value="${esc(o.args || "")}"></div><label><input type="checkbox" data-hidden ${o.hidden ? "checked" : ""}> Hide this entry</label></fieldset>`; }).join("")}
+        <p class="err" id="entry-error" role="alert"></p><div class="row" style="justify-content:flex-end"><button class="btn" id="entry-cancel">Cancel</button><button class="btn primary" id="entry-save">Save</button></div>`);
+      const q = s => m.el.querySelector(s);
+      q("#entry-cancel").onclick = m.close;
+      q("#entry-save").onclick = async () => {
+        const entries = {...saved};
+        m.el.querySelectorAll("[data-entry]").forEach(row => { entries[row.dataset.entry] = {title: row.querySelector("[data-title]").value.trim(), args: row.querySelector("[data-extra]").value.trim(), hidden: row.querySelector("[data-hidden]").checked}; });
+        try {
+          await api("/api/isos/" + i.id, "PUT", {entrySettings: {default: q("#entry-default").value, entries}});
+          m.close(); toast("Saved: used at the next start of this ISO"); await draw();
+        } catch(e) { q("#entry-error").textContent = e.message; }
+      };
+    });
     page.querySelectorAll("input[data-args]").forEach(inp => inp.onchange = guard(async () => { await api("/api/isos/" + inp.dataset.args, "PUT", { args: inp.value.trim() }); toast("Saved: used at the next start of this ISO"); await draw(); }));
     page.querySelectorAll("button[data-pwclear]").forEach(b => b.onclick = guard(async () => { await api("/api/isos/" + b.dataset.pwclear, "PUT", { bootPassword: "" }); toast("The menu starts this ISO without asking"); await draw(); }));
     page.querySelectorAll("button[data-pwset]").forEach(b => b.onclick = () => {

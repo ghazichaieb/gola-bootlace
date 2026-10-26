@@ -4,6 +4,7 @@
 package family
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 // Way is one entry of the ISO's own menu that Bootlace can start.
 type Way struct {
+	ID       string   // stable identity of the source entry, independent of server address and title
 	Title    string   // as the ISO's menu gives it, on one line
 	Family   string   // what started it ("Ubuntu-style (casper), by its boot menu")
 	Commands []string // iPXE commands, like Boot.Commands
@@ -59,7 +61,7 @@ func Ways(c *Context, primary Boot) []Way {
 		if titles[title]++; titles[title] > 1 { // the same words for two different starts (a BIOS and a UEFI entry): told apart by a number
 			title = fmt.Sprintf("%s (%d)", title, titles[title])
 		}
-		out = append(out, Way{Title: title, Family: b.Family, Commands: b.Commands, Special: special(m.Entry)})
+		out = append(out, Way{ID: wayID(c, m), Title: title, Family: b.Family, Commands: b.Commands, Special: special(m.Entry)})
 		if len(out) == maxWays {
 			break
 		}
@@ -96,4 +98,14 @@ func wayTitle(title string, index int) string {
 		t = string(r[:maxWayTitle-2]) + ".."
 	}
 	return t
+}
+
+// wayID follows the boot payload rather than its display title or position. The
+// volume suffix distinguishes partitions without depending on the server URL.
+func wayID(c *Context, m menuEntry) string {
+	h := sha256.New()
+	for _, field := range append([]string{strings.TrimPrefix(m.vol.URL, c.URLs.FS), m.kernel, m.initrd, m.Args}, m.Initrds...) {
+		fmt.Fprintf(h, "%d:%s", len(field), field)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil)[:16])
 }

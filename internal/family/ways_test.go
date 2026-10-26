@@ -151,3 +151,33 @@ menuentry "Live (KMS)" {
 		t.Fatalf("%q", got)
 	}
 }
+
+func TestWayIdentitySurvivesServerAndTitleChangesButTracksBootPayload(t *testing.T) {
+	iso := casperISO(manyEntries)
+	c := &Context{FS: iso, URLs: withNBD(urls)}
+	primary, _ := DetectGeneric(c)
+	original := Ways(c, primary)
+	renamed := casperISO(strings.ReplaceAll(manyEntries, "NewOS (safe graphics)", "A different label"))
+	moved := withNBD(urls)
+	moved.FS = "http://new-server:9000/fs/new-iso-id"
+	other := &Context{FS: renamed, URLs: moved}
+	b, _ := DetectGeneric(other)
+	changed := Ways(other, b)
+	for i := range original {
+		if original[i].ID == "" || original[i].ID != changed[i].ID {
+			t.Fatalf("identity changed with URL/title: %+v -> %+v", original[i], changed[i])
+		}
+	}
+	seen := map[string]bool{}
+	for _, way := range original {
+		if seen[way.ID] {
+			t.Fatal("distinct payloads share identity")
+		}
+		seen[way.ID] = true
+	}
+	edited := &Context{FS: casperISO(strings.ReplaceAll(manyEntries, "nomodeset quiet", "nomodeset noapic quiet")), URLs: withNBD(urls)}
+	b, _ = DetectGeneric(edited)
+	if Ways(edited, b)[1].ID == original[1].ID {
+		t.Fatal("edited payload reused old settings identity")
+	}
+}

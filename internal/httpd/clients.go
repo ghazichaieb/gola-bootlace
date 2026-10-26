@@ -214,33 +214,36 @@ func (s *Server) Clients() []Client {
 
 // ISOInfo is one ISO for the web interface.
 type ISOInfo struct {
-	ID        string           `json:"id"`
-	Name      string           `json:"name"`  // path under the ISO folder
-	Title     string           `json:"title"` // the name shown in the menu (the file name unless it was renamed)
-	Original  string           `json:"original"`
-	Size      int64            `json:"size"`
-	Modified  time.Time        `json:"modified"`
-	Hidden    bool             `json:"hidden"`
-	ByRule    bool             `json:"hiddenByRule,omitempty"` // hidden by a pattern (Menu page), so its own switch does not apply
-	Method    string           `json:"method"`                 // "recognised" or "disk"
-	Family    string           `json:"family,omitempty"`       // for example "Windows setup" or "Ubuntu (casper)"
-	Args      string           `json:"args,omitempty"`         // extra kernel arguments for this ISO
-	Protected bool             `json:"protected"`              // the menu asks for a password before it starts it
-	Debug     config.DebugMode `json:"debug"`                  // how it is started for finding faults
-	Commands  []string         `json:"commands,omitempty"`     // what the menu gives a PC that chooses it (the iPXE commands), so that the final command line can be read
-	Ways      []WayInfo        `json:"ways,omitempty"`         // the other entries of its own boot menu that can start it (issue #35)
-	Answer    string           `json:"answer,omitempty"`       // the id of the answer file every PC that starts it gets (an unattended install, issue #17)
+	EntrySettings config.ISOEntrySettings `json:"entrySettings"`
+	ID            string                  `json:"id"`
+	Name          string                  `json:"name"`  // path under the ISO folder
+	Title         string                  `json:"title"` // the name shown in the menu (the file name unless it was renamed)
+	Original      string                  `json:"original"`
+	Size          int64                   `json:"size"`
+	Modified      time.Time               `json:"modified"`
+	Hidden        bool                    `json:"hidden"`
+	ByRule        bool                    `json:"hiddenByRule,omitempty"` // hidden by a pattern (Menu page), so its own switch does not apply
+	Method        string                  `json:"method"`                 // "recognised" or "disk"
+	Family        string                  `json:"family,omitempty"`       // for example "Windows setup" or "Ubuntu (casper)"
+	Args          string                  `json:"args,omitempty"`         // extra kernel arguments for this ISO
+	Protected     bool                    `json:"protected"`              // the menu asks for a password before it starts it
+	Debug         config.DebugMode        `json:"debug"`                  // how it is started for finding faults
+	Commands      []string                `json:"commands,omitempty"`     // what the menu gives a PC that chooses it (the iPXE commands), so that the final command line can be read
+	Ways          []WayInfo               `json:"ways,omitempty"`         // the other entries of its own boot menu that can start it (issue #35)
+	Answer        string                  `json:"answer,omitempty"`       // the id of the answer file every PC that starts it gets (an unattended install, issue #17)
 }
 
 // WayInfo is one of those entries as the web page lists it.
 type WayInfo struct {
+	ID      string `json:"id"`
 	Title   string `json:"title"`
 	Special bool   `json:"special,omitempty"` // safe graphics, a rescue entry, a check of the disc ...
 }
 
 // ISOInfos lists the ISOs of the folder with what is known of each.
 func (s *Server) ISOInfos() ([]ISOInfo, error) {
-	infos, err := s.entryInfos(s.settings())
+	cfg := s.settings()
+	infos, err := s.entryInfos(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -250,13 +253,14 @@ func (s *Server) ISOInfos() ([]ISOInfo, error) {
 		if e.Known {
 			i.Method, i.Family = "recognised", e.Boot.Family
 		}
-		i.Args = s.settings().Args[e.ISO.ID]
-		i.Debug = s.settings().Debug[e.ISO.ID]
+		i.Args = cfg.Args[e.ISO.ID]
+		i.Debug = cfg.Debug[e.ISO.ID]
 		i.Protected = e.Protected
-		i.Answer = s.settings().ISOAnswers[e.ISO.ID]
+		i.Answer = cfg.ISOAnswers[e.ISO.ID]
 		i.Commands = e.Entry.Commands
+		i.EntrySettings = cfg.ISOEntries[e.ISO.ID]
 		for _, w := range e.Ways {
-			i.Ways = append(i.Ways, WayInfo{Title: w.Title, Special: w.Special})
+			i.Ways = append(i.Ways, WayInfo{ID: w.ID, Title: w.Title, Special: w.Special})
 		}
 		out = append(out, i)
 	}
