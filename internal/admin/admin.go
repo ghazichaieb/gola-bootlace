@@ -473,12 +473,13 @@ func (a *Admin) isos(w http.ResponseWriter, _ *http.Request) {
 func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var in struct {
-		Hidden       *bool             `json:"hidden"`
-		Title        *string           `json:"title"`
-		Args         *string           `json:"args"`
-		Debug        *config.DebugMode `json:"debug"`
-		BootPassword *string           `json:"bootPassword"` // the password the menu asks for before it starts this ISO; empty takes it away
-		Answer       *string           `json:"answer"`       // the answer file every PC that starts this ISO gets (an unattended install); empty takes it away
+		EntrySettings *config.ISOEntrySettings `json:"entrySettings"`
+		Hidden        *bool                    `json:"hidden"`
+		Title         *string                  `json:"title"`
+		Args          *string                  `json:"args"`
+		Debug         *config.DebugMode        `json:"debug"`
+		BootPassword  *string                  `json:"bootPassword"` // the password the menu asks for before it starts this ISO; empty takes it away
+		Answer        *string                  `json:"answer"`       // the answer file every PC that starts this ISO gets (an unattended install); empty takes it away
 	}
 	if !readJSON(w, r, &in) {
 		return
@@ -504,7 +505,35 @@ func (a *Admin) isoUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if in.EntrySettings != nil {
+		known := map[string]bool{}
+		for _, info := range infos {
+			if info.ID == id {
+				for _, way := range info.Ways {
+					known[way.ID] = true
+				}
+			}
+		}
+		previous := a.o.Store.Get().ISOEntries[id]
+		for key, options := range in.EntrySettings.Entries {
+			old, exists := previous.Entries[key]
+			if !known[key] && (!exists || options != old) {
+				fail(w, http.StatusBadRequest, "boot entry is not currently available; refresh the ISO list")
+				return
+			}
+		}
+		if in.EntrySettings.Default != "" && !known[in.EntrySettings.Default] && in.EntrySettings.Default != previous.Default {
+			fail(w, http.StatusBadRequest, "default boot entry is not currently available")
+			return
+		}
+	}
 	err = a.o.Store.Update(func(c *config.Config) error {
+		if in.EntrySettings != nil {
+			if c.ISOEntries == nil {
+				c.ISOEntries = map[string]config.ISOEntrySettings{}
+			}
+			c.ISOEntries[id] = *in.EntrySettings
+		}
 		if in.BootPassword != nil {
 			if c.BootPasswords == nil {
 				c.BootPasswords = map[string]string{}

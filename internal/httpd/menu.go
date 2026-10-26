@@ -25,8 +25,9 @@ type entryInfo struct {
 	Known     bool // the ISO is started from its own files; otherwise it is handed to the PC as a disk
 	Title     string
 	Hidden    bool
-	Protected bool // the menu asks for a password before it starts this ISO
-	ByRule    bool // hidden by a pattern of the settings, not by the ISO's own switch
+	Protected bool       // the menu asks for a password before it starts this ISO
+	ByRule    bool       // hidden by a pattern of the settings, not by the ISO's own switch
+	Usual     menu.Entry // original start, retained when a different default is selected
 	Entry     menu.Entry
 	Display   string       // the title and what kind of start it gets, as the menu shows it
 	Ways      []family.Way // the other entries of the ISO's own boot menu that can start it (empty until the background look has finished)
@@ -160,6 +161,8 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 				"sanboot --no-describe --drive 0x80 " + s.sanbootSource(iso),
 			}}
 		}
+		e.Usual = e.Entry
+		e.Entry = selectedEntry(cfg, e)
 		out = append(out, e)
 	}
 	for i := range out { // an ISO with a password: the menu asks for it first (a rule that starts it does not: Direct leaves the guard out)
@@ -256,14 +259,14 @@ func (s *Server) waysMenu(w http.ResponseWriter, cfg config.Config, visible []en
 	if which == "list" {
 		opts.Heading = "Other ways to start an ISO"
 		for _, e := range visible {
-			if len(e.Ways) > 0 {
-				entries = append(entries, menu.Entry{Name: e.Display, Title: e.Title, Kind: fmt.Sprintf("%d ways", len(e.Ways)+1), Commands: []string{"chain " + s.waysURL(e.ISO.ID, 1)}})
+			if len(visibleWays(cfg, e)) > 0 {
+				entries = append(entries, menu.Entry{Name: e.Display, Title: e.Title, Kind: fmt.Sprintf("%d ways", len(visibleWays(cfg, e))+1), Commands: []string{"chain " + s.waysURL(e.ISO.ID, 1)}})
 			}
 		}
 	} else {
 		var found *entryInfo
 		for i := range visible {
-			if visible[i].ISO.ID == which && len(visible[i].Ways) > 0 {
+			if visible[i].ISO.ID == which && len(visibleWays(cfg, visible[i])) > 0 {
 				found = &visible[i]
 			}
 		}
@@ -274,12 +277,18 @@ func (s *Server) waysMenu(w http.ResponseWriter, cfg config.Config, visible []en
 		}
 		opts.Heading = "How to start " + found.Title
 		title = "Gola Bootlace - " + found.Title
-		usual := s.entryForPC(cfg, found.ISO.ID, found.Entry, pc, mac)
+		original := found.Usual
+		if original.Commands == nil {
+			original = found.Entry
+		}
+		original.Guard = found.Entry.Guard
+		usual := s.entryForPC(cfg, found.ISO.ID, original, pc, mac)
 		usual.Name, usual.Title, usual.Kind, usual.Size = "The usual start", "The usual start", found.Boot.Family, ""
 		entries = append(entries, usual)
-		for _, way := range found.Ways {
-			cmds := debugArgs(addArgs(way.Commands, cfg.Args[found.ISO.ID]), cfg.Debug[found.ISO.ID], way.Family)
-			entries = append(entries, s.entryForPC(cfg, found.ISO.ID, menu.Entry{Name: way.Title, Title: way.Title, Kind: way.Family, Commands: cmds, Guard: found.Entry.Guard}, pc, mac))
+		for _, way := range visibleWays(cfg, *found) {
+			entry := configuredWay(cfg, found.ISO.ID, way)
+			entry.Guard = found.Entry.Guard
+			entries = append(entries, s.entryForPC(cfg, found.ISO.ID, entry, pc, mac))
 		}
 	}
 	perPage := entriesPerPage(platform) - 1 // one line goes to the way back
@@ -389,7 +398,7 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 	}
 	opts := menu.Options{Default: defaultChoice(cfg.Default, visible), Timeout: cfg.MenuTimeout, Again: s.menuURL(1), Accent: cfg.MenuAccent}
 	for _, e := range visible { // an ISO whose own boot menu has other ways to start it: one line opens them
-		if len(e.Ways) > 0 {
+		if len(visibleWays(cfg, e)) > 0 {
 			opts.Ways = s.waysURL("list", 1)
 			break
 		}

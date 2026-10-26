@@ -67,3 +67,17 @@ This page lists what, and says for each point whether it was checked on a real r
   iPXE way, have been taken to the end so far; the others have been taken to their installer or desktop.
 - Keep the PC on a wired connection with a fixed or reserved address while it runs from the network.
 - For an installer, check the network page and the package sources it shows before accepting them.
+
+## Managing an ISO's alternative entries
+
+On the **ISOs** page, expand an ISO's other ways to start it, then choose **Manage entries**.
+Each compatible alternative can be hidden, renamed or given extra kernel arguments. Empty names keep the ISO's own title.
+Select **Default entry** to use that alternative whenever this ISO starts from the main menu, the timeout, or a PC rule.
+The default cannot be hidden. **The usual start** remains the first choice in the other-ways menu; choose it as the default to reset the selection.
+ISO arguments apply to every start; an alternative's extra arguments follow them, then the PC's options. Passwords, debug options and attached answer files still apply.
+
+Choices are saved with the settings and included in backups. Renaming an ISO through the library page keeps its choices; deleting it removes them.
+Entries are identified by their boot payload and volume, rather than their title, position or the server address. An ISO update that changes a payload creates a new entry: old choices are retained,
+but an unavailable default temporarily uses the usual start. After recognition finishes, reopen the dialog to choose a replacement.
+This manages only the compatible entries already offered by Bootlace; it does not expand family support or change disc-check and persistence behavior.
+The management paths and generated UEFI/BIOS scripts are tested in software; these new settings have not been walked through on a booting VM or physical PC.

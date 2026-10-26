@@ -3,6 +3,10 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **Manage the entries of an ISO's boot menu (#35).** The ISOs page can hide and rename compatible entries, add arguments to one entry, and select which entry starts when the ISO is chosen (including automatic starts and PC rules). The usual start remains available. Choices survive restarts, backups and library renames; a missing choice falls back to the usual start.
+
 ## 0.4.0 - 2026-10-25
 
 - **Answer files are given to fewer hosts (#60).** The address of an answer file has no password (an installer cannot log in), so a file is now given only to a MAC address that asked for the menu in the last two hours, and only twelve files after each time that PC asked for the menu; then the address answers "not found" until the PC asks again (a refusal says why in the log, the requester sees nothing more). The same network address as the menu request is NOT required by default: in a real run the installer of Ubuntu Server was given another address than iPXE had (the router leases by client identifier), so that condition refused the PC it was meant for; it is a switch ("Stricter") on the Unattended page for networks where a PC keeps its address. Saving, listing and attaching a file now warn when a line holds a password in plain text for its kind (Debian preseed, Ubuntu autoinstall, kickstart, AutoYaST); nothing is refused. This does not stop a host of the local network that asks the menu with the MAC address it wants and then fetches: the documentation says so. Verified with Ubuntu Server 26.04.1 in a UEFI VM (see the issue); the gate, the counters and the warnings are covered by unit tests.

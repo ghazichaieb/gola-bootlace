@@ -187,6 +187,10 @@ func (a *Admin) fileDelete(w http.ResponseWriter, r *http.Request) {
 func (a *Admin) followSettings(moved map[string]string, gone []string) {
 	_ = a.o.Store.Update(func(c *config.Config) error {
 		for old, id := range moved {
+			if v, ok := c.ISOEntries[old]; ok {
+				delete(c.ISOEntries, old)
+				c.ISOEntries[id] = v
+			}
 			if v, ok := c.Hidden[old]; ok {
 				delete(c.Hidden, old)
 				c.Hidden[id] = v
@@ -211,6 +215,7 @@ func (a *Admin) followSettings(moved map[string]string, gone []string) {
 			}
 		}
 		for _, id := range gone {
+			delete(c.ISOEntries, id)
 			delete(c.Hidden, id)
 			delete(c.Titles, id)
 			delete(c.Args, id)
