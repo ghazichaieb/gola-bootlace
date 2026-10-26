@@ -60,11 +60,24 @@ func addArgs(commands []string, extra string) []string {
 	out := append([]string(nil), commands...)
 	for i, c := range out {
 		if strings.HasPrefix(c, "kernel ") {
-			out[i] = c + " " + extra
+			out[i] = insertKernelWords(c, extra)
 			break
 		}
 	}
 	return out
+}
+
+// insertKernelWords puts words on a "kernel" command line where the kernel reads them. A line from an ISO's own boot menu can contain the word "--" (Linux Mint's entries
+// do): the kernel stops reading its parameters there and hands what follows to the init program, so the words go in front of it. ("---", the Debian and Ubuntu installers'
+// word for what belongs to the installed system, is no separator for the kernel: words after it are read.)
+func insertKernelWords(line, words string) string {
+	fields := strings.Split(line, " ")
+	for i, f := range fields {
+		if i > 0 && f == "--" {
+			return strings.Join(fields[:i], " ") + " " + words + " " + strings.Join(fields[i:], " ")
+		}
+	}
+	return line + " " + words
 }
 
 // debugArgs changes the kernel command of an ISO's start for finding faults: the quiet start-up words go, the kernel's messages are turned up and, if asked, the console
@@ -79,9 +92,13 @@ func debugArgs(commands []string, d config.DebugMode, fam string) []string {
 		if !strings.HasPrefix(c, "kernel ") {
 			continue
 		}
-		var words []string
+		var words, tail []string // tail: the "--" of the ISO's own line and what follows it, which the kernel does not read (see insertKernelWords)
 		have := map[string]bool{}
 		for _, w := range strings.Fields(c) {
+			if tail != nil || (len(words) > 0 && w == "--") {
+				tail = append(tail, w)
+				continue
+			}
 			if d.Verbose && (w == "quiet" || w == "splash" || w == "rhgb" || strings.HasPrefix(w, "splash=") || (strings.HasPrefix(w, "loglevel=") && w != "loglevel=7")) {
 				continue
 			}
@@ -110,7 +127,7 @@ func debugArgs(commands []string, d config.DebugMode, fam string) []string {
 		if d.Serial {
 			words = append(words, "console=tty0", "console=ttyS0,115200n8")
 		}
-		out[i] = strings.Join(words, " ")
+		out[i] = strings.Join(append(words, tail...), " ")
 		break
 	}
 	return out
