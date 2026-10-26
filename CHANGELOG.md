@@ -3,13 +3,15 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Unreleased
+
+- **Changing management pages while data loads is safe (#69).** Late page responses and failures are discarded after navigation, and abandoned pages cannot restart polling. Background uploads continue normally. Thanks to @omar-akermi (#71).
+
 ## 0.4.2 - 2026-10-26
 
 - **The container's `update` command renews itself.** A container's `update` command was only rewritten when the host script ran again, so a container made before the "what is new" list existed (0.4.0 or earlier scripts) kept an old copy that asked "Update now?" without listing the changes. The Linux release archives now carry the current `update` command, and after a successful update it replaces the installed one (the archive has just passed its checksum; an archive without one, or one that does not parse, leaves the old copy). For a container that already has the old copy, run the host script once with `CTID=<number>` (see docs/proxmox.md); after that it stays current. When the changelog cannot be read, `update` now says so instead of printing nothing.
 
 ## 0.4.1 - 2026-10-26
-
-- **Changing management pages while data loads is safe (#69).** Late page responses and failures are discarded after navigation, and abandoned pages cannot restart polling. Background uploads continue normally.
 
 - **PC cleanup tests no longer depend on clock precision (#34).** Their fixtures are kept away from the age cutoff, avoiding the intermittent 19-versus-20 failure on Windows. Thanks to @omar-akermi (#66).
 - **Zstandard image unpacking has a bounded window (#34).** Frames requiring more than 128 MiB of history are refused before decoding, and extraction uses one decoder worker. Ordinary images still stream to disk; this is a window limit, not a limit on unpacked image size. Thanks to @omar-akermi (#67).
