@@ -348,8 +348,11 @@ func TestPcListIsPagedSearchedAndCleaned(t *testing.T) {
 	r := newRig(t)
 	r.login()
 	r.backend.clients = nil
+	// Keep fixtures away from the exact ten-day cutoff: Windows clock
+	// resolution may give setup and the request the same timestamp.
+	seen := time.Now().Add(-12 * time.Hour)
 	for i := 0; i < 30; i++ {
-		r.backend.clients = append(r.backend.clients, httpd.Client{MAC: fmt.Sprintf("aa:bb:cc:dd:ee:%02x", i), IP: fmt.Sprintf("10.0.0.%d", i), Product: "Box", LastSeen: time.Now().Add(-time.Duration(i) * 24 * time.Hour)})
+		r.backend.clients = append(r.backend.clients, httpd.Client{MAC: fmt.Sprintf("aa:bb:cc:dd:ee:%02x", i), IP: fmt.Sprintf("10.0.0.%d", i), Product: "Box", LastSeen: seen.Add(-time.Duration(i) * 24 * time.Hour)})
 	}
 	_, out := r.do("GET", "/api/pcs?limit=10&offset=20", nil, nil)
 	if out["total"].(float64) != 30 || len(out["pcs"].([]any)) != 10 || out["offset"].(float64) != 20 {
