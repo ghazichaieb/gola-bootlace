@@ -3,7 +3,7 @@
 All notable changes are listed here, newest first. The version numbers follow [Semantic Versioning](https://semver.org): while the first number is 0, the
 program is not yet in its final form and any release may change how it is set up. See "Versioning" in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Unreleased
+## 0.4.1 - 2026-10-26
 
 - **PC cleanup tests no longer depend on clock precision (#34).** Their fixtures are kept away from the age cutoff, avoiding the intermittent 19-versus-20 failure on Windows. Thanks to @omar-akermi (#66).
 - **Zstandard image unpacking has a bounded window (#34).** Frames requiring more than 128 MiB of history are refused before decoding, and extraction uses one decoder worker. Ordinary images still stream to disk; this is a window limit, not a limit on unpacked image size. Thanks to @omar-akermi (#67).
