@@ -5,6 +5,9 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **Secure Boot for other Linux ISOs: a prototype, off by default (#10).** New option `-secure-boot-dir <folder>` (`BOOTLACE_SECURE_BOOT_DIR`; `-secure-boot-shim` names the boot file, `-secure-boot-all` sends every 64-bit UEFI PC): the DHCP answer for a PC marked on the PCs page ("Secure Boot route") names a Microsoft-signed shim under `sb/`, TFTP serves the folder's files by name (the shim's second stage, MokManager), and the menu entries that start a Linux kernel get an iPXE `shim` line so that the ISO's own shim checks the kernel. `tools/ipxe/build-sb.sh` builds iPXE with `SECUREBOOT=1` and its own SBAT line and signs it with a key given by path (nothing is signed or shipped by the project). Measured in a Hyper-V lab with Secure Boot on: the menu, and Ubuntu, Linux Mint, Debian and Fedora to their desktops or installer, openSUSE and Ubuntu Server to their kernels; an unsigned kernel (CachyOS) and Windows through wimboot do not start. The shim needs the signing certificate enrolled once per PC (8 screens), unless the iPXE project's own signed shim and binaries are used instead, which needed no enrolment in the lab. Full table, limits and risks in [docs/secure-boot.md](docs/secure-boot.md). Not tested on a real PC. `tools/lab.ps1` and `tools/pxe_vm.ps1` can start Secure Boot VMs (any template, an extra disk).
+- **A correction in the Secure Boot page.** wimboot is signed by Microsoft (UEFI CA 2011); only iPXE is unsigned.
+
 - **Changing management pages while data loads is safe (#69).** Late page responses and failures are discarded after navigation, and abandoned pages cannot restart polling. Background uploads continue normally. Thanks to @omar-akermi (#71).
 
 ## 0.4.2 - 2026-10-26

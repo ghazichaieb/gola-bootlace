@@ -313,3 +313,19 @@ So `HideWirelessSetupInOOBE` is what works on this build; the `OOBE\BYPASSNRO` r
 - `setup.exe /installdrivers <folder>` was tried first and does not exist in the set-up image's Setup ("An unknown command-line option [/installdrivers] was specified"): it is not used.
 - **Not seen:** the installed Windows starting from the virtio-scsi disk. On the Proxmox test host (an i7-2700K without AVX2) the VM's QEMU exited by itself at about 75 % of "Getting files ready for installation" in two runs, so the install never finished there
   (the cause is not known; the same ISO ran to the end on Hyper-V on a newer processor). Without the unfinished install nothing is claimed about booting from that controller.
+
+## Secure Boot on, through the signed-iPXE route (prototype, 2026-10-26, Hyper-V UEFI, template "Microsoft UEFI Certificate Authority")
+
+Run with `-secure-boot-dir` (see [secure-boot.md](secure-boot.md) for the method, the two ways, the screens and everything that was not tried). Each ISO was started from the menu through its own shim.
+
+| ISO | Result |
+| --- | --- |
+| Ubuntu 22.04.5 desktop | **works**: desktop (signed-iPXE route and the iPXE project's shim) |
+| Linux Mint 22.3 Cinnamon | **works**: desktop |
+| Debian 13.7 live GNOME | **works**: desktop (both ways) |
+| Debian 13.7 netinst | **works**: installer's first page |
+| Fedora Workstation Live 44 | **works**: GNOME overview |
+| openSUSE Tumbleweed NET 20261020 | kernel starts; the installer then stops at DHCP (the link-local lab artefact above), not tried further |
+| Ubuntu 26.04.1 live server | kernel starts; the 4 GB VM cannot hold the downloaded ISO (as without Secure Boot) |
+| CachyOS 260426 | **does not start**: `Could not boot: Error 0x7f04818f` (unsigned kernel) |
+| Windows 11 (FW11HEN) through wimboot | **does not start** in this lab: `Verification failed: Security Policy Violation` for the boot manager (the lab template does not trust Windows' CA); use the `native:` rule |

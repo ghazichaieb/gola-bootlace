@@ -24,6 +24,7 @@ param(
     [string] $LogDir = 'C:\bootlace-lab',
     [string] $Exe = '',                 # where the server program is built to (default: bin\bootlace.exe of this checkout)
     [string] $Config = '',              # the settings file (default: bootlace.json in the current folder)
+    [string] $AdminPassword = '',      # the web interface's password (default: made up and written in the log the first time)
     [int] $HttpPort = 8080,
     [string] $SecureBootDir = '',       # the Secure Boot route: the folder with shimx64.efi, grubx64.efi (signed iPXE), mmx64.efi
     [switch] $SecureBootAll,            # ... for every 64-bit UEFI PC
@@ -50,6 +51,7 @@ $serverArgs = @('serve', '-iso-dir', $IsoDir, '-ip', $ip, '-dhcp', 'full', '-pxe
 if ($Pick) { $serverArgs += @('-menu-pick', $Pick) }
 if ($SmbForward) { $serverArgs += @('-smb-forward', $SmbForward) }
 if ($Config) { $serverArgs += @('-config', $Config) }
+if ($AdminPassword) { $serverArgs += @('-admin-password', $AdminPassword) }
 if ($SecureBootDir) { $serverArgs += @('-secure-boot-dir', $SecureBootDir) }
 if ($SecureBootAll) { $serverArgs += '-secure-boot-all' }
 if ($SecureBootShim) { $serverArgs += @('-secure-boot-shim', $SecureBootShim) }
