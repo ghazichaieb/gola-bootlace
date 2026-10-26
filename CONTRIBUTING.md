@@ -23,3 +23,9 @@ One version number names everything that is made from one commit: the program, t
   The Proxmox scripts and the Docker image take the program from these, never from a branch.
 - **Docker tags.** `X.Y.Z` always; a final release also `X.Y` and `latest` (and `X` from 1.0). A pre-release has only its own tag.
 - **Who.** A release is made by the maintainer only, after the maintainer says so: tag, GitHub release with the files, Docker image. `tools/release.sh` prints the commands and publishes nothing.
+
+## Web interface regression tests
+
+Run `node --test tools/admin-views.test.cjs` with Node.js 18 or later after changing asynchronous management-page rendering.
+The dependency-free harness runs the embedded page functions with deferred API responses and checks that navigation drops stale DOM access, errors and polling.
+It supplements `go test ./...`; it does not replace a real-browser check of layout, focus or interaction.

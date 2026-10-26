@@ -9,6 +9,8 @@ program is not yet in its final form and any release may change how it is set up
 
 ## 0.4.1 - 2026-10-26
 
+- **Changing management pages while data loads is safe (#69).** Late page responses and failures are discarded after navigation, and abandoned pages cannot restart polling. Background uploads continue normally.
+
 - **PC cleanup tests no longer depend on clock precision (#34).** Their fixtures are kept away from the age cutoff, avoiding the intermittent 19-versus-20 failure on Windows. Thanks to @omar-akermi (#66).
 - **Zstandard image unpacking has a bounded window (#34).** Frames requiring more than 128 MiB of history are refused before decoding, and extraction uses one decoder worker. Ordinary images still stream to disk; this is a window limit, not a limit on unpacked image size. Thanks to @omar-akermi (#67).
 - **XZ image unpacking has the same limit as Zstandard (#34).** The XZ library raises its own dictionary limit to whatever the file declares, so a small hostile `.xz` could ask for up to 4 GiB before the free-space check helps. The first block's declared dictionary is now read first and a file above 128 MiB is refused with a message that says how to repack it (follow-up to #67). Only the first block is checked; the documentation says so.
