@@ -64,14 +64,18 @@ confirm() {
 	[[ $answer =~ ^[Yy] ]]
 }
 
-[ "$(id -u)" = 0 ] || die "run this as root on the Proxmox host"
-command -v pct >/dev/null && command -v pveam >/dev/null && command -v pvesm >/dev/null || die "this is not a Proxmox host (pct, pveam and pvesm are needed)"
-command -v curl >/dev/null || die "curl is needed"
-case $(dpkg --print-architecture) in
-amd64) ARCH=amd64 ;;
-arm64) ARCH=arm64 ;;
-*) die "only amd64 and arm64 hosts are supported" ;;
-esac
+# "--print-update" only writes the text of the container's "update" command to the standard output (the release build puts it into the archive, and the command
+# installs it over itself after an update); it needs no Proxmox host.
+if [ "${1:-}" != --print-update ]; then
+	[ "$(id -u)" = 0 ] || die "run this as root on the Proxmox host"
+	command -v pct >/dev/null && command -v pveam >/dev/null && command -v pvesm >/dev/null || die "this is not a Proxmox host (pct, pveam and pvesm are needed)"
+	command -v curl >/dev/null || die "curl is needed"
+	case $(dpkg --print-architecture) in
+	amd64) ARCH=amd64 ;;
+	arm64) ARCH=arm64 ;;
+	*) die "only amd64 and arm64 hosts are supported" ;;
+	esac
+fi
 
 # ---- "what's new": one short line for each entry of the changelog that is newer than the installed version (the bold start of the entry). The function is written to a file
 # once: this script sources it, and the container's "update" command gets the same text.
@@ -209,6 +213,8 @@ if [ -z "$CUR" ] || [ "$(printf '%s\n%s\n' "$CUR" "$NEW" | sort -V | tail -n 1)"
 	if curl -fsSL "$CHLOG" -o "$TMP/CHANGELOG.md" 2>/dev/null; then
 		echo "What's new${CUR:+ since $CUR}:"
 		whatsnew "$TMP/CHANGELOG.md" "$CUR" "$NEW"
+	else
+		echo "(the list of changes could not be read from $CHLOG; the notes are at https://github.com/$REPO/releases/tag/v$NEW)"
 	fi
 fi
 [ "$CHECK" = 1 ] && { echo "A newer version can be installed with: update    (notes: https://github.com/$REPO/releases/tag/v$NEW)"; exit 0; }
@@ -230,6 +236,12 @@ systemctl start bootlace
 for _ in 1 2 3 4 5 6 7 8 9 10; do
 	sleep 2
 	if /usr/local/bin/bootlace health >/dev/null 2>&1; then
+		# this command renews itself from the archive that was just checked (releases from 0.4.2 carry it), so that a container never keeps an old copy of it;
+		# the old text stays when the archive has none or the new one does not parse
+		if tar -xzf "$TMP/$FILE" -C "$TMP" --wildcards '*/update' --strip-components=1 2>/dev/null && sh -n "$TMP/update" 2>/dev/null; then
+			# copied beside the old one and renamed over it (the shell that runs this text keeps reading the old file)
+			{ cp "$TMP/update" /usr/local/bin/update.new && chmod 755 /usr/local/bin/update.new && mv -f /usr/local/bin/update.new /usr/local/bin/update; } || true
+		fi
 		echo "Updated to $NEW. The old program is kept as /usr/local/bin/bootlace.previous."
 		echo "Notes: https://github.com/$REPO/releases/tag/v$NEW"
 		exit 0
@@ -244,6 +256,11 @@ UPDATE
 	sed -i -e "/^#WHATSNEW#\$/{r $tmp/whatsnew.sh" -e 'd}' "$tmp/update" # the same function text as this script uses
 	printf 'REPO=%s\n' "$BOOTLACE_REPO" >"$tmp/bootlace-update.conf"
 }
+if [ "${1:-}" = --print-update ]; then
+	write_update
+	cat "$tmp/update"
+	exit 0
+fi
 
 
 write_unit() {

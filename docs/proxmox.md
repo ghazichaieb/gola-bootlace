@@ -67,7 +67,10 @@ version, `update -y` does not ask.
 
 Before it asks, `update` (and `update --check`) lists **what is new**, as one short line for each entry of the changelog: every release after the installed one, up to the one
 that is offered. A server that is one release behind sees that release, one that is three behind sees all three (a line starting with `!` is a security note). It compares the
-versions, so a test build such as `0.3.0-9-gabc` counts as newer than 0.3.0; nothing is shown when going back to an older version or when the changelog cannot be fetched.
+versions, so a test build such as `0.3.0-9-gabc` counts as newer than 0.3.0; nothing is shown when going back to an older version, and a line says so when the changelog cannot be fetched.
+
+The `update` command renews itself: the Linux release archives carry the current copy, and after a successful update it replaces the installed one. A container made by an older
+script keeps its old `update` (it has no "what is new" list, and asks "Update now?" straight away) until the script is run once for it, as in the next paragraph; from then on it stays current.
 
 To change how the container is set up (the unit, the library), run the script again with `CTID=<number>`; it recognises its own container, replaces the program and the
 `update` command, and leaves the settings, the library and the mount alone. When it updates the program it shows the same list, read from the changelog inside the download,

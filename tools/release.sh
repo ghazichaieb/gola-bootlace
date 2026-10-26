@@ -9,7 +9,7 @@
 #   SHA256SUMS                                the checksums of the files above
 #   SHA256SUMS.sig                            their signature (ssh-keygen -Y sign), made when a key is given: BOOTLACE_SIGN_KEY=<private key file>, default ~/.ssh/gola_bootlace_release
 #
-# Each archive holds the program (bootlace or bootlace.exe), README.md, CHANGELOG.md, LICENSE, ADDITIONAL-TERMS.md and NOTICE.
+# Each archive holds the program (bootlace or bootlace.exe), README.md, CHANGELOG.md, LICENSE, ADDITIONAL-TERMS.md and NOTICE; the Linux ones also the container's "update" command.
 # A release is made from a commit that has a tag vX.Y.Z and a clean working tree; --snapshot allows any state (the version then reads X.Y.Z-N-gHASH).
 # Nothing is published: the script ends by printing the commands for the tag, the release and the Docker image, to be run when the release is decided.
 # Copyright (c) 2026 Gola Services SUARL. Licensed under GPL-3.0-or-later; see LICENSE and ADDITIONAL-TERMS.md.
@@ -48,6 +48,8 @@ for target in linux/amd64 linux/arm64 windows/amd64; do
 	[ "$os" = windows ] && bin=bootlace.exe
 	mv "dist/bootlace-$os-$arch$([ "$os" = windows ] && echo .exe)" "$dir/$bin"
 	cp README.md CHANGELOG.md LICENSE ADDITIONAL-TERMS.md NOTICE "$dir/"
+	# the container's "update" command, so that an installed one renews itself from the archive it just verified
+	[ "$os" = linux ] && bash tools/proxmox/bootlace-lxc.sh --print-update >"$dir/update"
 	ext=tar.gz
 	[ "$os" = windows ] && ext=zip
 	# tools/archive makes the same archive on every computer: owner 0 (an archive that names the builder's own user cannot be unpacked by root in an
