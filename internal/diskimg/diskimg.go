@@ -221,7 +221,7 @@ func (m *Manager) unpack(iso isos.ISO, dst string, j *job) {
 		}
 		r = xr
 	case "zst":
-		zr, err := zstd.NewReader(cr)
+		zr, err := zstd.NewReader(cr, zstd.WithDecoderMaxMemory(128<<20), zstd.WithDecoderConcurrency(1))
 		if err != nil {
 			fail(err)
 			return

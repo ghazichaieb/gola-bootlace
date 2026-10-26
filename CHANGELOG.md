@@ -5,7 +5,8 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
-- **PC cleanup tests no longer depend on clock precision (#34).** Their fixtures are kept away from the age cutoff, avoiding the intermittent 19-versus-20 failure on Windows.
+- **PC cleanup tests no longer depend on clock precision (#34).** Their fixtures are kept away from the age cutoff, avoiding the intermittent 19-versus-20 failure on Windows. Thanks to @omar-akermi (#66).
+- **Zstandard image unpacking has a bounded window (#34).** Frames requiring more than 128 MiB of history are refused before decoding, and extraction uses one decoder worker. Ordinary images still stream to disk; this is a window limit, not a limit on unpacked image size. Thanks to @omar-akermi (#67).
 
 ## 0.4.0 - 2026-10-25
 
