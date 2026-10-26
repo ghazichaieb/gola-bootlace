@@ -151,7 +151,7 @@ function toast(msg, bad) {
   const t = $("#toast"); t.textContent = msg; t.className = "toast" + (bad ? " bad" : ""); t.hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, bad ? 6000 : 2600);
 }
-const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { toast(e.message, true); } };
+const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { if (e !== staleView) toast(e.message, true); } };
 
 function ago(iso) {
   if (!iso || iso.startsWith("0001")) return "never";
@@ -179,6 +179,30 @@ function actionOptions(sel, withMenu = true) {
   return o;
 }
 
+// Each render owns a distinct main element, even when returning to the same view.
+// Drop late reads and failures before their continuations touch the next page.
+// Mutations already sent to the server are allowed to finish; uploads stay global.
+const staleView = new Error("view no longer active");
+function viewScope(page) {
+  const current = () => document.querySelector("#page") === page;
+  const request = async (...args) => {
+    if (!current()) throw staleView;
+    try {
+      const result = await api(...args);
+      if (!current()) throw staleView;
+      return result;
+    } catch (e) {
+      if (!current()) throw staleView;
+      throw e;
+    }
+  };
+  const repeat = (ms, fn) => {
+    if (!current()) return;
+    every(ms, async () => { if (current()) await fn(); });
+  };
+  return { request, repeat, current };
+}
+
 // ---- shell
 function clearTimers() { state.timers.forEach(clearInterval); state.timers = []; }
 function every(ms, fn) { state.timers.push(setInterval(() => { state.polling = true; const p = fn().catch(() => {}); state.polling = false; return p; }, ms)); }
@@ -204,7 +228,7 @@ function render() {
   }
   if (state.setupDone === false && !views.some(v => v[0] === "start")) views.unshift(["start", "Start here"]);
   if (state.setupDone === true) { const i = views.findIndex(v => v[0] === "start"); if (i >= 0) views.splice(i, 1); }
-  ({ start: pageStart, dash: pageDash, server: pageServer, library: pageLibrary, isos: pageISOs, answers: pageAnswers, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view]();
+  guard(({ start: pageStart, dash: pageDash, server: pageServer, library: pageLibrary, isos: pageISOs, answers: pageAnswers, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view])();
 }
 
 function toggleTheme() {
@@ -232,14 +256,15 @@ function wireLogin() {
 }
 
 // ---- dashboard
-async function loadCommon() {
-  const isos = await api("/api/isos");
+async function loadCommon(request = api) {
+  const isos = await request("/api/isos");
   state.isos = isos.isos || []; state.defaultAction = isos.default || "";
-  const answers = await api("/api/answers");
+  const answers = await request("/api/answers");
   state.answers = answers.answers || []; state.answerKinds = answers.kinds || []; state.answersSameAddress = !!answers.sameAddress;
 }
 async function pageDash() {
   const page = $("#page");
+  const { request: api, repeat: every, current } = viewScope(page);
   page.innerHTML = `<h1>Dashboard</h1><div id="dstats" class="grid stats"></div><div class="grid two" style="margin-top:14px"><div class="card"><h2>How PCs reach this server</h2><div id="facts" class="small"></div></div><div class="card"><h2>Start a PC from the network</h2>
   <ol class="steps"><li>Plug the PC into the same network (a cable: Wi‑Fi cannot network-boot).</li><li>Turn Secure Boot off in its firmware (not supported yet).</li><li>Start it and open the boot menu (F12, F8, F11 or Esc), pick the network entry (<em>UEFI: IPv4</em> / PXE).</li><li>The Gola Bootlace menu appears; pick an ISO.</li></ol></div></div>
   <div class="card" style="margin-top:14px"><h2>Recent activity</h2><div id="recent" class="small mono"></div></div>`;
@@ -254,6 +279,7 @@ async function pageDash() {
     $("#recent").innerHTML = (log.lines || []).length ? (log.lines || []).map(l => `<div>${esc(l.text)}</div>`).join("") : `<span class="muted">Nothing yet.</span>`;
   };
   await guard(draw)();
+  if (!current()) return;
   every(4000, draw);
 }
 
@@ -292,6 +318,7 @@ function serverBanner(lib, svc) {
 
 async function pageServer() {
   const page = $("#page");
+  const { request: api, repeat: every, current } = viewScope(page);
   page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div id="copybanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>
   <div class="card" id="backupcard" style="margin-top:14px"><h2>Backup of the settings</h2><p class="hint" style="margin-top:0">The rules, PC names, ISO titles, hidden ISOs, arguments and menu settings are the only things that cannot be rebuilt from the library. A copy without secrets is also kept in the library folder (<code>.bootlace/settings.json</code>), and a new container given the same library offers to restore it.</p>
     <div class="row"><a class="btn" href="/api/backup/download" download>Download a backup</a><a class="btn" href="/api/backup/download?secrets=1" download id="bk-secrets">Download with the passwords</a><button class="btn" id="bk-restore">Restore from a backup file ...</button><input type="file" id="bk-file" accept=".zip,application/zip" hidden></div>
@@ -377,6 +404,7 @@ async function pageServer() {
     if (force || !$("#accesscard").contains(document.activeElement)) drawAccess(acc, () => draw(true)); // (not while the person is typing in it)
   };
   await guard(draw)(true);
+  if (!current()) return;
   every(4000, () => draw(false));
 }
 
@@ -504,6 +532,7 @@ function matchesHTML(ms) { return `<p>This looks like something that is already 
 
 async function pageLibrary() {
   const page = $("#page");
+  const { request: api, repeat: every, current } = viewScope(page);
   page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Library</h1>
     <div class="row"><button class="btn primary" id="up">Upload files</button><button class="btn" id="imp">Add from a web address</button><button class="btn" id="mk">New folder</button></div></div>
     <input type="file" id="pick" multiple hidden>
@@ -520,7 +549,7 @@ async function pageLibrary() {
   transfers.refresh = () => guard(draw)();
   const safeDraw = async () => {
     try { await draw(); }
-    catch (e) { $("#ltable").innerHTML = `<div class="empty">${esc(e.message)}. <a href="#server" data-go="server">Open the Server page</a> to choose or fix the library.</div>`; $("#crumbs").innerHTML = ""; page.querySelectorAll("[data-go]").forEach(a => a.onclick = ev => { ev.preventDefault(); state.view = a.dataset.go; location.hash = state.view; render(); }); }
+    catch (e) { if (e === staleView) return; $("#ltable").innerHTML = `<div class="empty">${esc(e.message)}. <a href="#server" data-go="server">Open the Server page</a> to choose or fix the library.</div>`; $("#crumbs").innerHTML = ""; page.querySelectorAll("[data-go]").forEach(a => a.onclick = ev => { ev.preventDefault(); state.view = a.dataset.go; location.hash = state.view; render(); }); }
   };
   $("#up").onclick = () => uploadDialog();
   $("#pick").onchange = e => { [...e.target.files].forEach(queueUpload); e.target.value = ""; };
@@ -531,6 +560,7 @@ async function pageLibrary() {
   ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.style.outline = ""; }));
   drop.addEventListener("drop", e => { [...(e.dataTransfer.files || [])].forEach(queueUpload); });
   await safeDraw();
+  if (!current()) return;
   every(2500, safeDraw);
 }
 
@@ -743,11 +773,12 @@ async function deleteDialog(path, isDir) {
 // ---- ISOs
 async function pageISOs() {
   const page = $("#page");
+  const { request: api, repeat: every, current } = viewScope(page);
   page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>ISOs</h1><button class="btn" id="rescan">Look inside the ISOs again</button></div>
   <p class="muted small">Every ISO and disk image in the library is listed here and in the menu. Rename an entry, hide it from the menu, or choose which one starts by itself.</p><div class="card tablewrap" id="isotable"></div>`;
   $("#rescan").onclick = guard(async () => { await api("/api/rescan", "POST", {}); toast("Looking inside the ISOs again at the next menu"); await draw(); });
   const draw = async () => {
-    await loadCommon();
+    await loadCommon(api);
     $("#isotable").innerHTML = state.isos.length ? `<table class="rt"><thead><tr><th>Name in the menu</th><th class="hide-s">Starts as</th><th class="hide-s">Size</th><th>In the menu</th><th>Starts by itself</th></tr></thead><tbody>${state.isos.map(i => `<tr>
       <td data-l="Name in the menu"><input class="inline" type="text" value="${esc(i.title)}" data-id="${i.id}" data-orig="${esc(i.original)}" aria-label="Name of ${esc(i.original)} in the menu" maxlength="120"><div class="muted small mono">${esc(i.name)}</div><div class="row small" style="gap:8px;margin-top:4px">${i.protected ? `<span class="badge warn" title="The menu asks for a password before it starts this ISO">password</span><button class="btn small" data-pwclear="${i.id}">Remove the password</button>` : `<button class="btn small" data-pwset="${i.id}" title="Ask for a password in the menu before this ISO starts">Set a password ...</button>`}</div>${i.method === "recognised" && !/^(Windows|Disk image|Proxmox)/.test(i.family || "") ? `<input class="inline small" type="text" value="${esc(i.args || "")}" data-args="${i.id}" placeholder="Extra kernel arguments (optional)" aria-label="Extra kernel arguments for ${esc(i.title)}" maxlength="300">
         <div class="row small" style="gap:14px;margin-top:4px"><label class="row small" style="margin:0;font-weight:500" title="Takes out quiet, splash and rhgb and turns the kernel's messages up (loglevel=7 debug): for finding why an ISO does not start"><input type="checkbox" data-debug="${i.id}" data-kind="verbose" ${i.debug && i.debug.verbose ? "checked" : ""}> Verbose start-up</label>
@@ -815,6 +846,7 @@ async function pageISOs() {
     page.querySelectorAll("[data-go]").forEach(a => a.onclick = e => { e.preventDefault(); state.view = a.dataset.go; render(); });
   };
   await guard(draw)();
+  if (!current()) return;
 }
 // ---- unattended installs: the answer file an ISO's installer is given (issue #17)
 const answerFamilies = { "Debian installer": "preseed", "Ubuntu (casper)": "autoinstall", "Ubuntu-style (casper), by its boot menu": "autoinstall", "Red Hat family (installer)": "kickstart", "openSUSE": "autoyast", "Windows setup": "unattend" };
@@ -838,13 +870,14 @@ function answerSelect(i) {
 const answerTemplateCache = {};
 async function pageAnswers() {
   const page = $("#page");
+  const { request: api, repeat: every, current } = viewScope(page);
   page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Unattended installs</h1><button class="btn primary" id="anew">New answer file</button></div>
   <p class="muted small">An answer file is what an installer reads so that it asks nothing: Debian's preseed, Ubuntu Server's autoinstall, Red Hat's kickstart, openSUSE's AutoYaST, Windows' autounattend.xml. Keep them here, then attach one to an ISO (on the ISOs page) or to one PC (Kernel options on the PCs page). Nothing is attached by itself, and the file <b>may erase disks</b>: only the PCs you chose install without asking. Inside a file, <code>{{hostname}}</code> (the name given to the PC, or <code>pc-</code> and the end of its address), <code>{{mac}}</code>, <code>{{ip}}</code> and <code>{{serial}}</code> are replaced for the PC that asks.</p>
   <div class="card tablewrap" id="atable"></div>
   <p class="hint">Passwords in a file are shown as <code>********</code> on this page. They stay in the file when you save it with the stars left as they are. The files are kept in the settings (not in a backup made without secrets) and their text is never written to the log. <b>An installer cannot log in</b>, so the address of a file has no password. What narrows it: a file is given only to a PC that asked the menu for an ISO in the last two hours, and only twelve files after each time it asked; then the address closes until the PC asks for the menu again. That stops a computer that never asked for a menu, <b>not one that asks the menu first with the MAC address it wants</b>: any computer of the local network can pose as a PC and read the file once. Put password <i>hashes</i> in a file, not passwords (the templates do), and keep the networks that may use the server to those you trust.</p>
   <label class="row small" style="font-weight:500;margin:0"><span class="switch"><input type="checkbox" id="aany" aria-label="Only give a file to the network address the PC asked the menu from"><span></span></span> Stricter: only give a file to the network address the PC asked the menu from (off by default, because many routers give the installer another address than the one the PC had at the menu; turn it on if your PCs keep their address, then a refusal says "asked for the menu from ..., not from ..." in the Log)</label>`;
   const draw = async () => {
-    await loadCommon();
+    await loadCommon(api);
     const list = state.answers;
     $("#atable").innerHTML = list.length ? `<table class="rt"><thead><tr><th>Name</th><th>Kind</th><th>Attached to</th><th class="hide-s">Size</th><th></th></tr></thead><tbody>${list.map(a => {
       const used = [...(a.isos || []).map(x => "ISO " + x.title), ...(a.pcs || []).map(x => "PC " + x.title)];
@@ -863,6 +896,7 @@ async function pageAnswers() {
   $("#aany").checked = !!state.answersSameAddress;
   $("#aany").onchange = guard(async () => { await api("/api/answers/settings", "PUT", { sameAddress: $("#aany").checked }); state.answersSameAddress = $("#aany").checked; toast("Saved"); });
   await guard(draw)();
+  if (!current()) return;
 }
 async function editAnswer(id, done) {
   const kinds = state.answerKinds || [];
@@ -910,6 +944,7 @@ function pcPageSize() {
 }
 async function pagePCs() {
   const page = $("#page");
+  const { request: api, repeat: every, current } = viewScope(page);
   const view = { size: pcPageSize(), offset: 0, q: "", total: 0 };
   page.innerHTML = `<h1>PCs</h1><p class="muted small">PCs that started from the network and asked for a menu. A rule sends one PC somewhere without showing it the menu: for example always to its own disk, or straight into an installer.</p>
   <div class="card tablewrap"><div class="row" style="padding:12px 14px;justify-content:space-between">
@@ -992,7 +1027,7 @@ async function pagePCs() {
       q("#ps").onclick = save; q("#pn").onkeydown = e => { if (e.key === "Enter") save(); };
     });
     page.querySelectorAll("button[data-kopt]").forEach(b => b.onclick = guard(async () => {
-      await loadCommon();
+      await loadCommon(api);
       const p = state.pcs.find(x => x.mac === b.dataset.kopt) || {}, o = p.options || { args: "", debug: {} };
       const m = modal(`<h2>Kernel options of ${esc(p.name || p.mac || b.dataset.kopt)}</h2><p class="muted small">For this PC only, on the kernel line of every ISO it starts from the ISO's own files (not Windows, not a disk image): for a PC whose graphics need <code>nomodeset</code>, or that is being looked at over its serial port. They come after the arguments of the ISO itself and apply from the PC's next start. Leave everything empty to remove them.</p>
         <div class="field"><label for="ka">Extra kernel arguments (optional)</label><input type="text" id="ka" maxlength="300" value="${esc(o.args || "")}" placeholder="nomodeset" autocomplete="off"></div>
@@ -1037,13 +1072,16 @@ async function pagePCs() {
     const s = await api("/api/settings"); await api("/api/settings", "PUT", { menuTimeout: s.menuTimeout, default: s.default, pcDays: parseInt($("#adays").value || "0", 10) }); toast("Saved"); await draw();
   });
   await guard(draw)();
+  if (!current()) return;
   await guard(drawGroups)();
+  if (!current()) return;
   every(5000, async () => { if (!page.contains(document.activeElement) || document.activeElement === document.body) await draw(); });
 }
 
 // ---- first-start guide
 async function pageStart() {
   const page = $("#page");
+  const { request: api, repeat: every, current } = viewScope(page);
   const [setup, st, acc] = await Promise.all([api("/api/setup"), api("/api/status"), api("/api/access")]);
   const fact = n => ((st.facts || []).find(f => f.name === n) || {}).value || "";
   const mark = ok => ok ? `<span class="ok" aria-label="done">&#10003;</span>` : `<span class="muted" aria-label="to do">&#9675;</span>`;
@@ -1071,6 +1109,7 @@ async function pageStart() {
     const b = $("#gcheck"); b.disabled = true; b.textContent = "Checking ...";
     try {
       const [r, p] = await Promise.all([api("/api/selftest", "POST", {}).catch(e => ({ results: [], failed: 0, error: e.message })), api("/api/pxecheck", "POST", {}).catch(e => ({ result: { answers: [], error: e.message } }))]);
+      if (!current()) return;
       const conflicts = ((p.result && p.result.answers) || []).filter(a => a.conflict).length;
       $("#gout").innerHTML = `<ul class="small" style="margin:10px 0 0;padding-left:18px">${(r.results || []).map(x => `<li>${x.status === "ok" ? "&#10003;" : x.status === "fail" ? "<strong class=\"bad\">&#10007;</strong>" : "&#8211;"} ${esc(x.title)}${x.status === "fail" ? ": " + esc(x.detail) + " <span class=\"muted\">" + esc(x.hint || "") + "</span>" : ""}</li>`).join("")}</ul>
         <p class="small ${r.failed || conflicts ? "bad" : "muted"}">${r.failed ? r.failed + " check(s) failed. " : ""}${conflicts ? conflicts + " other server(s) answer network boots too (Server page). " : ""}${!r.failed && !conflicts ? "All good. Start a PC from the network: it should show the Gola Bootlace menu." : ""}</p>`;
@@ -1083,7 +1122,9 @@ async function pageStart() {
 // ---- menu
 async function pageMenu() {
   const page = $("#page");
-  await guard(async () => { await loadCommon(); state.settings = await api("/api/settings"); })();
+  const { request: api, repeat: every, current } = viewScope(page);
+  await guard(async () => { await loadCommon(api); state.settings = await api("/api/settings"); })();
+  if (!current()) return;
   const s = state.settings || { menuTimeout: 0, default: "" };
   const legacy = s.default && !["local"].includes(s.default) && !s.default.startsWith("iso:");
   page.innerHTML = `<h1>Menu</h1><div class="grid two"><form class="card" id="mf">
@@ -1134,6 +1175,7 @@ async function pageMenu() {
 // ---- log
 async function pageLog() {
   const page = $("#page");
+  const { request: api, repeat: every, current } = viewScope(page);
   page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Log</h1><div class="row"><label class="row small" style="margin:0;font-weight:500"><input type="checkbox" id="follow" checked> Follow</label><input id="flt" class="inline" type="text" placeholder="Filter" style="width:180px" aria-label="Filter the log"><a class="btn small" href="/api/log/download" download>Download the log</a></div></div><div class="log" id="logbox" tabindex="0" aria-label="Server log"></div>`;
   const box = $("#logbox");
   const kind = t => /dhcp:/.test(t) ? "dhcp" : /tftp:/.test(t) ? "tftp" : /smb:|share/.test(t) ? "smb" : /menu|rule/.test(t) ? "menu" : /web interface/.test(t) ? "web" : "";
@@ -1150,12 +1192,15 @@ async function pageLog() {
   $("#flt").oninput = paint; $("#follow").onchange = paint;
   state.logLines = []; state.logLast = 0;
   await guard(poll)();
+  if (!current()) return;
   every(1500, poll);
 }
 
 // ---- account
 function pageAccount() {
-  $("#page").innerHTML = `<h1>Account</h1><form class="card" id="pf" style="max-width:520px"><h2>Change the password</h2>
+  const page = $("#page");
+  const { request: api } = viewScope(page);
+  page.innerHTML = `<h1>Account</h1><form class="card" id="pf" style="max-width:520px"><h2>Change the password</h2>
   <div class="field"><label for="p0">Current password</label><input id="p0" type="password" autocomplete="current-password" required></div>
   <div class="field"><label for="p1">New password</label><input id="p1" type="password" autocomplete="new-password" minlength="8" required><p class="hint">At least 8 characters. Other open sessions are logged out.</p></div>
   <div class="field"><label for="p2">New password again</label><input id="p2" type="password" autocomplete="new-password" minlength="8" required></div><button class="btn primary">Change password</button></form>
