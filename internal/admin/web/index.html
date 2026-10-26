@@ -777,6 +777,7 @@ async function pageISOs() {
         ${i.ways.map((w, n) => { const o = saved[w.id] || {}; return `<fieldset class="card" data-entry="${esc(w.id)}"><legend>${esc(w.title)}</legend><div class="field"><label for="entry-title-${n}">Name in the menu (empty keeps the original)</label><input id="entry-title-${n}" data-title type="text" maxlength="120" value="${esc(o.title || "")}"></div><div class="field"><label for="entry-args-${n}">Extra kernel arguments</label><input id="entry-args-${n}" data-extra type="text" maxlength="300" value="${esc(o.args || "")}"></div><label><input type="checkbox" data-hidden ${o.hidden ? "checked" : ""}> Hide this entry</label></fieldset>`; }).join("")}
         <p class="err" id="entry-error" role="alert"></p><div class="row" style="justify-content:flex-end"><button class="btn" id="entry-cancel">Cancel</button><button class="btn primary" id="entry-save">Save</button></div>`);
       const q = s => m.el.querySelector(s);
+      q("#entry-default").focus(); // the first control of the dialog (modal() starts at the first input, which would skip the select)
       q("#entry-cancel").onclick = m.close;
       q("#entry-save").onclick = async () => {
         const entries = {...saved};
