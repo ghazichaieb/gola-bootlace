@@ -214,14 +214,14 @@ func (m *Manager) unpack(iso isos.ISO, dst string, j *job) {
 		}
 		r = zr
 	case "xz":
-		xr, err := xz.NewReader(cr)
+		xr, err := openXZ(cr, func(in io.Reader) (io.Reader, error) { return xz.NewReader(in) })
 		if err != nil {
 			fail(err)
 			return
 		}
 		r = xr
 	case "zst":
-		zr, err := zstd.NewReader(cr, zstd.WithDecoderMaxMemory(128<<20), zstd.WithDecoderConcurrency(1))
+		zr, err := zstd.NewReader(cr, zstd.WithDecoderMaxMemory(maxDecoderWindow), zstd.WithDecoderConcurrency(1))
 		if err != nil {
 			fail(err)
 			return
