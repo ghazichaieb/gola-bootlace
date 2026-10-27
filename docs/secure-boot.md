@@ -105,8 +105,8 @@ Things found out on the way:
 - The boot manager asks for its files with backslashes and in any case, and for `\Boot\BCD`, which the ISO keeps as `efi/microsoft/boot/bcd`: `windowsName` maps these.
 - A BIOS PC cannot use this way yet (and does not need it: there is no Secure Boot there).
 
-Tested in the Hyper-V lab with Secure Boot on (Microsoft Windows template): boot manager, BCD, `boot.wim`, WinPE, the share, Windows 11 Setup. Not tested: a real PC, and an
-installation run through to the end this way (it is the same Setup, started the same way, as in the iPXE way, where it was).
+Tested in the Hyper-V lab with Secure Boot on (Microsoft Windows template): boot manager, BCD, `boot.wim`, WinPE, the share, Windows 11 Setup. On one real PC (an MSI board, proxy-DHCP, the
+iPXE project's shim) a Windows 11 installation was run to the end and Windows started; the start method of that run (this rule or wimboot) was not recorded. Not tested: other firmware.
 
 ## Ubuntu, with Secure Boot on (works, on any amount of RAM)
 
@@ -236,7 +236,7 @@ Way 2 (the iPXE project's `ipxe-shimx64.efi` and `ipxe.efi`, `-secure-boot-shim 
 | Way 2, nothing enrolled: the Bootlace menu | on | **works** |
 | Ubuntu Server (chosen from the menu) | on | **booted** |
 | Ubuntu 25.04 (chosen from the menu) | on | **booted** |
-| Windows Setup (wimboot) | on | **not tested yet** |
+| Windows 11 installed from the menu (Setup to the end) | on | **worked**: Setup ran, the installation finished and Windows started (reported by the person who ran it; the log lines were not kept, so which of the two Windows start methods was used is not recorded) |
 
 These were the first runs of the route on a real PC; one PC and one firmware say nothing about others (see the troubleshooting table above for what a different firmware may do).
 
