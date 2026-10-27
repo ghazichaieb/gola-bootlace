@@ -42,7 +42,7 @@ func newRealRig(t *testing.T, sb httpd.SecureBoot) *realRig {
 	lib := library.New("", "")
 	indexer := &library.Indexer{Lib: lib}
 	a := New(Options{Store: store, Log: logs, Backend: web, Library: lib, Services: &service.Supervisor{Gate: lib.Check}, Access: access.New(nil), ServerIP: "10.0.0.1",
-		Importer: importer.New(lib, indexer.Get, nil), Indexer: indexer, SecureBoot: sb.Mode(), SecureBootStatus: web.SecureBootStatus})
+		Importer: importer.New(lib, indexer.Get, nil), Indexer: indexer, SecureBootStatus: web.SecureBootStatus, SecureBootSet: web.SetSecureBoot})
 	mux := http.NewServeMux()
 	for p, h := range a.Mount() {
 		mux.Handle(p, h)
@@ -181,7 +181,7 @@ func TestThePCsPageHintWhenTheRouteIsOffAndTheStatusEndpoint(t *testing.T) {
 		t.Fatalf("hint %q", hint)
 	}
 	code, out := r.do("GET", "/api/secureboot", nil, nil)
-	if code != 200 || out["on"] != false || out["mode"] != "" || !strings.Contains(out["message"].(string), "BOOTLACE_SECURE_BOOT_DIR") {
+	if code != 200 || out["on"] != false || out["mode"] != "off" || out["unset"] != true || !strings.Contains(out["message"].(string), "Built in") {
 		t.Fatalf("%d %v", code, out)
 	}
 	if _, st := r.do("GET", "/api/status", nil, nil); st["secureBoot"] == nil {
@@ -196,7 +196,7 @@ func TestTheSecureBootEndpointListsTheFilesAndWhatIsMissing(t *testing.T) {
 	}
 	r := newRealRig(t, httpd.SecureBoot{Dir: dir, Shim: "ipxe-shimx64.efi", All: true})
 	code, out := r.do("GET", "/api/secureboot", nil, nil)
-	if code != 200 || out["on"] != true || out["mode"] != "all" || out["ready"] != false || out["dir"] != dir || !strings.Contains(out["problem"].(string), "ipxe.efi is missing") {
+	if code != 200 || out["on"] != true || out["mode"] != "own" || out["scope"] != "all" || out["ready"] != false || out["dir"] != dir || !strings.Contains(out["problem"].(string), "ipxe.efi is missing") {
 		t.Fatalf("%d %v", code, out)
 	}
 	files, _ := out["files"].([]any)

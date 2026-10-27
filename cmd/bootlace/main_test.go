@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/ghazichaieb/gola-bootlace/internal/config"
 	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
 )
 
@@ -41,39 +43,61 @@ func TestAStrayWordAfterTheOptionsStopsTheStart(t *testing.T) {
 	}
 }
 
-func TestTheSecureBootRouteIsReportedToTheWebInterfaceAsOffMarkedOrAll(t *testing.T) {
-	for _, tc := range []struct {
-		dir  string
-		all  bool
-		want string
-	}{{"", false, ""}, {"", true, ""}, {"/sb", false, "pcs"}, {"/sb", true, "all"}} {
-		if got := secureBootMode(tc.dir, tc.all); got != tc.want {
-			t.Errorf("%q %v: %q, want %q", tc.dir, tc.all, got, tc.want)
-		}
+// A new installation has the built-in Secure Boot route on for every 64-bit UEFI PC; a settings file from before the setting existed is left off, so that an upgrade changes
+// no behaviour (and the web interface asks).
+func TestANewInstallationStartsWithTheBuiltInRouteAndAnOlderOneStaysOff(t *testing.T) {
+	dir := t.TempDir()
+	seed := config.Config{MenuTimeout: 20, PCDays: config.DefaultPCDays, Hidden: map[string]bool{}, Titles: map[string]string{}, Default: "local"}
+	freshSecureBoot(&seed)
+	path := filepath.Join(dir, "bootlace.json")
+	store, created, err := config.Open(path, seed)
+	if err != nil || !created {
+		t.Fatal(created, err)
+	}
+	if mode, scope, chosen := store.SecureBoot(); mode != "builtin" || scope != "all" || chosen {
+		t.Fatalf("a new installation: %q %q chosen=%v", mode, scope, chosen)
+	}
+	if again, created, err := config.Open(path, config.Config{}); err != nil || created {
+		t.Fatal(created, err)
+	} else if mode, scope, _ := again.SecureBoot(); mode != "builtin" || scope != "all" {
+		t.Fatalf("kept in the file: %q %q", mode, scope)
+	}
+
+	older := filepath.Join(dir, "older.json")
+	if err := os.WriteFile(older, []byte(`{"menuTimeout":20,"pcDays":30,"default":"local","hidden":{},"titles":{},"adminHash":"x"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, created, err = config.Open(older, seed) // (the seed is only for a file that does not exist)
+	if err != nil || created {
+		t.Fatal(created, err)
+	}
+	if mode, scope, chosen := store.SecureBoot(); mode != "" || scope != "" || chosen {
+		t.Fatalf("an older file has no Secure Boot setting: %q %q chosen=%v", mode, scope, chosen)
 	}
 }
 
-func TestTheLogSaysAtTheStartWhetherTheSecureBootRouteIsOnOrOffAndWhatIsMissing(t *testing.T) {
-	off := strings.Join(secureBootStartLines(httpd.SecureBoot{}), "\n")
-	for _, want := range []string{"Secure Boot route: OFF", "BOOTLACE_SECURE_BOOT_DIR", "docs/secure-boot.md"} {
-		if !strings.Contains(off, want) {
-			t.Errorf("off: %q lacks %q", off, want)
+func TestTheSecureBootOptionsAreInTheEnvironmentToo(t *testing.T) {
+	for option, want := range map[string]string{"secure-boot": "BOOTLACE_SECURE_BOOT", "secure-boot-scope": "BOOTLACE_SECURE_BOOT_SCOPE", "secure-boot-dir": "BOOTLACE_SECURE_BOOT_DIR",
+		"secure-boot-shim": "BOOTLACE_SECURE_BOOT_SHIM", "secure-boot-all": "BOOTLACE_SECURE_BOOT_ALL"} {
+		if got := envName(option); got != want {
+			t.Errorf("%s: %s, want %s", option, got, want)
 		}
 	}
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "ipxe-shimx64.efi"), []byte("SHIM"), 0o644); err != nil {
+	fs := flag.NewFlagSet("t", flag.ContinueOnError)
+	mode := fs.String("secure-boot", "", "")
+	scope := fs.String("secure-boot-scope", "", "")
+	all := fs.Bool("secure-boot-all", false, "")
+	if err := applyEnv(fs, fakeEnv(map[string]string{"BOOTLACE_SECURE_BOOT": "builtin", "BOOTLACE_SECURE_BOOT_SCOPE": "all", "BOOTLACE_SECURE_BOOT_ALL": "true"})); err != nil {
 		t.Fatal(err)
 	}
-	sb := httpd.SecureBoot{Dir: dir, Shim: "ipxe-shimx64.efi", All: true}
-	lines := secureBootStartLines(sb)
-	if len(lines) != 2 || !strings.Contains(lines[0], "Secure Boot route: ON for every 64-bit UEFI PC") || !strings.Contains(lines[0], "ipxe-shimx64.efi") || !strings.Contains(lines[0], "asks for ipxe.efi") ||
-		!strings.HasPrefix(lines[1], "warning: ") || !strings.Contains(lines[1], "has no ipxe.efi") {
-		t.Fatalf("a folder without the second stage: %q", lines)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "ipxe.efi"), []byte("X"), 0o644); err != nil {
+	if err := fs.Parse([]string{"-secure-boot", "own"}); err != nil {
 		t.Fatal(err)
 	}
-	if lines = secureBootStartLines(httpd.SecureBoot{Dir: dir, Shim: "ipxe-shimx64.efi"}); len(lines) != 1 || !strings.Contains(lines[0], "the PCs marked for it") {
-		t.Fatalf("complete: %q", lines)
+	if *mode != "own" || *scope != "all" || !*all {
+		t.Fatalf("the command line wins over the environment: %q %q %v", *mode, *scope, *all)
+	}
+	// a value that is not a choice stops the start with a message that names the option
+	if err := (httpd.SecureBoot{Mode: "maybe"}).Check(); err == nil || !strings.Contains(err.Error(), "-secure-boot") {
+		t.Fatalf("%v", err)
 	}
 }

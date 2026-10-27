@@ -75,10 +75,11 @@ type Options struct {
 	Sync *backup.Sync
 	// Version is the program's version, written into the backups.
 	Version string
-	// SecureBoot says how the signed-iPXE route for PCs with UEFI Secure Boot on is offered: "" (not at all), "pcs" (to the PCs marked for it on the PCs page) or "all".
-	SecureBoot string
-	// SecureBootStatus says how that route stands (on or off, the folder, which files are there, what is missing) for the Server page; without it the page shows the mode only.
+	// SecureBootStatus says how the route for PCs with UEFI Secure Boot on stands (mode and scope, which files are served or there, what is missing) for the Server page and the
+	// PCs page; without it the route counts as off.
 	SecureBootStatus func() httpd.SecureBootStatus
+	// SecureBootSet changes the mode and/or scope of that route (see httpd.Server.SetSecureBoot); without it the page cannot change them.
+	SecureBootSet func(mode, scope string) (httpd.SecureBootStatus, error)
 	// Wake sends a Wake-on-LAN packet for a PC (a MAC address); without it the PCs page has no Wake button.
 	Wake func(mac net.HardwareAddr) error
 	Logf func(format string, args ...any)
@@ -135,6 +136,7 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("PUT /api/pcs/{mac}/options", a.authed(a.pcOptions))
 	api.HandleFunc("PUT /api/pcs/{mac}/secureboot", a.authed(a.pcSecureBoot))
 	api.HandleFunc("GET /api/secureboot", a.authed(a.secureBootGet))
+	api.HandleFunc("PUT /api/secureboot", a.authed(a.secureBootPut))
 	api.HandleFunc("POST /api/pcs/{mac}/wake", a.authed(a.pcWake))
 	api.HandleFunc("PUT /api/pcs/{mac}/answer", a.authed(a.pcAnswer))
 	api.HandleFunc("GET /api/answers", a.authed(a.answersList))
@@ -926,10 +928,10 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 			return ""
 		}
 		hint := "Asked for a boot file; Secure Boot may be refusing iPXE."
-		switch {
-		case a.o.SecureBoot == "":
+		switch sb := a.pcsSecureBoot(); {
+		case sb == "":
 			return hint + " If this PC has UEFI Secure Boot on, turn the Secure Boot route on (docs/secure-boot.md)."
-		case a.o.SecureBoot == "pcs" && (o == nil || !o.SecureBoot):
+		case sb == "pcs" && (o == nil || !o.SecureBoot):
 			return hint + ` If this PC has UEFI Secure Boot on, press "Secure Boot route".`
 		}
 		return hint + " It is sent through the signed shim already; see the Secure Boot block on the Server page."
@@ -993,7 +995,7 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	if end > total {
 		end = total
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pcs": out[offset:end], "total": total, "offset": offset, "limit": limit, "secureBoot": a.o.SecureBoot})
+	writeJSON(w, http.StatusOK, map[string]any{"pcs": out[offset:end], "total": total, "offset": offset, "limit": limit, "secureBoot": a.pcsSecureBoot()})
 }
 
 func noteOf(r *config.Rule) string {
@@ -1137,7 +1139,48 @@ func (a *Admin) secureBoot() httpd.SecureBootStatus {
 	if a.o.SecureBootStatus != nil {
 		return a.o.SecureBootStatus()
 	}
-	return httpd.SecureBootStatus{On: a.o.SecureBoot != "", Mode: a.o.SecureBoot}
+	return httpd.SecureBootStatus{Mode: "off", Scope: "marked"}
+}
+
+// pcsSecureBoot is how the route reaches the PCs page: "" (not offered), "pcs" (to the PCs marked for it) or "all".
+func (a *Admin) pcsSecureBoot() string {
+	switch st := a.secureBoot(); {
+	case !st.On:
+		return ""
+	case st.Scope == "all":
+		return "all"
+	}
+	return "pcs"
+}
+
+// secureBootPut changes the route's mode and/or scope from the Server page; it counts from the next DHCP answer, with no restart. What the command line or the environment decides
+// cannot be changed here (409), nor can a mode whose files are not there; a value that is not one of the choices is a 400.
+func (a *Admin) secureBootPut(w http.ResponseWriter, r *http.Request) {
+	if a.o.SecureBootSet == nil {
+		fail(w, http.StatusNotImplemented, "this server cannot change the Secure Boot route")
+		return
+	}
+	var in struct {
+		Mode  string `json:"mode"`
+		Scope string `json:"scope"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	st, err := a.o.SecureBootSet(in.Mode, in.Scope)
+	switch {
+	case errors.Is(err, httpd.ErrSecureBootInvalid):
+		fail(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, httpd.ErrSecureBootRefused):
+		fail(w, http.StatusConflict, err.Error())
+	case err != nil:
+		fail(w, http.StatusInternalServerError, err.Error())
+	default:
+		if a.o.Logf != nil {
+			a.o.Logf("web interface: Secure Boot route: mode %s, scope %s", st.Mode, st.Scope)
+		}
+		writeJSON(w, http.StatusOK, st)
+	}
 }
 
 // pcSecureBoot marks a PC as one with UEFI Secure Boot on (or takes the mark away): its next network boot goes through the signed shim. It only does something when the server was

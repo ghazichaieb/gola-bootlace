@@ -15,7 +15,7 @@ grep -v '^#' third_party/SOURCES | grep -v '^$' | while read -r sum name url; do
 done
 cp third_party/SOURCES "$work/third-party-sources/SOURCES"
 cat >"$work/third-party-sources/README.txt" <<'TXT'
-The source code of the GPL programs that are inside the Gola Bootlace program (iPXE, wimboot, and Ubuntu's signed GRUB), exactly as they were when they were
+The source code of the programs that are inside the Gola Bootlace program (iPXE, wimboot, Ubuntu's signed GRUB, and the iPXE project's signed Secure Boot shim with gnu-efi), exactly as they were when they were
 shipped. SOURCES lists each file with its checksum and where it comes from. How the iPXE files are built from this source: tools/ipxe/ in the Gola Bootlace source.
 TXT
 tar -C "$work" --owner=0 --group=0 --numeric-owner -cf "$out" third-party-sources

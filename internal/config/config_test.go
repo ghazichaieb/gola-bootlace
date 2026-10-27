@@ -287,3 +287,50 @@ func TestAPCsSecureBootMarkIsKeptAndAloneKeepsTheEntry(t *testing.T) {
 		t.Fatal("an entry with nothing set is dropped")
 	}
 }
+
+func TestTheSecureBootSettingIsCheckedKeptAndAbsentInOlderFiles(t *testing.T) {
+	s, p := open(t)
+	if mode, scope, chosen := s.SecureBoot(); mode != "" || scope != "" || chosen {
+		t.Fatalf("a seed without it has none: %q %q %v", mode, scope, chosen)
+	}
+	for _, bad := range []Config{{SecureBootMode: "on"}, {SecureBootMode: "Builtin"}, {SecureBootScope: "some"}, {SecureBootMode: "own", SecureBootScope: "every"}} {
+		if err := s.Update(func(c *Config) error {
+			c.SecureBootMode, c.SecureBootScope = bad.SecureBootMode, bad.SecureBootScope
+			return nil
+		}); err == nil {
+			t.Errorf("%+v must be refused", bad)
+		}
+	}
+	if mode, _, _ := s.SecureBoot(); mode != "" {
+		t.Fatalf("a refused change changes nothing: %q", mode)
+	}
+	for _, mode := range SecureBootModes {
+		for _, scope := range SecureBootScopes {
+			if err := s.Update(func(c *Config) error {
+				c.SecureBootMode, c.SecureBootScope, c.SecureBootChosen = mode, scope, true
+				return nil
+			}); err != nil {
+				t.Fatalf("%s/%s: %v", mode, scope, err)
+			}
+		}
+	}
+	again, _, err := Open(p, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mode, scope, chosen := again.SecureBoot(); mode != "off" || scope != "marked" || !chosen {
+		t.Fatalf("kept in the file: %q %q %v", mode, scope, chosen)
+	}
+	// a file from before the setting existed has no such keys, and reading it leaves it so
+	old := filepath.Join(t.TempDir(), "old.json")
+	if err := os.WriteFile(old, []byte(`{"menuTimeout":5,"pcDays":30,"default":""}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, created, err := Open(old, Config{SecureBootMode: "builtin", SecureBootScope: "all"})
+	if err != nil || created {
+		t.Fatal(err, created)
+	}
+	if mode, scope, chosen := s.SecureBoot(); mode != "" || scope != "" || chosen {
+		t.Fatalf("an older file: %q %q %v", mode, scope, chosen)
+	}
+}

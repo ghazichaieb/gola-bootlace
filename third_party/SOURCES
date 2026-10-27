@@ -3,6 +3,12 @@
 # Update this list (and NOTICE) the day one of those programs is replaced.
 
 88358146ea68b76ac7c3e1e5cc8f785f31ac913658384e4c2b4f7c9100042772  ipxe-a5eed98d964bc48790041aed41a8876fa0b7eba5.tar.gz  https://github.com/ipxe/ipxe/archive/a5eed98d964bc48790041aed41a8876fa0b7eba5.tar.gz
+# The iPXE project's signed files for UEFI Secure Boot (internal/secureboot/assets, see its MANIFEST.json): iPXE v2.0.0 is the source of ipxe.efi (the release archive's x86_64-sb/ipxe.efi);
+# the shim (shimx64.efi, served as ipxe-shimx64.efi) is built from the project's shim fork, tag ipxe-16.1 (shim 16.1 with the iPXE patches), with gnu-efi, which that fork takes from the
+# submodule below (its tarball leaves submodules out). The build of the shim that the iPXE v2.0.0 release archive carries is not recorded in the file beyond "Version: 16.1": see NOTICE.
+9ed6d029be901a0ccc87cb2e5f9c774620f30f84ebdd507c6dd3e1e6229b7bd5  ipxe-2.0.0.tar.gz  https://github.com/ipxe/ipxe/archive/v2.0.0.tar.gz
+050ea6790ed46f5f48c27e8d2b40098f2a83093e83ea66f316f8c74fbc5b8ad9  ipxe-shim-ipxe-16.1.tar.gz  https://github.com/ipxe/shim/archive/refs/tags/ipxe-16.1.tar.gz
+24268158ca4a0bcc0e361bc5e3fe502560acc086a88f34cf42a819f4af9df260  gnu-efi-dc7fd96f23d6b582416f672844362d776d175cf4.tar.gz  https://github.com/rhboot/gnu-efi/archive/dc7fd96f23d6b582416f672844362d776d175cf4.tar.gz
 3b83be6d55cf49a4a997189dbbb048024c5232b0d7f8a45fc864b290dc04a4e5  wimboot-2.9.0.tar.gz  https://github.com/ipxe/wimboot/archive/refs/tags/v2.9.0.tar.gz
 f3c97391f7c4eaa677a78e090c7e97e6dc47b16f655f04683ebd37bef7fe0faa  grub2_2.12.orig.tar.xz  https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/grub2/2.12-1ubuntu7.3/grub2_2.12.orig.tar.xz
 1e78cbb97d86461e8cb4789658cdeffeef32a784a006253dcc3b1b97d7056338  grub2_2.12-1ubuntu7.3.debian.tar.xz  https://launchpad.net/ubuntu/+archive/primary/+sourcefiles/grub2/2.12-1ubuntu7.3/grub2_2.12-1ubuntu7.3.debian.tar.xz

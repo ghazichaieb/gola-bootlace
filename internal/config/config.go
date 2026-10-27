@@ -98,7 +98,17 @@ type Config struct {
 	Answers            map[string]AnswerFile       `json:"answers"`                      // answer file id -> the file (a secret: it can hold passwords; see answers.go)
 	ISOAnswers         map[string]string           `json:"isoAnswers"`                   // ISO id -> the answer file every PC that starts that ISO gets (a PC's own choice wins)
 	AnswersSameAddress bool                        `json:"answersSameAddress,omitempty"` // an installer is only given its answer file at the address its PC asked for the menu from (see package httpd, answergate.go); off by default because a router can give the installer another address than iPXE got
+	SecureBootMode     string                      `json:"secureBootMode,omitempty"`     // the route for PCs with UEFI Secure Boot on (see package httpd, secureboot.go): one of SecureBootModes; empty only in a file from before the setting existed, which is "off" until a person chooses
+	SecureBootScope    string                      `json:"secureBootScope,omitempty"`    // which PCs go through the shim: one of SecureBootScopes; empty is "marked"
+	SecureBootChosen   bool                        `json:"secureBootChosen,omitempty"`   // a person chose the mode in the web interface (as against the default a new installation starts with)
 }
+
+// SecureBootModes are the values of Config.SecureBootMode: the iPXE project's signed files built into the program, a folder with the owner's own signed iPXE and a
+// distribution's shim, or no route.
+var SecureBootModes = []string{"builtin", "own", "off"}
+
+// SecureBootScopes are the values of Config.SecureBootScope: every 64-bit UEFI PC goes through the shim, or only the PCs marked on the PCs page.
+var SecureBootScopes = []string{"all", "marked"}
 
 // AccentNames are the colours the menu's highlighted line may have (see package menu).
 var AccentNames = []string{"red", "green", "yellow", "blue", "magenta", "cyan", "white"}
@@ -327,6 +337,12 @@ func (c *Config) Validate() error {
 	}
 	if len(c.HidePatterns) > MaxHidePatterns {
 		return fmt.Errorf("at most %d patterns", MaxHidePatterns)
+	}
+	if c.SecureBootMode != "" && !slices.Contains(SecureBootModes, c.SecureBootMode) {
+		return errors.New("the Secure Boot mode must be one of: " + strings.Join(SecureBootModes, ", "))
+	}
+	if c.SecureBootScope != "" && !slices.Contains(SecureBootScopes, c.SecureBootScope) {
+		return errors.New("the Secure Boot scope must be one of: " + strings.Join(SecureBootScopes, ", "))
 	}
 	patterns := []string{}
 	for _, p := range c.HidePatterns {
@@ -579,6 +595,13 @@ func (s *Store) Get() Config {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.cfg.clone()
+}
+
+// SecureBoot is the saved Secure Boot route setting, without copying the whole configuration (it is asked for at every DHCP answer and every menu).
+func (s *Store) SecureBoot() (mode, scope string, chosen bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg.SecureBootMode, s.cfg.SecureBootScope, s.cfg.SecureBootChosen
 }
 
 // Path is where the settings are kept.

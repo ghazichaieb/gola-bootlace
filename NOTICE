@@ -6,7 +6,8 @@ something is copied or bundled.
 
 ## Source code of the GPL programs inside the program (written offer)
 
-iPXE, wimboot and Canonical's signed GRUB (below) are GPL programs that are part of the Gola Bootlace program as files. Their source code, exactly as it was when they
+iPXE (both the unsigned builds and the iPXE project's signed build), wimboot and Canonical's signed GRUB (below) are GPL programs that are part of the Gola Bootlace program as
+files, and so is the iPXE project's signed shim (BSD-2-Clause, below), whose source is delivered the same way. Their source code, exactly as it was when they
 were shipped, is attached to every release as `bootlace-<version>-third-party-sources.tar` (the files and where each comes from are listed, with checksums, in
 `third_party/SOURCES`). Whoever has received the program in any other way can ask for it: open an issue in the repository, or write to Gola Services through https://gola.tn.
 This offer is valid for at least three years after the version in question was last offered.
@@ -19,6 +20,30 @@ This offer is valid for at least three years after the version in question was l
   78354cdf81434498aabfad6fb5c1177691ee1daaf1489cd9dbdd1ccd199409b4), snponly.efi (SHA-256
   a94d1db7f1b2cfa10b87faef67d95572618ba04bce286a3da003609a3c0dca90), undionly.kpxe (SHA-256
   7391a65312f9719374e4d872c60c6eaebabfbea5d69edaa16e7d23701a27e9d5). They are unsigned: UEFI Secure Boot must be off for them (see issue #10).
+- The iPXE project's signed files for UEFI Secure Boot, x86-64 (https://ipxe.org/secboot). SHIPPED unchanged in internal/secureboot/assets, taken from the release archive
+  https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz (iPXE v2.0.0, 2026-03-06; archive SHA-256 01a526d4cc791fc30362259c609d6c506cc64a7bdff51b9a5eb788354e17eee1),
+  folder x86_64-sb; assets/MANIFEST.json lists each file with its size and SHA-256, and the program checks at start that the bytes match it. tools/update-secure-boot-assets.sh renews them.
+  - ipxe.efi (SHA-256 6558e37887516b246d6a97122e8d18bedfe4197b7ba7f67bf1bf102a16678d33): iPXE 2.0.0 (commit 12798ec29aa8a64d8675c4378b99f5fe28447afb, the tag v2.0.0), the project's
+    reduced-feature Secure Boot build signed by the iPXE Secure Boot CA. Source: https://github.com/ipxe/ipxe/archive/v2.0.0.tar.gz (in third_party/SOURCES). Licence: read from the
+    v2.0.0 source tree. Its top-level COPYING says: "In general iPXE files are licensed under the GPL. For historical reasons, individual files may contain their own licence declarations.
+    Most builds of iPXE do not contain all iPXE code (in particular, most builds will include only one driver), and so the overall licence can vary depending on what target you are
+    building." and its README: "iPXE is free, open-source software licensed under the GNU GPL (with some portions under GPL-compatible licences)." Most source files declare
+    `FILE_LICENCE ( GPL2_OR_LATER_OR_UBDL )`, which is GPL-2.0-or-later, or the Unmodified Binary Distribution Licence (COPYING.UBDL: unmodified binaries built from publicly available
+    GPL source may be distributed without the GPL's other obligations, on condition that the program displays at start where its source is published); others declare GPL2_OR_LATER,
+    GPL2_ONLY, GPL_ANY, BSD2, BSD2_PATENT, BSD3, MIT or PUBLIC_DOMAIN. This binary is distributed here under the GPL, with its source (above), and not under the UBDL.
+    No linking exception was found in COPYING, COPYING.GPLv2, COPYING.UBDL or README.md of v2.0.0. The licence of this particular binary (the result of iPXE's own `make bin/<target>.licence`
+    for the Secure Boot build) was not computed here, so whether it is GPL-2.0-or-later or GPL-2.0-only is not stated. It is a separate program that is handed to PCs, not linked into Bootlace.
+  - ipxe-shimx64.efi (the name it is served under; the release archive's x86_64-sb/shimx64.efi, SHA-256 83ad71c7d4f2cf328b75b653d09bf3bea5f29bee2e67ca058f37d83c07133885): the iPXE project's shim for
+    iPXE, signed by Microsoft (UEFI CA 2011; this build has no 2023 signature), BSD-2-Clause (the COPYRIGHT file of https://github.com/ipxe/shim: Copyright 2012 Red Hat, Inc, with parts
+    derived from Tianocore, Copyright 2009-2012 Intel Corporation), which also contains parts of OpenSSL 1.0.2k (OpenSSL and SSLeay licences) and gnu-efi (BSD-style licences of its files).
+    The file says "UEFI SHIM $Version: 16.1 $ $Commit: master $"; it reports the SBAT entries shim,4 and shim.ipxe,1. The exact commit it was built from is NOT recorded in the file or in the
+    release notes of iPXE v2.0.0. What is established: the iPXE v2.0.0 release workflow (.github/workflows/build.yml) takes the shim from
+    https://github.com/ipxe/shim/releases/latest/download/ipxe-shimx64.efi at the time of the build, and the latest release of that repository then was `ipxe-16.1` (2025-11-07, "Based on
+    upstream shim-16.1"; tag commit d0367b25d04ec90d332909b99d932571f15e5a06). That release's files were later replaced (2026-05-27) by shims signed with both the 2011 and 2023 certificates,
+    so the shim here does not have the checksum of today's ipxe-16.1 release file. The source given for it (third_party/SOURCES) is therefore the tag ipxe-16.1 of https://github.com/ipxe/shim
+    plus gnu-efi at the commit the tag's submodule points to (https://github.com/rhboot/gnu-efi, dc7fd96f23d6b582416f672844362d776d175cf4); it is the source of the same version, not a
+    proven source of this exact binary.
+  - Not shipped: the ARM64 files of the same release (arm64-sb/shimaa64.efi, arm64-sb/ipxe.efi). See docs/secure-boot.md.
 - wimboot 2.9.0 (https://ipxe.org/wimboot), GPL-2.0-or-later, source at https://github.com/ipxe/wimboot. SHIPPED unchanged in internal/assets/ipxe/wimboot (downloaded 2026-10-21
   from the project's release, SHA-256 5f067ccdc4d084d5bf77b6c853bd0f8402dfc2b4cd1b103d358993ae97fae8e3). Starts Windows setup images.
 - GRUB 2.12 as built and signed by Canonical for Ubuntu, GPL-3.0-or-later: internal/assets/ubuntu/grubnetx64.efi.signed is the file of the package grub-efi-amd64-signed

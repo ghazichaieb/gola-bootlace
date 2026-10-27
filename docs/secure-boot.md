@@ -1,22 +1,116 @@
 # UEFI Secure Boot
 
-Bootlace's usual way in is iPXE, and the iPXE that Bootlace ships is not signed by anyone a PC's firmware trusts (wimboot, which loads Windows' set-up environment, is signed by Microsoft, but it is started
-by iPXE, which comes first). With Secure Boot **on** the firmware refuses it and the PC stops with `Security Violation`, so it never reaches the menu. There are three ways round that:
+Bootlace's usual way in is iPXE, and the iPXE that Bootlace builds itself is not signed by anyone a PC's firmware trusts (wimboot, which loads Windows' set-up environment, is signed by Microsoft, but it is started
+by iPXE, which comes first). With Secure Boot **on** the firmware refuses it and the PC stops with `Security Violation`, so it never reaches the menu. There are four ways round that:
 
-1. **The iPXE project's signed shim: the recommended way, for any Linux ISO whose kernel is signed.** Off until a folder is given; no key to enrol in any PC. Next section.
-2. A rule that starts **Windows** with the firmware's own signed boot manager (below).
-3. The same for **Ubuntu** (below).
+1. **Built in: the iPXE project's signed shim and iPXE, which are part of the program. The default of a new installation; nothing to download, no key to enrol in any PC.** Works for any Linux ISO whose kernel is signed. Next section.
+2. **Your own key**: a folder with a distribution's shim and an iPXE you signed yourself; the key is enrolled once in each PC (further down). Chosen with one switch in the web interface.
+3. A rule that starts **Windows** with the firmware's own signed boot manager (below).
+4. The same for **Ubuntu** (below).
 
-## Recommended: the iPXE project's signed shim (a real PC: works)
+## Built in: the iPXE project's signed shim (the default; a real PC: works)
 
-The iPXE project publishes a **shim signed by Microsoft** and an `ipxe.efi` signed by its own CA, which that shim trusts. A PC with Secure Boot on starts the shim (the firmware
-trusts Microsoft), the shim starts `ipxe.efi`, and the usual Bootlace menu comes up: nothing has to be enrolled in the PC. Bootlace serves the two files by TFTP and, for a PC that
-is to use them, names the shim instead of its own `ipxe.efi` in the DHCP answer. Tested on a real MSI PC with Secure Boot on, in proxy-DHCP mode (the table below).
+The iPXE project publishes a **shim signed by Microsoft** and an `ipxe.efi` signed by its own CA, which that shim trusts. Bootlace carries the two x86-64 files inside the program (`internal/secureboot/assets`,
+release v2.0.0 of the project, unchanged, with a `MANIFEST.json` that gives the source, the release, the checksum of the release archive and of each file; the program checks its own bytes against that manifest when it starts, and serves
+nothing if they do not match). A PC with Secure Boot on starts the shim (the firmware trusts Microsoft), the shim starts `ipxe.efi`, and the usual Bootlace menu comes up: nothing has to be enrolled in the PC. Bootlace serves the two files by TFTP
+(under `sb/`, only these two names) and, for a PC that is to use them, names the shim instead of its own `ipxe.efi` in the DHCP answer. Tested on a real MSI PC with Secure Boot on, in proxy-DHCP mode (the table below).
 
-### Set it up (a Proxmox container made with the project's script, as root in the container: `pct enter <number>`)
+### What you do
+
+- **A new installation:** nothing. It starts with the route **built in** and **for every 64-bit UEFI PC**: it works with Secure Boot on (measured on a real PC) and with it off (the shim then just starts iPXE; measured in a lab). The log says so at the start, and the Server page shows it.
+- **An installation made by an older version:** nothing changes when the program is updated. Its settings file has no Secure Boot setting, which means **off**, and which PCs are sent is the marked ones only, as before. The Dashboard and the Server page show a banner, *Secure Boot support is built in: turn it on*, with a button;
+  the log says it at the start. Turn it on there (or choose another way), and the banner goes. An installation that already used `-secure-boot-dir` keeps doing so: the option selects the own-key way, as before.
+- **Switching** is done on the **Server** page, block **Secure Boot route**: *Way* (Built in, Own key, Off) and *Which PCs* (every 64-bit UEFI PC, or only the PCs marked on the PCs page). It takes effect for the next DHCP answer: no restart. The page asks before switching to your own key (enrolment) and before sending every PC through the shim.
+
+### The options (they win over what the web interface saved)
+
+| Option | Environment variable | What it does |
+| --- | --- | --- |
+| `-secure-boot builtin\|own\|off` | `BOOTLACE_SECURE_BOOT` | The way. Without it the choice made in the web interface counts. |
+| `-secure-boot-scope all\|marked` | `BOOTLACE_SECURE_BOOT_SCOPE` | Which PCs go through the shim. |
+| `-secure-boot-dir <folder>` | `BOOTLACE_SECURE_BOOT_DIR` | The folder of the own-key way. Giving it selects *own* unless `-secure-boot` says otherwise. Without it, *own* uses the folder `secure-boot` next to the settings file (`/var/lib/bootlace/secure-boot` in a Proxmox container, `/data/secure-boot` in the Docker image). |
+| `-secure-boot-shim <file>` | `BOOTLACE_SECURE_BOOT_SHIM` | Own key: the file in that folder PCs are told to boot (default `shimx64.efi`). |
+| `-secure-boot-all` | `BOOTLACE_SECURE_BOOT_ALL` | The same as `-secure-boot-scope all`. |
+
+A setting that an option decides is shown in the web interface as such ("Set by the command line or the environment") and cannot be changed there; the API answers 409 for it. The saved choice is not overwritten by an option. A server started with no option and no settings file is the new-installation default.
+
+The same facts are in the API (the session login and the `X-Bootlace: 1` header apply, as for the other pages):
+
+- `GET /api/secureboot` (also the `secureBoot` field of `GET /api/status`): `on`, `mode` (`builtin`, `own`, `off`), `scope` (`all`, `marked`), `modeSource` and `scopeSource` (`option`, `dashboard`, `default`), `modeLocked`, `scopeLocked`, `unset` (nobody has chosen yet: the banner), `dir`, `shim`, `marked`, `files` (`name`, `role`, `required`, `present`, and for built-in files `size` and `sha256`), `ready`, `problem`, `message`, `builtin` (`ok`, `error`, `release`, `released`, `added`, `source`, `tarballSha256`, `files`) and `own` (`dir`, `dirFromOption`, `shim`, `files`, `ready`, `problem`).
+- `PUT /api/secureboot` with `{"mode": "builtin"}`, `{"scope": "all"}` or both. 400 for a value that is not one of the choices, 409 for what an option decides, for *builtin* when the built-in files do not match their manifest, and for *own* when the shim is not in the folder. It answers with the new status.
+
+### What each way means
+
+- **Built in.** Works with the iPXE project's own shim (signed by Microsoft) and signed iPXE: no key to manage, nothing to enrol, nothing to download. It is the project's *reduced-feature* build: the project says that `ipxe.efi` is "missing support for several features that are forbidden in a UEFI Secure Boot build" ([ipxe.org/secboot](https://ipxe.org/secboot)), so Bootlace's own iPXE options (for instance the USB-driver switch in `tools/ipxe/config/usb.h`) are not in it. The Bootlace menu came up in the lab (with its picture) and on the real PC; a Linux ISO starts only if its distribution signed its kernel.
+- **Own key.** Your own signed iPXE (`tools/ipxe/build-sb.sh`: built with iPXE's Secure Boot safe set, which Bootlace's picture, console and colour options pass) and a distribution's shim, from a folder. The key has to be enrolled once in every PC through MokManager (8 screens, below). You look after the key and the build's SBAT line.
+- **Off.** Nothing under `sb/` is served and no PC is sent through a shim.
+
+### Which PCs are sent through the shim
+
+- **Every 64-bit UEFI PC** (*scope all*; the default of a new installation). Nothing has to be marked. It adds one boot stage (the shim) to every 64-bit UEFI PC, with Secure Boot on or off (the shim starts iPXE either way); that was fine in the tests below. BIOS PCs and ARM64 PCs are never sent to the shim, nor is a PC that already runs iPXE (it is given its script), nor a PC with a Windows or Ubuntu `native:` start in progress.
+- **Only marked PCs** (*scope marked*; what an older installation has). On the **PCs** page press **Secure Boot route** on the row of a PC that has Secure Boot on. A PC appears in that list as soon as it has asked for a boot file, even
+  if it never reached the menu (its row then says `Asked for a boot file; Secure Boot may be refusing iPXE`), so: boot the PC from the network once, it fails with `Security Violation`, refresh the
+  PCs page, press the button, boot it again.
+
+### What the log shows when it works
+
+```
+12:00:01  Secure Boot route: ON, built in (the iPXE project's signed shim and iPXE, release v2.0.0; the default of a new installation; change it on the Server page) for every 64-bit UEFI PC, which are told to start ipxe-shimx64.efi; the shim then asks for ipxe.efi
+...
+12:31:40  dhcp: discover d8:43:ae:d6:2f:05 from 0.0.0.0 answered with "sb/ipxe-shimx64.efi" to 255.255.255.255
+12:31:41  tftp: 192.168.1.50 gets ipxe-shimx64.efi (Secure Boot route, built in)
+12:31:41  tftp: 192.168.1.50:2074 asks for sb/ipxe-shimx64.efi (options map[...]), 1038920 bytes
+12:31:42  tftp: 192.168.1.50 gets ipxe.efi (Secure Boot route, built in)
+12:31:42  tftp: 192.168.1.50:2075 asks for sb/ipxe.efi (options map[...]), 397160 bytes
+          (then the request for /boot.ipxe, and the PC's row on the PCs page shows the menu)
+```
+
+Both files are fetched, in that order, and then `boot.ipxe`. A DHCP line that names plain `ipxe.efi` instead means the PC was not sent through the shim (first row of the table below). The other start lines are
+`Secure Boot route: OFF ...` (with why: not chosen yet on an older installation, chosen in the web interface, or set by an option), `Secure Boot route: ON, own key ...` and `Secure Boot route: ERROR, the built-in Secure Boot files do not match their manifest and are NOT served ...`.
+
+### If it does not work
+
+| What the log and the PC show | What it means | What to do |
+| --- | --- | --- |
+| The DHCP answer names plain `ipxe.efi` and the PC shows `Security Violation` | The route is off (`Secure Boot route: OFF` at the start; an older installation that has not chosen yet), or the scope is *marked* and this PC is not marked | Turn the route on in the Server page (Built in), and choose every 64-bit UEFI PC or mark the PC on the PCs page |
+| The Server page shows the choices greyed out, *Set by the command line or the environment* | An option or environment variable decides | Change `-secure-boot...` / `BOOTLACE_SECURE_BOOT...` and restart, or remove it |
+| `Secure Boot route: ERROR, the built-in Secure Boot files do not match their manifest` | The program file is damaged or was changed: the built-in files are not served | Install the program again from a release (checksums in `SHA256SUMS`, [verifying.md](verifying.md)) |
+| The DHCP answer names `sb/ipxe-shimx64.efi`, the shim is fetched by TFTP, but `ipxe.efi` is never requested; the PC shows an error or goes on to the next boot device | The firmware refuses the shim | Check the board's Secure Boot mode (standard/"Windows UEFI mode", not custom with empty keys) and that **Microsoft's third-party UEFI CA** is not disabled (some boards have an option for it, "Allow Microsoft 3rd party UEFI CA"). To tell a firmware problem from a Bootlace problem, start a Linux live USB with Secure Boot on: if it does not start, the firmware does not trust the third-party CA. A very new PC that only trusts Microsoft's 2023 UEFI CA may refuse this shim, which carries the 2011 signature only (see *Keeping the built-in files current*) |
+| Both files are fetched, then `Security Violation` or `Verification failed` | The shim or `ipxe.efi` was revoked: the PC's revocation list (`dbx`, SBAT) refuses this build | See *Keeping the built-in files current*; try the own-key way, or switch Secure Boot off in that PC |
+| Switching to *Own key* answers that the shim is not in the folder, or the Server page says a file is missing | The folder of the own-key way is empty or incomplete | Put the shim (and the signed iPXE) in the folder shown; the block turns green (it looks every few seconds) |
+| The PC's row says `Asked for a boot file; Secure Boot may be refusing iPXE` and nothing else | The PC never reached the menu | One of the lines above; the row's History button shows when it asked |
+| The menu comes up, an entry ends with `Could not boot` / `Security Policy Violation` | The shim works, the ISO's kernel is not signed (for example CachyOS) or it is Windows through wimboot | Use the Windows rule below for Windows; a distribution with an unsigned kernel needs Secure Boot off |
+
+### Limits
+
+Only the iPXE project's reduced-feature signed binaries are used in the built-in way, so Bootlace's own iPXE options are not in them; the project's signing policy for other parties is not stated in its pages (not asked). A Linux ISO starts if its distribution signed its kernel (the measured list is in the table below);
+Windows keeps its own way (next section), although a Windows 11 ISO picked from the menu also installed on the real PC (table below). The files are for x86-64 UEFI only:
+
+- **ARM64 is not included.** The same release has an `arm64-sb` folder (`shimaa64.efi`, 1,050,192 bytes, `ipxe.efi`, 438,120 bytes, `snponly.efi`). It is not built in because ARM64 PCs are not started by Bootlace yet: it has no ARM64 iPXE of its own to hand out (an ARM64 PC, architecture codes 11 and 19, gets no boot file), the shim route is chosen only for the x86-64 UEFI codes and an ARM64 PC is never sent the x86-64 shim (tested), and no ARM64 PC has been tried. Adding it needs the PC architecture to be checked on every answer, a boot file per architecture and a test on real hardware; it stays with issue #10.
+- UEFI HTTP boot (architecture code 16) does not go through the shim; it was not tried.
+- BIOS PCs have no Secure Boot and keep their file; nothing about Windows `native:` starts changes.
+
+## Keeping the built-in files current
+
+The files are one release of the iPXE project (`MANIFEST.json` and the Server page say which: release, date, and the checksum of the release archive). They are not renewed by themselves, and a program that is kept for a long time carries them as they were. **Why they have to be renewed from time to time:** PCs refuse programs that were revoked. The firmware has a revocation list (`dbx`, by hash and certificate), and the shim has an **SBAT** level (a generation number per component: this shim says `shim,4` and `shim.ipxe,1`, this `ipxe.efi` says `ipxe,1`) that operating system updates, Windows Update and the Linux distributions' shim updates raise on the PC. When a security fix in iPXE or in the shim raises the required generation, a PC that has taken that update refuses older builds ("Security Violation", "Verification failed") while PCs that have not yet taken it still start them: the failure appears PC by PC, over months. A newer shim release can also change the Microsoft signatures it carries.
+
+To check whether a newer release exists and whether it matters:
+
+1. Read the release notes of the iPXE project ([github.com/ipxe/ipxe/releases](https://github.com/ipxe/ipxe/releases)) and of its shim ([github.com/ipxe/shim/releases](https://github.com/ipxe/shim/releases)): look for security fixes, "SBAT", "revocation" and the signatures ("dual-signed with the 2011 and 2023 certificates"). The generations in the files shipped here are in their `.sbat` sections: the shim says `shim,4` and `shim.ipxe,1`, `ipxe.efi` says `ipxe,1`.
+2. If there is a new iPXE release, run `tools/update-secure-boot-assets.sh <release> <sha256>` (for example `v2.0.0` and the checksum of `ipxeboot.tar.gz`). **Get the checksum from somewhere other than the download itself** (the release page, a second computer): the script prints the checksum it computed, and stops when it is not the one given. Without a checksum it refuses unless `--trust-printed-hash` is given, which accepts whatever was downloaded and writes its checksum into the manifest: use that only when you have looked at the release yourself. `--from <file>` uses an archive already on the computer; `--out <folder>` writes somewhere else to look first.
+3. The script takes only the two x86-64 files out of the archive (`x86_64-sb/shimx64.efi`, written as `ipxe-shimx64.efi`, and `x86_64-sb/ipxe.efi`), rewrites `MANIFEST.json`, and prints which checksums changed. Then: `go test ./internal/secureboot` (the manifest and the bytes agree), update `NOTICE` and `third_party/SOURCES` (release, checksums, shim version) and this page's measurements note, try it on a PC with Secure Boot on, and note the change in `CHANGELOG.md`.
+
+The script has no PowerShell twin: the repository's tools are shell scripts, and the Windows tools in it only drive Hyper-V.
+
+## Your own key (the folder way)
+
+For when you want your own signed iPXE, a different shim, or the iPXE project's files of a release newer than the built-in ones. Switch to **Own key** on the Server page, or start with `-secure-boot-dir <folder>` (which also selects it). The folder has the shim and what it fetches; every file directly in it is served by TFTP under `sb/` by its own name, nothing else (no sub-folder, no path).
+
+- **Your own key:** `tools/ipxe/build-sb.sh` builds iPXE with `SECUREBOOT=1` and signs it with your key; put the result in the folder as `grubx64.efi` next to a distribution's `shimx64.efi` and `mmx64.efi` (MokManager), and enrol the certificate in each PC once (the 8 screens in *Way 1* below). Server options: just the folder.
+- **Another release of the iPXE project's files, by hand** (a Proxmox container made with the project's script, as root in the container: `pct enter <number>`; here `v2.0.0`, the version that is built in, as the example):
 
 ```sh
-# 1. the iPXE project's signed files (release v2.0.0), checked before use
+# 1. the iPXE project's signed files, checked before use
 cd /tmp
 wget https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz
 echo "01a526d4cc791fc30362259c609d6c506cc64a7bdff51b9a5eb788354e17eee1  ipxeboot.tar.gz" | sha256sum -c -     # must say: ipxeboot.tar.gz: OK
@@ -27,7 +121,7 @@ mkdir -p /var/lib/bootlace/secure-boot
 cp ipxeboot/x86_64-sb/shimx64.efi /var/lib/bootlace/secure-boot/ipxe-shimx64.efi
 cp ipxeboot/x86_64-sb/ipxe.efi    /var/lib/bootlace/secure-boot/ipxe.efi
 
-# 3. tell the server (two lines in /etc/default/bootlace; /etc/bootlace.env if the container was made by the community-scripts script)
+# 3. tell the server (lines in /etc/default/bootlace; /etc/bootlace.env if the container was made by the community-scripts script)
 cat >> /etc/default/bootlace <<'EOF'
 BOOTLACE_SECURE_BOOT_DIR=/var/lib/bootlace/secure-boot
 BOOTLACE_SECURE_BOOT_SHIM=ipxe-shimx64.efi
@@ -35,52 +129,7 @@ EOF
 systemctl restart bootlace
 ```
 
-(If `tar` does not find `ipxeboot/x86_64-sb`, list the archive with `tar tzf ipxeboot.tar.gz`; the folder is the one for x86-64 with Secure Boot, `x86_64-sb`.) The container needs
-no extra package: the files are only copied and served. Then check it:
-
-- The log (`journalctl -u bootlace -e`) says `Secure Boot route: ON for ...` at the start. If it says `OFF`, the two lines were not read. If it says `warning: ... has no ipxe.efi`, that file is not in the folder.
-- The web interface, **Server** page, block **Secure Boot route**: it says on, the folder, and marks each file `present` or `missing` (it looks in the folder every few seconds, so a file copied in
-  later shows at once, no restart). The same facts are in the API: `GET /api/secureboot` (and the `secureBoot` field of `GET /api/status`).
-
-### Which PCs are sent through the shim
-
-- **Per PC (the default).** On the **PCs** page press **Secure Boot route** on the row of a PC that has Secure Boot on. A PC appears in that list as soon as it has asked for a boot file, even
-  if it never reached the menu (its row then says `Asked for a boot file; Secure Boot may be refusing iPXE`), so: boot the PC from the network once, it fails with `Security Violation`, refresh the
-  PCs page, press the button, boot it again.
-- **Every 64-bit UEFI PC: a third line `BOOTLACE_SECURE_BOOT_ALL=true`** in the same file (or `-secure-boot-all` on the command line), then `systemctl restart bootlace`. Nothing has to be marked. It adds one boot stage (the shim) to every
-  64-bit UEFI PC, with Secure Boot on or off (the shim starts iPXE either way); that was fine in the tests below. BIOS PCs and ARM64 PCs are never sent to the shim.
-
-### What the log shows when it works
-
-```
-12:00:01  Secure Boot route: ON for every 64-bit UEFI PC, which are told to start ipxe-shimx64.efi from /var/lib/bootlace/secure-boot; the shim then asks for ipxe.efi
-...
-12:31:40  dhcp: discover d8:43:ae:d6:2f:05 from 0.0.0.0 answered with "sb/ipxe-shimx64.efi" to 255.255.255.255
-12:31:41  tftp: 192.168.1.50 gets ipxe-shimx64.efi (Secure Boot route)
-12:31:41  tftp: 192.168.1.50:2074 asks for sb/ipxe-shimx64.efi (options map[...]), 966000 bytes
-12:31:42  tftp: 192.168.1.50 gets ipxe.efi (Secure Boot route)
-12:31:42  tftp: 192.168.1.50:2075 asks for sb/ipxe.efi (options map[...]), 1100000 bytes
-          (then the request for /boot.ipxe, and the PC's row on the PCs page shows the menu)
-```
-
-(The numbers are examples.) Both files are fetched, in that order, and then `boot.ipxe`. A DHCP line that names plain `ipxe.efi` instead means the PC was not sent through the shim (first row of the table below).
-
-### If it does not work
-
-| What the log and the PC show | What it means | What to do |
-| --- | --- | --- |
-| The DHCP answer names plain `ipxe.efi` and the PC shows `Security Violation` | The route is off (`Secure Boot route: OFF` at the start) or this PC is not marked and `-secure-boot-all` is not set | Set `BOOTLACE_SECURE_BOOT_DIR` (see above), then mark the PC on the PCs page or use `-secure-boot-all` |
-| The DHCP answer names `sb/ipxe-shimx64.efi`, the shim is fetched by TFTP, but `ipxe.efi` is never requested; the PC shows an error or goes on to the next boot device | The firmware refuses the shim | Check the board's Secure Boot mode (standard/"Windows UEFI mode", not custom with empty keys) and that **Microsoft's third-party UEFI CA** is not disabled (some boards have an option for it, "Allow Microsoft 3rd party UEFI CA"). To tell a firmware problem from a Bootlace problem, start a Linux live USB with Secure Boot on: if it does not start, the firmware does not trust the third-party CA |
-| Both files are fetched, then `Security Violation` or `Verification failed` | The shim or `ipxe.efi` was revoked or does not match: an old file, a wrong file, or the PC's revocation list (`dbx`, SBAT) refuses it | Download the files again (the checksum above), use the folder `x86_64-sb` and not another, copy them again |
-| The shim is fetched, the PC shows `Security Violation` straight away, no `ipxe.efi` request, and the Server page says a file is missing | The folder is incomplete | Copy the missing file; the block on the Server page turns green |
-| The PC's row says `Asked for a boot file; Secure Boot may be refusing iPXE` and nothing else | The PC never reached the menu | One of the lines above; the row's History button shows when it asked |
-| The menu comes up, an entry ends with `Could not boot` / `Security Policy Violation` | The shim works, the ISO's kernel is not signed (for example CachyOS) or it is Windows through wimboot | Use the Windows rule below for Windows; a distribution with an unsigned kernel needs Secure Boot off |
-
-### Limits
-
-Only the iPXE project's reduced-feature signed binaries are used in this way, so Bootlace's own iPXE options (for instance the USB-driver switch in `tools/ipxe/config/usb.h`) are not in them;
-the project's signing policy for other parties is not stated in its pages (not asked). A Linux ISO starts if its distribution signed its kernel (the measured list is in the table below);
-Windows keeps its own way (next section). The older way with a key of your own (needs one enrolment per PC) is described at the end.
+(For another release replace `v2.0.0` and the checksum; if `tar` does not find `ipxeboot/x86_64-sb`, list the archive with `tar tzf ipxeboot.tar.gz`. Without the `BOOTLACE_SECURE_BOOT_DIR` line, the folder `/var/lib/bootlace/secure-boot` next to the settings file is the one used when *Own key* is chosen in the web interface; the shim's name is still given by `BOOTLACE_SECURE_BOOT_SHIM`.) The log says `Secure Boot route: ON, own key (...)`, and warns (`warning: ... has no ipxe.efi`) when the folder has the shim but not the file the shim asks for next; the start is not refused for that, because the folder is read at every request and the file can be copied in while the server runs. The Server page marks each file `present` or `missing`.
 
 ## Windows, with Secure Boot on (works)
 
@@ -105,8 +154,8 @@ Things found out on the way:
 - The boot manager asks for its files with backslashes and in any case, and for `\Boot\BCD`, which the ISO keeps as `efi/microsoft/boot/bcd`: `windowsName` maps these.
 - A BIOS PC cannot use this way yet (and does not need it: there is no Secure Boot there).
 
-Tested in the Hyper-V lab with Secure Boot on (Microsoft Windows template): boot manager, BCD, `boot.wim`, WinPE, the share, Windows 11 Setup. Not tested: a real PC, and an
-installation run through to the end this way (it is the same Setup, started the same way, as in the iPXE way, where it was).
+Tested in the Hyper-V lab with Secure Boot on (Microsoft Windows template): boot manager, BCD, `boot.wim`, WinPE, the share, Windows 11 Setup. On one real PC (an MSI board, proxy-DHCP, the
+iPXE project's shim) a Windows 11 ISO was picked from the menu and its installation was run to the end; Windows started. Not tested: other firmware.
 
 ## Ubuntu, with Secure Boot on (works, on any amount of RAM)
 
@@ -140,8 +189,7 @@ The helper is rebuilt with `tools/build_helper.sh` (x86-64 Linux only for now).
 
 ## The signed-iPXE route in detail: how it works, the two ways, measurements
 
-Status: **off unless the server is started with `-secure-boot-dir`** (`BOOTLACE_SECURE_BOOT_DIR`); nothing changes for a server started without that option (it says so in the log, and the
-Server page shows the route as off). Measured in a Hyper-V lab (Way 1 and Way 2) and on one real PC (Way 2 only, see the table). Issue #10.
+Status: the route has three modes (built in, own key, off) and two scopes (every 64-bit UEFI PC, marked PCs), described at the top of this page; a new installation has the built-in way for every PC, an older one is off until a person chooses (a server started with `-secure-boot-dir` is in the own-key way, as in 0.5.0-rc.1). Measured in a Hyper-V lab (Way 1 and Way 2) and on one real PC (Way 2 only, see the table). Issue #10.
 
 The idea: with Secure Boot on the firmware only starts files signed by a key it knows, and iPXE is not one. A **shim** is: Microsoft signs the shims of the Linux
 distributions, and a shim starts a second program (by default `grubx64.efi`, fetched by TFTP from the same folder) after checking its signature against its own keys and the
@@ -150,15 +198,15 @@ the two ways measured below is only whose signature the shim accepts on iPXE.
 
 ### How it is set up
 
-1. **A folder** with the shim and what it fetches. `-secure-boot-dir <folder>` (also `BOOTLACE_SECURE_BOOT_DIR`); `-secure-boot-shim <file>` names the boot file (default `shimx64.efi`).
-   Every file directly in the folder is served by TFTP under `sb/` by its own name, nothing else (no sub-folder, no path; unit tests). The server refuses to start when the shim is missing.
+1. **Files.** Built in: the two files of the program. Own key: **a folder** with the shim and what it fetches (`-secure-boot-dir <folder>`, also `BOOTLACE_SECURE_BOOT_DIR`; `-secure-boot-shim <file>` names the boot file, default `shimx64.efi`).
+   Every file directly in the folder is served by TFTP under `sb/` by its own name, nothing else (no sub-folder, no path; unit tests). A folder given with the option must hold the shim, or the server refuses to start; one chosen in the web interface must hold it too, or the switch is refused.
    When the shim is there but the file it asks for next is not (`ipxe.efi` for a shim whose name contains `ipxe`, `grubx64.efi` for any other), the server **starts and warns** in the log and on
    the Server page: the folder is read at every request, so the file can be copied in while the server runs, and refusing to start would take the whole menu down for a folder that is only half filled.
 2. **Which PCs.** The server cannot see a PC's Secure Boot state (the DHCP architecture code is the same with it on and off), so a person says it: the PCs page has a
-   **Secure Boot route** button per PC (saved in the PC's options, `secureBoot`), or `-secure-boot-all` sends every 64-bit UEFI PC through the shim. The shim also starts with
+   **Secure Boot route** button per PC (saved in the PC's options, `secureBoot`; scope *marked*), or the scope *all* sends every 64-bit UEFI PC through the shim. The shim also starts with
    Secure Boot off (measured: nothing had to be pressed), so "all" is possible, at the price of an extra boot stage for PCs that did not need it. BIOS PCs, iPXE itself (once it runs it is
    given its script, not the shim again), ARM64 PCs and a start in progress for Windows or FreeBSD (the `native:` rule) are never sent to the shim (unit tests).
-3. **Kernels.** With the route on, every menu entry that starts a Linux kernel gets one more iPXE line before `boot`: `shim <ISO>/EFI/boot/bootx64.efi`, the ISO's own shim, read
+3. **Kernels.** With the route on (built in or own key), every menu entry that starts a Linux kernel gets one more iPXE line before `boot`: `shim <ISO>/EFI/boot/bootx64.efi`, the ISO's own shim, read
    from inside the ISO over HTTP. iPXE then starts the kernel *through that shim*, which checks the kernel with the keys the distribution put into it. With Secure Boot off,
    or on a BIOS PC, the command does nothing. Entries that are not kernels (a disk image, Windows) are left as they are.
 
@@ -188,16 +236,14 @@ in. The key is kept in the PC's firmware variables (it survived a power-off and 
 disks only. Nobody has to be at a PC afterwards. Enrolling the certificate in the firmware's own key database instead (so that no shim is needed) is the other way; Hyper-V does
 not let a VM's database be edited, so that was not tried.
 
-### Way 2: the iPXE project's own signed shim and binaries (no enrolment)
-
-The copy-paste steps for a Proxmox container are at the top of this page; this section keeps the facts behind them.
+### Way 2: the iPXE project's own signed shim and binaries (no enrolment; now built in)
 
 The iPXE project (v2.0.0, 2026-03-06, release file `ipxeboot.tar.gz`, folder `x86_64-sb`) publishes a shim signed by Microsoft that trusts the "iPXE Secure Boot CA", and `ipxe.efi`
 signed by that CA ([ipxe.org/secboot](https://ipxe.org/secboot)). Folder: the shim as `ipxe-shimx64.efi` (the shim takes the name of its second stage from its own name, minus
-`shim`: it asks for `ipxe.efi`) and `ipxe.efi`; server options `-secure-boot-dir <folder> -secure-boot-shim ipxe-shimx64.efi`. A fresh VM, nothing enrolled, no disk, **reached the
+`shim`: it asks for `ipxe.efi`) and `ipxe.efi`. A fresh VM, nothing enrolled, no disk, **reached the
 menu with Secure Boot on** and started Linux the same way. The price: only the project's reduced-feature binaries are signed ("you can't build your own iPXE with the features you need
 in Secure Boot mode, and the page says that is intentional"), so Bootlace's own iPXE options (for instance the USB-driver switch in `tools/ipxe/config/usb.h`) are not in them, and the
-project's signing policy for other parties is not stated in its pages (not asked).
+project's signing policy for other parties is not stated in its pages (not asked). These are the files that are now built into the program.
 
 ### Measurements (Hyper-V generation 2, 4 GB, Secure Boot on, template "Microsoft UEFI Certificate Authority", host Windows 11; 2026-10-26)
 
@@ -229,6 +275,7 @@ made for the lab (never kept). Shim of the first stage: the one on the Ubuntu 22
 ### Measurements on a real PC (MSI, UEFI with Secure Boot on, proxy-DHCP mode, Bootlace 0.5.0-rc.1 in a Proxmox container, 2026-10-27)
 
 Way 2 (the iPXE project's `ipxe-shimx64.efi` and `ipxe.efi`, `-secure-boot-shim ipxe-shimx64.efi`, `-secure-boot-all`). Server log for the start: DHCP answer `sb/ipxe-shimx64.efi`, TFTP `sb/ipxe-shimx64.efi`, then `sb/ipxe.efi`, then `boot.ipxe`.
+(This was the folder route, with the files from the project's v2.0.0 archive, whose checksum is the one in the steps above; the built-in route serves the same two files, byte for byte, under the same names. The built-in route itself has not been run on a real PC yet.)
 
 | What | Secure Boot | Outcome |
 | --- | --- | --- |
@@ -236,7 +283,7 @@ Way 2 (the iPXE project's `ipxe-shimx64.efi` and `ipxe.efi`, `-secure-boot-shim 
 | Way 2, nothing enrolled: the Bootlace menu | on | **works** |
 | Ubuntu Server (chosen from the menu) | on | **booted** |
 | Ubuntu 25.04 (chosen from the menu) | on | **booted** |
-| Windows Setup (wimboot) | on | **not tested yet** |
+| Windows 11 ISO chosen from the menu (Setup to the end) | on | **worked**: Setup ran, the installation finished and Windows started (reported by the person who ran it; the entry was picked from the menu, not started with the `native:` rule) |
 
 These were the first runs of the route on a real PC; one PC and one firmware say nothing about others (see the troubleshooting table above for what a different firmware may do).
 
@@ -246,26 +293,24 @@ Notes on what the table does and does not prove:
   the person sees only the extra screens above (Way 1, once) or nothing (Way 2). Which distributions work is therefore "those whose ISO has a shim and a signed kernel": measured
   Ubuntu, Linux Mint, Debian, Fedora, openSUSE (kernel reached); not measured: others. A distribution with an unsigned kernel (CachyOS, measured) does not start; the only way is
   to start that PC with Secure Boot off (or enrol that distribution's own key, not tried).
-- **Windows is the open point.** The Windows boot manager of that ISO was refused ("Security Policy Violation") probably because this lab template trusts only Microsoft's third-party CA
-  (the one that signs shims and wimboot) and not the Windows CA (the template with the Windows CA was not tried; the one other template tried trusted neither), so the lab cannot say
-  whether wimboot followed by Windows' boot manager works on a real PC, whose firmware normally has both. The refusal of Way 1 (a crash of the shim instead of an error) differs from Way 2 (an error message); the cause was not
-  investigated (a shim that regains control when the program it started exits is one guess, not checked). Until measured on a real PC, Windows should keep its existing way: a `native:`
-  rule (above), which the DHCP answer serves before the shim.
+- **Windows through the lab is the open point, and the real PC answered it for one firmware.** The Windows boot manager of that ISO was refused ("Security Policy Violation") probably because this lab template trusts only Microsoft's third-party CA
+  (the one that signs shims and wimboot) and not the Windows CA (the template with the Windows CA was not tried; the one other template tried trusted neither). The real PC, whose firmware has both, ran a Windows 11 ISO picked from the menu to the end (table above). The refusal of Way 1 (a crash of the shim instead of an error) differs from Way 2 (an error message); the cause was not
+  investigated (a shim that regains control when the program it started exits is one guess, not checked). A `native:` rule (above), which the DHCP answer serves before the shim, stays the way that does not depend on the shim.
 - `wimboot` itself **is signed by Microsoft** (the UEFI CA 2011; checked with `sbverify` on `internal/assets/ipxe/wimboot`), so the sentence "wimboot is not signed" that this page used to
   carry was wrong. What is unsigned is iPXE, which has to run first.
-- **Not measured:** a real PC with Way 1 or with another make of firmware (Way 2 was measured on one real PC, in proxy DHCP mode, above); a network whose own DHCP server names a boot file (from the shim's source (read, not run), the boot file and server are taken from the DHCP acknowledgement, and the proxy offer is used only when the acknowledgement names
+- **Not measured:** the built-in route on a real PC (the files are the ones measured, the code that serves them is new); a real PC with Way 1 or with another make of firmware (Way 2 was measured on one real PC, in proxy DHCP mode, above); a network whose own DHCP server names a boot file (from the shim's source (read, not run), the boot file and server are taken from the DHCP acknowledgement, and the proxy offer is used only when the acknowledgement names
   no boot file, so a network whose own DHCP server names one would send the shim there), HTTP boot, ARM64, MokManager when no key is pressed,
-  "Enroll hash from disk", firmware-level enrolment, Windows with both Microsoft CAs trusted, Fedora's and Ubuntu 26.04's shims as first stage, the "as a disk" starts and
-  the "other ways" menu under Secure Boot (their entries do not get the `shim` line yet), a distribution's kernel that needs its own key enrolled, any speed or reliability figure.
+  "Enroll hash from disk", firmware-level enrolment, Windows with both Microsoft CAs trusted in a lab, Fedora's and Ubuntu 26.04's shims as first stage, the "as a disk" starts and
+  the "other ways" menu under Secure Boot (their entries do not get the `shim` line yet), a distribution's kernel that needs its own key enrolled, a PC that trusts only Microsoft's 2023 UEFI CA, any speed or reliability figure.
 
 ### Risks and open questions
 
 - **Revocation.** Shims and firmware refuse programs by hash (the `dbx` list) and by SBAT generation; the shims measured carry `ipxe,1` as the accepted generation of iPXE. A security
   fix in iPXE raises that number upstream, and then every older build, ours included, would be refused by updated PCs: builds must follow upstream, and our own line
-  (`ipxe.gola`) is the lever for the cases upstream does not cover. A shim that Microsoft later revokes stops the whole route on updated PCs; the shims measured were signed with the 2011
-  UEFI CA (the 2023 CA that replaces it was not looked at).
+  (`ipxe.gola`) is the lever for the cases upstream does not cover. For the built-in files, *Keeping the built-in files current* above is the procedure. A shim that Microsoft later revokes stops the whole route on updated PCs. The built-in shim carries the Microsoft **2011** UEFI CA signature only (the 2023 CA that replaces it
+  is not in this file; the project re-signed its shim release with both on 2026-05-27, after the iPXE v2.0.0 archive was made): a PC whose firmware trusts the 2023 CA alone may refuse it. Not measured.
 - **Key custody (Way 1).** The signing key is a Secure Boot key for every PC that enrolled it: anyone who has it can sign code that those PCs run. It must not be in the repository, in CI
   or on the server; a hardware token or an offline machine. If it leaks, every PC has to remove it (MokManager again). This is the owner's decision; the lab key was thrown away.
-- **Which shim to ship.** The distributions' shims are Microsoft-signed binaries under their own licences (shim's repository says BSD-2-Clause, not re-checked here; the distributions' copyright files and the project's
-  `NOTICE` have to carry them if Bootlace ever embeds one; the iPXE project's shim licence was not looked at). The prototype embeds none: the folder is filled by hand from an ISO.
+- **Which shim to ship.** The built-in shim and iPXE are the iPXE project's own files, unchanged; their licences and source are in `NOTICE` and `third_party/SOURCES` (iPXE: GPL, mostly GPL-2.0-or-later or the project's Unmodified Binary Distribution Licence; the shim: BSD-2-Clause with OpenSSL 1.0.2k and gnu-efi parts; the exact commit the shim was built from is not recorded by the project, see NOTICE). The distributions' shims are
+  not shipped: the own-key folder is filled by hand from an ISO.
 - **A signed iPXE is a trusted program.** With `SECUREBOOT=1` its build refuses the features that can start unsigned code; a build without that flag must never be signed.
