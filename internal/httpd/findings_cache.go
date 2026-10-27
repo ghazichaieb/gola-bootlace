@@ -35,6 +35,9 @@ func (s *Server) findingsPath(iso isos.ISO) string {
 func (s *Server) loadFindings(iso isos.ISO) bool {
 	s.findingsCacheMu.Lock()
 	defer s.findingsCacheMu.Unlock()
+	if s.findingsEpoch != 0 {
+		return false
+	} // a rescan never reloads files it tried to invalidate
 	key := stamp(iso) + "|" + s.Base
 	if hit, ok := s.findingsLoaded[key]; ok {
 		return hit
@@ -142,4 +145,18 @@ func (s *Server) cachedWays(iso isos.ISO, primary family.Boot) ([]family.Way, bo
 		}
 	}
 	return ways, !facts.Missing()
+}
+
+// publishRecognition keeps an older in-flight look from undoing a rescan.
+// Lock order is cache state, then recognition maps, as for invalidation.
+func (s *Server) publishRecognition(epoch uint64, publish func()) bool {
+	s.findingsCacheMu.Lock()
+	defer s.findingsCacheMu.Unlock()
+	if epoch != s.findingsEpoch {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	publish()
+	return true
 }

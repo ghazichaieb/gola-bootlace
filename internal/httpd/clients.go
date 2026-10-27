@@ -273,6 +273,7 @@ func (s *Server) Rescan() {
 	s.mu.Lock()
 	s.known = nil
 	s.waysKnown = nil
+	s.looking = nil
 	s.mu.Unlock()
 }
 

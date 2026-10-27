@@ -94,3 +94,16 @@ func TestFindingsCacheFailureDoesNotPreventServing(t *testing.T) {
 		t.Fatal("memory-only server loaded disk cache")
 	}
 }
+
+func TestOlderRecognitionCannotPublishAfterRescan(t *testing.T) {
+	s := &Server{}
+	epoch := s.findingsGeneration()
+	s.Rescan()
+	if s.publishRecognition(epoch, func() { t.Error("stale look published") }) {
+		t.Fatal("stale generation accepted")
+	}
+	called := false
+	if !s.publishRecognition(s.findingsGeneration(), func() { called = true }) || !called {
+		t.Fatal("current look rejected")
+	}
+}
