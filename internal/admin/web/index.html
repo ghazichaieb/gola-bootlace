@@ -97,6 +97,18 @@ input[type=text].inline,input[type=search].inline,select.inline{min-height:38px;
 .banner{border-radius:10px;padding:10px 14px;margin:0 0 14px;background:var(--warn-soft);color:var(--warn);font-weight:600}
 .banner.bad{background:var(--accent-soft);color:var(--accent)}
 .banner a{color:inherit}
+.banner .btn{margin-left:6px}
+fieldset.seg{border:0;padding:0;margin:0 0 12px;min-width:0}
+fieldset.seg legend{font-weight:600;padding:0;margin:0 0 4px}
+.seg .opts{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--panel)}
+.seg label{position:relative;margin:0;font-weight:600;cursor:pointer}
+.seg label + label{border-left:1px solid var(--line)}
+.seg input{position:absolute;opacity:0;inset:0;width:100%;height:100%;margin:0;cursor:pointer}
+.seg span{display:block;padding:10px 16px;min-height:44px;line-height:24px}
+.seg input:checked + span{background:var(--accent);color:var(--accent-text)}
+.seg input:focus-visible + span{outline:3px solid var(--focus);outline-offset:-3px}
+.seg input:disabled{cursor:default}
+.seg input:disabled + span{opacity:.6}
 .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:30;display:flex;align-items:center;justify-content:center;padding:16px}
 .modal{background:var(--panel);color:var(--text);border-radius:14px;max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
 .modal h2{font-size:18px}
@@ -266,13 +278,14 @@ async function pageDash() {
   const page = $("#page");
   const { request: api, repeat: every, current } = viewScope(page);
   page.innerHTML = `<h1>Dashboard</h1><div id="dstats" class="grid stats"></div><div class="grid two" style="margin-top:14px"><div class="card"><h2>How PCs reach this server</h2><div id="facts" class="small"></div></div><div class="card"><h2>Start a PC from the network</h2>
-  <ol class="steps"><li>Plug the PC into the same network (a cable: Wi‑Fi cannot network-boot).</li><li>Turn Secure Boot off in its firmware (not supported yet).</li><li>Start it and open the boot menu (F12, F8, F11 or Esc), pick the network entry (<em>UEFI: IPv4</em> / PXE).</li><li>The Gola Bootlace menu appears; pick an ISO.</li></ol></div></div>
+  <ol class="steps"><li>Plug the PC into the same network (a cable: Wi‑Fi cannot network-boot).</li><li>If it has Secure Boot on, the Secure Boot route (Server page) lets it start; otherwise turn Secure Boot off in its firmware.</li><li>Start it and open the boot menu (F12, F8, F11 or Esc), pick the network entry (<em>UEFI: IPv4</em> / PXE).</li><li>The Gola Bootlace menu appears; pick an ISO.</li></ol></div></div>
   <div class="card" style="margin-top:14px"><h2>Recent activity</h2><div id="recent" class="small mono"></div></div>`;
   page.insertAdjacentHTML("afterbegin", `<div id="dbanner"></div>`);
   const draw = async () => {
-    const [st, log, lib, svc] = await Promise.all([api("/api/status"), api("/api/log?limit=8"), api("/api/library"), api("/api/services")]);
-    $("#dbanner").innerHTML = serverBanner(lib.library, svc);
+    const [st, log, lib, svc, sbs] = await Promise.all([api("/api/status"), api("/api/log?limit=8"), api("/api/library"), api("/api/services"), api("/api/secureboot")]);
+    $("#dbanner").innerHTML = serverBanner(lib.library, svc) + sbBanner(sbs, true);
     page.querySelectorAll("#dbanner [data-go]").forEach(a => a.onclick = e => { e.preventDefault(); state.view = a.dataset.go; location.hash = state.view; render(); });
+    page.querySelectorAll("#dbanner [data-sb-on]").forEach(b => b.onclick = guard(async () => { await api("/api/secureboot", "PUT", { mode: "builtin" }); toast("Secure Boot route is on"); await draw(); }));
     $("#dstats").innerHTML = [[st.isoCount, "ISOs in the menu" + (st.isoHidden ? ` (${st.isoHidden} hidden)` : "")], [st.pcs, "PCs seen"], [bytes(st.isoBytes), "of ISOs"], [uptime(st.uptimeSeconds), "running"]]
       .map(([n, l]) => `<div class="card stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join("");
     $("#facts").innerHTML = `<table>${st.facts.map(f => `<tr><td class="k">${esc(f.name)}</td><td class="mono">${esc(f.value)}</td></tr>`).join("")}<tr><td class="k">Library</td><td class="mono">${esc(st.isoDir || "(none chosen)")}</td></tr><tr><td class="k">Settings file</td><td class="mono">${esc(st.configFile)}</td></tr></table>`;
@@ -400,7 +413,7 @@ async function pageServer() {
     $("#sbanner").innerHTML = serverBanner(lib.library, svc);
     drawLibrary(lib.library, () => draw(true));
     drawServices(svc, () => draw(true));
-    drawSecureBoot(sbs);
+    if (force || !$("#sbcard").contains(document.activeElement)) drawSecureBoot(sbs, () => draw(true)); // (not while the person is using its controls)
     if (force || !$("#cachecard").contains(document.activeElement)) drawCache(cch, () => draw(true));
     if (force || !$("#accesscard").contains(document.activeElement)) drawAccess(acc, () => draw(true)); // (not while the person is typing in it)
   };
@@ -460,16 +473,63 @@ function drawLibrary(lib, refresh) {
 }
 
 // The Secure Boot route: a PC with UEFI Secure Boot on refuses iPXE, so without this route it stops at "Security Violation". This block says whether the route is on and whether its files are there.
-function drawSecureBoot(sb) {
-  const sent = sb.mode === "all" ? "Every 64-bit UEFI PC" : `Only the PCs marked "Secure Boot route" on the PCs page (${sb.marked || 0} marked)`;
-  const fileRow = f => `<tr><td class="mono">${esc(f.name)}<div class="muted small">${esc(f.role)}</div></td><td>${f.present ? `<span class="badge ok">present</span>` : f.required ? `<span class="badge red">missing</span>` : `<span class="badge">not there</span>`}</td></tr>`;
+const sbWays = [
+  ["builtin", "Built in", "Works with the iPXE project's own shim (signed by Microsoft) and its signed iPXE, which are part of this program: nothing to download, no key to manage, nothing to enrol in any PC. It is the project's limited-feature iPXE build (iPXE leaves out the features that can start unsigned code, so Bootlace's own iPXE options are not in it), and a Linux ISO starts only if its distribution signed its kernel."],
+  ["own", "Own key", "Your own signed iPXE and a distribution's shim, taken from a folder. Your key has to be enrolled once in every PC (MokManager, a few key presses at the PC). The iPXE is built by you with Bootlace's own options inside iPXE's Secure Boot limits; you look after the key and its revocation (SBAT)."],
+  ["off", "Off", "No PC is sent through a shim. A PC with UEFI Secure Boot on stops with \"Security Violation\": switch Secure Boot off in that PC, or choose one of the other ways."],
+];
+const sbScopes = [["all", "Every 64-bit UEFI PC"], ["marked", "Only the PCs I mark"]];
+
+// Where a setting came from, in a few words.
+function sbSource(src, unset, option) {
+  if (src === "option") return `Set by the command line or the environment (${option}): change it there and restart.`;
+  if (src === "dashboard") return "Chosen here.";
+  return unset ? "Not chosen yet: this installation is older than the built-in files, so it stays off until you choose." : "The default of a new installation. You can change it here.";
+}
+
+// The banner that offers the built-in route to an installation that has not chosen yet (also on the dashboard), or says that the built-in files are damaged.
+function sbBanner(sb, withLink) {
+  if (sb.mode === "builtin" && sb.problem) return `<div class="banner bad" role="status">${esc(sb.problem)}</div>`;
+  if (!sb.unset) return "";
+  return `<div class="banner" role="status">Secure Boot support is built in: turn it on. A PC with UEFI Secure Boot on cannot start the Bootlace menu until it is. <button class="btn small primary" data-sb-on>Turn it on</button>${withLink ? ` <a href="#server" data-go="server">Choose how</a>` : ""}</div>`;
+}
+
+// The Secure Boot route: a PC with UEFI Secure Boot on refuses iPXE, so without this route it stops at "Security Violation". This block chooses the way (the iPXE project's signed files built into
+// the program, a key of your own, or none) and which PCs use it, and says whether the files are there.
+function drawSecureBoot(sb, refresh) {
+  const mode = sb.mode || "off", scope = sb.scope || "marked";
+  const sent = scope === "all" ? "Every 64-bit UEFI PC" : `Only the PCs marked "Secure Boot route" on the PCs page (${sb.marked || 0} marked)`;
+  const present = f => f.present ? `<span class="badge ok">${mode === "builtin" ? "built in" : "present"}</span>` : f.required ? `<span class="badge red">missing</span>` : `<span class="badge">not there</span>`;
+  const fileRow = f => `<tr><td class="mono">${esc(f.name)}<div class="muted small">${esc(f.role)}</div></td><td class="small">${f.size ? bytes(f.size) : ""}${f.sha256 ? `<div class="mono muted" title="SHA-256 ${esc(f.sha256)}">${esc(f.sha256.slice(0, 16))}…</div>` : ""}</td><td>${present(f)}</td></tr>`;
+  const b = sb.builtin || {};
+  const seg = (name, legend, opts, value, locked, note) => `<fieldset class="seg"><legend>${legend}</legend><div class="opts">${opts.map(([v, t]) => `<label><input type="radio" name="${name}" value="${v}"${value === v ? " checked" : ""}${locked ? " disabled" : ""}><span>${esc(t)}</span></label>`).join("")}</div><p class="hint">${esc(note)}</p></fieldset>`;
+  const detail = mode === "builtin"
+    ? `<tr><td class="k">Built in</td><td class="small">the iPXE project's release <strong>${esc(b.release)}</strong> (${esc(b.released)}), x86-64, unchanged. Release archive: <a href="${esc(b.source)}" rel="noopener">ipxeboot.tar.gz</a>, SHA-256 <span class="mono">${esc(b.tarballSha256)}</span>${b.ok ? "" : ` <span class="badge red">does not match</span>`}</td></tr>`
+    : mode === "own" ? `<tr><td class="k">Folder</td><td class="mono small">${esc(sb.dir)}${sb.own && sb.own.dirFromOption ? "" : `<div class="muted">(next to the settings file; give another with -secure-boot-dir)</div>`}</td></tr>` : "";
   $("#sbcard").innerHTML = `<h2>Secure Boot route ${sb.on ? (sb.ready ? `<span class="badge ok">on</span>` : `<span class="badge red">on, incomplete</span>`) : `<span class="badge">off</span>`}</h2>
     <p class="small muted">For PCs with UEFI Secure Boot on, which refuse iPXE (they stop with "Security Violation"). The PC is sent to a signed shim, which starts a signed iPXE. See docs/secure-boot.md.</p>
-    ${sb.on ? `<table class="rt"><tbody>
-      <tr><td class="k">Folder</td><td class="mono small">${esc(sb.dir)}</td></tr>
-      <tr><td class="k">Sent through the shim</td><td>${esc(sent)}</td></tr></tbody></table>
-      <table class="rt" style="margin-top:8px"><tbody>${(sb.files || []).map(fileRow).join("")}</tbody></table>` : ""}
+    ${sbBanner(sb, false)}
+    ${seg("sbmode", "Way", sbWays.map(w => [w[0], w[1]]), mode, sb.modeLocked, sbSource(sb.modeSource, sb.unset, "-secure-boot, -secure-boot-dir or BOOTLACE_SECURE_BOOT"))}
+    <ul class="small" style="margin:0 0 12px;padding-left:20px">${sbWays.map(w => `<li${w[0] === mode ? ` style="font-weight:600"` : ` class="muted"`}><strong>${esc(w[1])}.</strong> ${esc(w[2])}</li>`).join("")}</ul>
+    ${seg("sbscope", "Which PCs", sbScopes, scope, sb.scopeLocked, sbSource(sb.scopeSource, false, "-secure-boot-scope, -secure-boot-all or BOOTLACE_SECURE_BOOT_SCOPE"))}
+    ${mode === "off" ? "" : `<table class="rt"><tbody>${detail}<tr><td class="k">Sent through the shim</td><td>${esc(sent)}</td></tr></tbody></table>
+      <table class="rt" style="margin-top:8px"><tbody>${(sb.files || []).map(fileRow).join("")}</tbody></table>`}
+    ${mode !== "own" && sb.own && sb.own.problem ? `<p class="small muted" style="margin:10px 0 0">The own-key folder (${esc(sb.own.dir)}) is not ready: ${esc(sb.own.problem)}</p>` : ""}
     <p class="${sb.problem ? "banner bad" : "small muted"}" style="${sb.problem ? "margin:10px 0 0" : "margin-bottom:0"}">${esc(sb.message || "")}</p>`;
+  const card = $("#sbcard");
+  const save = async body => { try { await api("/api/secureboot", "PUT", body); } catch (e) { refresh(); throw e; } toast("Saved"); refresh(); };
+  const turnOn = card.querySelector("[data-sb-on]");
+  if (turnOn) turnOn.onclick = guard(() => save({ mode: "builtin" }));
+  card.querySelectorAll('input[name="sbmode"]').forEach(r => r.onchange = guard(async () => {
+    if (!r.checked || r.value === mode) return;
+    if (r.value === "own" && !await ask("Switch to your own key?", `PCs are then sent through a distribution's shim and the iPXE you signed, from <span class="mono">${esc(sb.own ? sb.own.dir : "")}</span>. <strong>Your key has to be enrolled in every PC first</strong> (a one-time step at the PC with MokManager, from a USB stick); a PC without it stops with a security error and does not reach the menu.${scope === "all" ? " With \"Every 64-bit UEFI PC\" that is every PC." : ""}`, "Switch to own key")) { refresh(); return; }
+    await save({ mode: r.value });
+  }));
+  card.querySelectorAll('input[name="sbscope"]').forEach(r => r.onchange = guard(async () => {
+    if (!r.checked || r.value === scope) return;
+    if (r.value === "all" && !await ask("Send every 64-bit UEFI PC through the shim?", `Every 64-bit UEFI PC then starts the shim before iPXE, with Secure Boot on or off: one more boot stage for each. BIOS PCs and ARM64 PCs are not affected.${mode === "own" ? " <strong>With your own key, every one of those PCs needs the key enrolled</strong>, or it stops with a security error." : ""}`, "Send every PC")) { refresh(); return; }
+    await save({ scope: r.value });
+  }));
 }
 
 function drawServices(svc, refresh) {
@@ -1010,7 +1070,7 @@ async function pagePCs() {
       <td class="hide-s small" data-l="Last seen">${p.lastSeen && !p.lastSeen.startsWith("0001") ? ago(p.lastSeen) : "not seen yet"}${p.count ? `<div class="muted">${p.count}× menu</div>` : ""}</td>
       <td class="hide-s small" data-l="Doing">${esc(p.lastAction || "")}</td>
       <td data-l="What it does at start"><select class="inline" data-mac="${esc(p.mac)}" aria-label="What ${esc(p.mac)} does at start">${actionOptions(p.rule ? p.rule.action : "menu")}</select></td>
-      <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-name="${esc(p.mac)}" aria-label="Name ${esc(p.mac)}">${p.name ? "Rename" : "Name"}</button><button class="btn small" data-kopt="${esc(p.mac)}" title="Extra kernel arguments and debug switches for every ISO this PC starts" aria-label="Kernel options of ${esc(p.mac)}">${p.options ? "Kernel options ✓" : "Kernel options"}</button>${state.secureBoot === "pcs" ? `<button class="btn small" data-sb="${esc(p.mac)}" title="This PC has UEFI Secure Boot on: its network boot goes through a signed shim (the key has to be enrolled in the PC once)" aria-pressed="${p.options && p.options.secureBoot ? "true" : "false"}" aria-label="Secure Boot route of ${esc(p.mac)}">${p.options && p.options.secureBoot ? "Secure Boot route ✓" : "Secure Boot route"}</button>` : ""}${(p.history || []).length ? `<button class="btn small" data-history="${esc(p.mac)}" aria-label="History of ${esc(p.mac)}">History</button>` : ""}<button class="btn small" data-wake="${esc(p.mac)}" title="Send a Wake-on-LAN packet" aria-label="Wake ${esc(p.mac)}">Wake</button>${p.rule ? `<button class="btn small danger" data-del="${esc(p.mac)}" aria-label="Remove the rule of ${esc(p.mac)}">Remove rule</button>` : ""}${p.count || (p.lastSeen && !p.lastSeen.startsWith("0001")) ? `<button class="btn small" data-forget="${esc(p.mac)}" aria-label="Forget ${esc(p.mac)}">Forget</button>` : ""}</div></td></tr>`).join("")}</tbody></table>` : `<div class="empty">${view.q ? "No PC matches the search." : "No PC has asked for a boot file or a menu yet."}</div>`;
+      <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-name="${esc(p.mac)}" aria-label="Name ${esc(p.mac)}">${p.name ? "Rename" : "Name"}</button><button class="btn small" data-kopt="${esc(p.mac)}" title="Extra kernel arguments and debug switches for every ISO this PC starts" aria-label="Kernel options of ${esc(p.mac)}">${p.options ? "Kernel options ✓" : "Kernel options"}</button>${state.secureBoot === "pcs" ? `<button class="btn small" data-sb="${esc(p.mac)}" title="This PC has UEFI Secure Boot on: its network boot goes through a signed shim (with your own key, the key has to be enrolled in the PC once)" aria-pressed="${p.options && p.options.secureBoot ? "true" : "false"}" aria-label="Secure Boot route of ${esc(p.mac)}">${p.options && p.options.secureBoot ? "Secure Boot route ✓" : "Secure Boot route"}</button>` : ""}${(p.history || []).length ? `<button class="btn small" data-history="${esc(p.mac)}" aria-label="History of ${esc(p.mac)}">History</button>` : ""}<button class="btn small" data-wake="${esc(p.mac)}" title="Send a Wake-on-LAN packet" aria-label="Wake ${esc(p.mac)}">Wake</button>${p.rule ? `<button class="btn small danger" data-del="${esc(p.mac)}" aria-label="Remove the rule of ${esc(p.mac)}">Remove rule</button>` : ""}${p.count || (p.lastSeen && !p.lastSeen.startsWith("0001")) ? `<button class="btn small" data-forget="${esc(p.mac)}" aria-label="Forget ${esc(p.mac)}">Forget</button>` : ""}</div></td></tr>`).join("")}</tbody></table>` : `<div class="empty">${view.q ? "No PC matches the search." : "No PC has asked for a boot file or a menu yet."}</div>`;
     const pages = Math.max(1, Math.ceil(view.total / view.size)), cur = Math.floor(view.offset / view.size) + 1;
     $("#pager").innerHTML = `<span class="muted small">${view.total ? `${view.offset + 1}–${view.offset + state.pcs.length} of ${view.total}` : "0 PCs"}</span><span class="row" style="gap:6px"><button class="btn small" id="pprev" ${cur <= 1 ? "disabled" : ""}>Previous</button><span class="small">Page ${cur} of ${pages}</span><button class="btn small" id="pnext" ${cur >= pages ? "disabled" : ""}>Next</button></span>`;
     $("#pprev").onclick = () => { view.offset = Math.max(0, view.offset - view.size); guard(draw)(); };

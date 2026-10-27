@@ -29,3 +29,4 @@ One version number names everything that is made from one commit: the program, t
 Run `node --test tools/admin-views.test.cjs` with Node.js 18 or later after changing asynchronous management-page rendering.
 The dependency-free harness runs the embedded page functions with deferred API responses and checks that navigation drops stale DOM access, errors and polling.
 It supplements `go test ./...`; it does not replace a real-browser check of layout, focus or interaction.
+`node --test tools/admin-secureboot.test.cjs` does the same for the Secure Boot block of the Server page and its banner (the radio buttons, the questions asked before a switch, what is sent).

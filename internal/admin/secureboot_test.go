@@ -195,6 +195,24 @@ func TestTheDHCPAnswerFollowsTheModeAndTheScope(t *testing.T) {
 	}
 }
 
+// The page carries the switch: the choice of way and of scope, the banner for an installation that has not chosen, and the calls they make. (The behaviour of the page's functions
+// is tried in tools/admin-views.test.cjs.)
+func TestThePageHasTheSecureBootSwitch(t *testing.T) {
+	b, err := webFiles.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := string(b)
+	for _, want := range []string{`name="sbmode"`, `name="sbscope"`, "Secure Boot support is built in: turn it on", `api("/api/secureboot", "PUT"`, `"/api/secureboot"`, "Built in", "Own key", "fieldset.seg", "Switch to your own key?", "Send every 64-bit UEFI PC through the shim?"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("the page lacks %q", want)
+		}
+	}
+	if strings.Contains(page, "not supported yet") {
+		t.Error("the dashboard still says that Secure Boot is not supported")
+	}
+}
+
 func TestThePCsPageKnowsHowTheRouteReachesPCs(t *testing.T) {
 	r := newRealRig(t, httpd.SecureBoot{})
 	for _, tc := range []struct {
