@@ -602,3 +602,35 @@ func TestAPCsKernelOptionsAreSetShownAndTakenAway(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestAPCCanBeMarkedForTheSecureBootRouteAndItsOtherOptionsSurvive(t *testing.T) {
+	r := newRig(t)
+	r.login()
+	if code, _ := r.do("PUT", "/api/pcs/not-a-mac/secureboot", map[string]any{"on": true}, nil); code != 400 {
+		t.Fatalf("a bad MAC: %d", code)
+	}
+	r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/options", map[string]any{"args": "nomodeset"}, nil)
+	if code, _ := r.do("PUT", "/api/pcs/AA-BB-CC-DD-EE-01/secureboot", map[string]any{"on": true}, nil); code != 200 {
+		t.Fatal(code)
+	}
+	if o := r.store.Get().PCOptions["aa:bb:cc:dd:ee:01"]; !o.SecureBoot || o.Args != "nomodeset" {
+		t.Fatalf("the mark is set and the arguments stay: %+v", o)
+	}
+	// saving the kernel options (which the page does without the mark in the request) must not clear it
+	r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/options", map[string]any{"args": "quiet"}, nil)
+	if o := r.store.Get().PCOptions["aa:bb:cc:dd:ee:01"]; !o.SecureBoot || o.Args != "quiet" {
+		t.Fatalf("%+v", o)
+	}
+	_, out := r.do("GET", "/api/pcs", nil, nil)
+	if opts, _ := out["pcs"].([]any)[0].(map[string]any)["options"].(map[string]any); opts["secureBoot"] != true {
+		t.Fatalf("the list of PCs carries the mark: %v", out)
+	}
+	if out["secureBoot"] != "" {
+		t.Fatalf("the route is off in this rig: %v", out["secureBoot"])
+	}
+	r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/secureboot", map[string]any{"on": false}, nil)
+	r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/options", map[string]any{"args": ""}, nil)
+	if got := r.store.Get().PCOptions; len(got) != 0 {
+		t.Fatalf("nothing set drops the entry: %+v", got)
+	}
+}

@@ -33,8 +33,9 @@ Result values: **works**, **partial** (boots but a step needs help; see notes), 
 |---|---|---|
 | ASUS P8Z77-V LX (Intel Z77, Realtek 8111E/F, 2012 AMI firmware), wired, router as the DHCP server, Bootlace 0.1.1 in a Proxmox container (2026-10-23) | **BIOS (legacy)**: Realtek PXE option ROM enabled, "UEFI/Legacy Boot" set to "Enable both" | **Works.** The menu appears and a custom-built English Windows 11 ISO (built for the 2023 Secure Boot certificates) starts. Secure Boot was set to "enabled" in the firmware, which has no effect on a BIOS-mode boot (it only applies to UEFI). |
 | the same PC | **UEFI** ("Network Stack" enabled in Advanced) | **Does not work:** the PC asks four times, Bootlace answers each time, the PC never takes an offer and falls back to its disk, although it gets an address from the same router in Windows, Proxmox and Ubuntu. Cause not known yet: [#51](https://github.com/ghazichaieb/gola-bootlace/issues/51). Workaround: use BIOS mode. |
+| an MSI PC, wired, UEFI with **Secure Boot on**, proxy DHCP, Bootlace 0.5.0-rc.1 in a Proxmox container (2026-10-27) | **UEFI, Secure Boot on** | **Works with the Secure Boot route** (the iPXE project's signed shim and `ipxe.efi`, `-secure-boot-all`; [secure-boot.md](secure-boot.md)): the menu comes up, and Ubuntu Server and Ubuntu 25.04 booted. Without the route the PC stops with `Security Violation` (plain `ipxe.efi` offered). Windows Setup was not tried on it yet. |
 
-Not yet seen on a real PC: a UEFI boot with Secure Boot on (the Windows and Ubuntu paths), and a complete installation to the end.
+Not yet seen on a real PC: Windows and Ubuntu through the firmware's own boot manager with Secure Boot on (the `native:` rules), Windows Setup through the Secure Boot route, and a complete installation to the end.
 
 ## BIOS (legacy) boot, 2026-10-22
 
@@ -313,3 +314,21 @@ So `HideWirelessSetupInOOBE` is what works on this build; the `OOBE\BYPASSNRO` r
 - `setup.exe /installdrivers <folder>` was tried first and does not exist in the set-up image's Setup ("An unknown command-line option [/installdrivers] was specified"): it is not used.
 - **Not seen:** the installed Windows starting from the virtio-scsi disk. On the Proxmox test host (an i7-2700K without AVX2) the VM's QEMU exited by itself at about 75 % of "Getting files ready for installation" in two runs, so the install never finished there
   (the cause is not known; the same ISO ran to the end on Hyper-V on a newer processor). Without the unfinished install nothing is claimed about booting from that controller.
+
+## Secure Boot on, through the signed-iPXE route (prototype, 2026-10-26, Hyper-V UEFI, template "Microsoft UEFI Certificate Authority")
+
+Run with `-secure-boot-dir` (see [secure-boot.md](secure-boot.md) for the method, the two ways, the screens and everything that was not tried). Each ISO was started from the menu through its own shim.
+
+On a real PC (MSI, Secure Boot on, proxy DHCP, the iPXE project's shim) the menu, Ubuntu Server and Ubuntu 25.04 worked (table in secure-boot.md); the table below is the Hyper-V lab.
+
+| ISO | Result |
+| --- | --- |
+| Ubuntu 22.04.5 desktop | **works**: desktop (signed-iPXE route and the iPXE project's shim) |
+| Linux Mint 22.3 Cinnamon | **works**: desktop |
+| Debian 13.7 live GNOME | **works**: desktop (both ways) |
+| Debian 13.7 netinst | **works**: installer's first page |
+| Fedora Workstation Live 44 | **works**: GNOME overview |
+| openSUSE Tumbleweed NET 20261020 | kernel starts; the installer then stops at DHCP (the link-local lab artefact above), not tried further |
+| Ubuntu 26.04.1 live server | kernel starts; the 4 GB VM cannot hold the downloaded ISO (as without Secure Boot) |
+| CachyOS 260426 | **does not start**: `Could not boot: Error 0x7f04818f` (unsigned kernel) |
+| Windows 11 (FW11HEN) through wimboot | **does not start** in this lab: `Verification failed: Security Policy Violation` for the boot manager (the lab template does not trust Windows' CA); use the `native:` rule |

@@ -274,3 +274,16 @@ func TestAnISOWithOnlyTheDebugShellSwitchKeepsItAndOneWithNothingDoesNot(t *test
 		t.Fatal("options with only the shell switch are not empty")
 	}
 }
+
+func TestAPCsSecureBootMarkIsKeptAndAloneKeepsTheEntry(t *testing.T) {
+	c := Config{PCOptions: map[string]PCOptions{"AA-BB-CC-DD-EE-01": {SecureBoot: true}, "aa:bb:cc:dd:ee:02": {}}}
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if o, ok := c.PCOptions["aa:bb:cc:dd:ee:01"]; !ok || !o.SecureBoot {
+		t.Fatalf("a PC with only the mark must be kept: %+v", c.PCOptions)
+	}
+	if _, ok := c.PCOptions["aa:bb:cc:dd:ee:02"]; ok {
+		t.Fatal("an entry with nothing set is dropped")
+	}
+}

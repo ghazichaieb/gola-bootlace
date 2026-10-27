@@ -75,6 +75,10 @@ type Options struct {
 	Sync *backup.Sync
 	// Version is the program's version, written into the backups.
 	Version string
+	// SecureBoot says how the signed-iPXE route for PCs with UEFI Secure Boot on is offered: "" (not at all), "pcs" (to the PCs marked for it on the PCs page) or "all".
+	SecureBoot string
+	// SecureBootStatus says how that route stands (on or off, the folder, which files are there, what is missing) for the Server page; without it the page shows the mode only.
+	SecureBootStatus func() httpd.SecureBootStatus
 	// Wake sends a Wake-on-LAN packet for a PC (a MAC address); without it the PCs page has no Wake button.
 	Wake func(mac net.HardwareAddr) error
 	Logf func(format string, args ...any)
@@ -129,6 +133,8 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("POST /api/pcs/clean", a.authed(a.pcClean))
 	api.HandleFunc("PUT /api/pcs/{mac}/name", a.authed(a.pcRename))
 	api.HandleFunc("PUT /api/pcs/{mac}/options", a.authed(a.pcOptions))
+	api.HandleFunc("PUT /api/pcs/{mac}/secureboot", a.authed(a.pcSecureBoot))
+	api.HandleFunc("GET /api/secureboot", a.authed(a.secureBootGet))
 	api.HandleFunc("POST /api/pcs/{mac}/wake", a.authed(a.pcWake))
 	api.HandleFunc("PUT /api/pcs/{mac}/answer", a.authed(a.pcAnswer))
 	api.HandleFunc("GET /api/answers", a.authed(a.answersList))
@@ -457,7 +463,7 @@ func (a *Admin) status(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version": version.Version, "started": started, "uptimeSeconds": int(time.Since(started).Seconds()),
 		"isoDir": a.o.Library.Path(), "isoCount": len(infos), "isoHidden": hidden, "isoBytes": size,
-		"configFile": a.o.Store.Path(), "facts": facts, "pcs": len(a.o.Backend.Clients()),
+		"configFile": a.o.Store.Path(), "facts": facts, "pcs": len(a.o.Backend.Clients()), "secureBoot": a.secureBoot(),
 	})
 }
 
@@ -913,6 +919,20 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 		Name    string            `json:"name,omitempty"` // the name a person gave the PC
 		Rule    *config.Rule      `json:"rule,omitempty"`
 		Options *config.PCOptions `json:"options,omitempty"` // its own kernel arguments and debug switches
+		Hint    string            `json:"hint,omitempty"`    // for a PC that asked for a boot file and never loaded the menu: why that may be
+	}
+	hintOf := func(cl httpd.Client, o *config.PCOptions) string {
+		if cl.LastSeen.IsZero() || cl.Count > 0 {
+			return ""
+		}
+		hint := "Asked for a boot file; Secure Boot may be refusing iPXE."
+		switch {
+		case a.o.SecureBoot == "":
+			return hint + " If this PC has UEFI Secure Boot on, turn the Secure Boot route on (docs/secure-boot.md)."
+		case a.o.SecureBoot == "pcs" && (o == nil || !o.SecureBoot):
+			return hint + ` If this PC has UEFI Secure Boot on, press "Secure Boot route".`
+		}
+		return hint + " It is sent through the signed shim already; see the Secure Boot block on the Server page."
 	}
 	optionsOf := func(mac string) *config.PCOptions {
 		if o, ok := c.PCOptions[mac]; ok {
@@ -924,6 +944,7 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	seen := map[string]bool{}
 	for _, cl := range a.o.Backend.Clients() {
 		p := pc{Client: cl, Name: c.PCNames[cl.MAC], Options: optionsOf(cl.MAC)}
+		p.Hint = hintOf(cl, p.Options)
 		if r, ok := rules[cl.MAC]; ok {
 			r := r
 			p.Rule = &r
@@ -972,7 +993,7 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	if end > total {
 		end = total
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"pcs": out[offset:end], "total": total, "offset": offset, "limit": limit})
+	writeJSON(w, http.StatusOK, map[string]any{"pcs": out[offset:end], "total": total, "offset": offset, "limit": limit, "secureBoot": a.o.SecureBoot})
 }
 
 func noteOf(r *config.Rule) string {
@@ -1092,8 +1113,9 @@ func (a *Admin) pcOptions(w http.ResponseWriter, r *http.Request) {
 		if c.PCOptions == nil {
 			c.PCOptions = map[string]config.PCOptions{}
 		}
-		in.Answer = c.PCOptions[mac].Answer // (the answer file choice has a call of its own and is not changed here)
-		c.PCOptions[mac] = in               // (Validate trims the arguments and drops an entry with nothing set)
+		in.Answer = c.PCOptions[mac].Answer         // (the answer file choice has a call of its own and is not changed here)
+		in.SecureBoot = c.PCOptions[mac].SecureBoot // (so has the Secure Boot route)
+		c.PCOptions[mac] = in                       // (Validate trims the arguments and drops an entry with nothing set)
 		return nil
 	})
 	if err != nil {
@@ -1102,6 +1124,51 @@ func (a *Admin) pcOptions(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.o.Logf != nil {
 		a.o.Logf("web interface: kernel options of %s: arguments %q, verbose %v, serial %v, shell %v", mac, strings.TrimSpace(in.Args), in.Debug.Verbose, in.Debug.Serial, in.Debug.Shell)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// secureBootGet is how the signed-iPXE route stands: on or off, the folder, which of the files it needs are there, and a sentence about what is missing.
+func (a *Admin) secureBootGet(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, a.secureBoot())
+}
+
+func (a *Admin) secureBoot() httpd.SecureBootStatus {
+	if a.o.SecureBootStatus != nil {
+		return a.o.SecureBootStatus()
+	}
+	return httpd.SecureBootStatus{On: a.o.SecureBoot != "", Mode: a.o.SecureBoot}
+}
+
+// pcSecureBoot marks a PC as one with UEFI Secure Boot on (or takes the mark away): its next network boot goes through the signed shim. It only does something when the server was
+// started with -secure-boot-dir.
+func (a *Admin) pcSecureBoot(w http.ResponseWriter, r *http.Request) {
+	mac, ok := config.NormalizeMAC(r.PathValue("mac"))
+	if !ok {
+		fail(w, http.StatusBadRequest, "that is not a MAC address (like aa:bb:cc:dd:ee:ff)")
+		return
+	}
+	var in struct {
+		On bool `json:"on"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	err := a.o.Store.Update(func(c *config.Config) error {
+		if c.PCOptions == nil {
+			c.PCOptions = map[string]config.PCOptions{}
+		}
+		o := c.PCOptions[mac]
+		o.SecureBoot = in.On
+		c.PCOptions[mac] = o // (an entry with nothing set is dropped by the check)
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: Secure Boot route for %s: %v", mac, in.On)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

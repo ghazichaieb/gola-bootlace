@@ -319,7 +319,7 @@ function serverBanner(lib, svc) {
 async function pageServer() {
   const page = $("#page");
   const { request: api, repeat: every, current } = viewScope(page);
-  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div id="copybanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>
+  page.innerHTML = `<h1>Server</h1><div id="sbanner"></div><div id="copybanner"></div><div class="grid two"><div class="card" id="libcard"></div><div class="card" id="svccard"></div></div><div class="card" id="sbcard" style="margin-top:14px"></div><div class="card" id="cachecard" style="margin-top:14px"></div><div class="card" id="accesscard" style="margin-top:14px"></div>
   <div class="card" id="backupcard" style="margin-top:14px"><h2>Backup of the settings</h2><p class="hint" style="margin-top:0">The rules, PC names, ISO titles, hidden ISOs, arguments and menu settings are the only things that cannot be rebuilt from the library. A copy without secrets is also kept in the library folder (<code>.bootlace/settings.json</code>), and a new container given the same library offers to restore it.</p>
     <div class="row"><a class="btn" href="/api/backup/download" download>Download a backup</a><a class="btn" href="/api/backup/download?secrets=1" download id="bk-secrets">Download with the passwords</a><button class="btn" id="bk-restore">Restore from a backup file ...</button><input type="file" id="bk-file" accept=".zip,application/zip" hidden></div>
     <p class="hint">The backup with the passwords holds the web interface's password and the Windows share's password: keep it like a password, and use it to move the settings to another machine.</p></div>
@@ -393,13 +393,14 @@ async function pageServer() {
   });
   let last = "";
   const draw = async (force) => {
-    const [lib, svc, acc, cch] = await Promise.all([api("/api/library"), api("/api/services"), api("/api/access"), api("/api/cache")]);
-    const key = JSON.stringify([lib, svc, acc, cch]);
+    const [lib, svc, acc, cch, sbs] = await Promise.all([api("/api/library"), api("/api/services"), api("/api/access"), api("/api/cache"), api("/api/secureboot")]);
+    const key = JSON.stringify([lib, svc, acc, cch, sbs]);
     if (key === last && !force) return;
     last = key;
     $("#sbanner").innerHTML = serverBanner(lib.library, svc);
     drawLibrary(lib.library, () => draw(true));
     drawServices(svc, () => draw(true));
+    drawSecureBoot(sbs);
     if (force || !$("#cachecard").contains(document.activeElement)) drawCache(cch, () => draw(true));
     if (force || !$("#accesscard").contains(document.activeElement)) drawAccess(acc, () => draw(true)); // (not while the person is typing in it)
   };
@@ -456,6 +457,19 @@ function drawLibrary(lib, refresh) {
        ${space ? `<tr><td class="k">Space</td><td>${esc(space)}</td></tr>` : ""}</table>`)
     + `<div class="row" style="margin-top:12px"><button class="btn primary" id="pick">${lib.path ? "Choose another folder" : "Choose the library folder"}</button></div>`;
   $("#pick").onclick = () => pickFolder(lib.path, refresh);
+}
+
+// The Secure Boot route: a PC with UEFI Secure Boot on refuses iPXE, so without this route it stops at "Security Violation". This block says whether the route is on and whether its files are there.
+function drawSecureBoot(sb) {
+  const sent = sb.mode === "all" ? "Every 64-bit UEFI PC" : `Only the PCs marked "Secure Boot route" on the PCs page (${sb.marked || 0} marked)`;
+  const fileRow = f => `<tr><td class="mono">${esc(f.name)}<div class="muted small">${esc(f.role)}</div></td><td>${f.present ? `<span class="badge ok">present</span>` : f.required ? `<span class="badge red">missing</span>` : `<span class="badge">not there</span>`}</td></tr>`;
+  $("#sbcard").innerHTML = `<h2>Secure Boot route ${sb.on ? (sb.ready ? `<span class="badge ok">on</span>` : `<span class="badge red">on, incomplete</span>`) : `<span class="badge">off</span>`}</h2>
+    <p class="small muted">For PCs with UEFI Secure Boot on, which refuse iPXE (they stop with "Security Violation"). The PC is sent to a signed shim, which starts a signed iPXE. See docs/secure-boot.md.</p>
+    ${sb.on ? `<table class="rt"><tbody>
+      <tr><td class="k">Folder</td><td class="mono small">${esc(sb.dir)}</td></tr>
+      <tr><td class="k">Sent through the shim</td><td>${esc(sent)}</td></tr></tbody></table>
+      <table class="rt" style="margin-top:8px"><tbody>${(sb.files || []).map(fileRow).join("")}</tbody></table>` : ""}
+    <p class="${sb.problem ? "banner bad" : "small muted"}" style="${sb.problem ? "margin:10px 0 0" : "margin-bottom:0"}">${esc(sb.message || "")}</p>`;
 }
 
 function drawServices(svc, refresh) {
@@ -946,7 +960,7 @@ async function pagePCs() {
   const page = $("#page");
   const { request: api, repeat: every, current } = viewScope(page);
   const view = { size: pcPageSize(), offset: 0, q: "", total: 0 };
-  page.innerHTML = `<h1>PCs</h1><p class="muted small">PCs that started from the network and asked for a menu. A rule sends one PC somewhere without showing it the menu: for example always to its own disk, or straight into an installer.</p>
+  page.innerHTML = `<h1>PCs</h1><p class="muted small">PCs that started from the network and asked for a boot file or a menu. A PC that asked for a boot file but never for the menu may be one whose Secure Boot refuses iPXE. A rule sends one PC somewhere without showing it the menu: for example always to its own disk, or straight into an installer.</p>
   <div class="card tablewrap"><div class="row" style="padding:12px 14px;justify-content:space-between">
     <input id="pq" class="inline" type="search" placeholder="Search by name, address, model or note" style="max-width:320px" aria-label="Search the PCs">
     <label class="row small" style="margin:0;font-weight:500">Per page <select id="psize" class="inline" style="width:auto"><option>10</option><option>25</option><option>50</option><option>100</option></select></label></div>
@@ -986,17 +1000,17 @@ async function pagePCs() {
   };
   const draw = async () => {
     const [isos, pcs, set] = await Promise.all([api("/api/isos"), api(`/api/pcs?limit=${view.size}&offset=${view.offset}&q=${encodeURIComponent(view.q)}`), api("/api/settings")]);
-    state.isos = isos.isos || []; state.defaultAction = isos.default || ""; state.pcs = pcs.pcs || []; view.total = pcs.total || 0;
+    state.isos = isos.isos || []; state.defaultAction = isos.default || ""; state.pcs = pcs.pcs || []; state.secureBoot = pcs.secureBoot || ""; view.total = pcs.total || 0;
     if (view.offset > 0 && !state.pcs.length) { view.offset = Math.max(0, (Math.ceil(view.total / view.size) - 1) * view.size); return draw(); }
     if (document.activeElement !== $("#adays")) $("#adays").value = set.pcDays;
     $("#ract").innerHTML = actionOptions("local", false);
     $("#pctable").innerHTML = state.pcs.length ? `<table class="rt"><thead><tr><th>PC</th><th class="hide-s">Address</th><th class="hide-s">Last seen</th><th class="hide-s">Doing</th><th>What it does at start</th><th></th></tr></thead><tbody>${state.pcs.map(p => `<tr>
-      <td><strong>${esc(p.name || [p.manufacturer, p.product].filter(Boolean).join(" ") || "Unknown PC")}</strong>${p.name && (p.manufacturer || p.product) ? `<div class="small muted">${esc([p.manufacturer, p.product].filter(Boolean).join(" "))}</div>` : ""}<div class="muted small mono">${esc(p.mac)}</div>${!p.name && (p.hostname || p.asset) ? `<div class="small muted">Offers the name <button class="btn small" data-take="${esc(p.mac)}" data-offer="${esc(p.hostname || p.asset)}" aria-label="Use the name ${esc(p.hostname || p.asset)} for ${esc(p.mac)}">${esc(p.hostname || p.asset)}</button></div>` : ""}${p.rule && p.rule.note ? `<div class="small">${esc(p.rule.note)}</div>` : ""}</td>
+      <td><strong>${esc(p.name || [p.manufacturer, p.product].filter(Boolean).join(" ") || "Unknown PC")}</strong>${p.name && (p.manufacturer || p.product) ? `<div class="small muted">${esc([p.manufacturer, p.product].filter(Boolean).join(" "))}</div>` : ""}<div class="muted small mono">${esc(p.mac)}</div>${!p.name && (p.hostname || p.asset) ? `<div class="small muted">Offers the name <button class="btn small" data-take="${esc(p.mac)}" data-offer="${esc(p.hostname || p.asset)}" aria-label="Use the name ${esc(p.hostname || p.asset)} for ${esc(p.mac)}">${esc(p.hostname || p.asset)}</button></div>` : ""}${p.rule && p.rule.note ? `<div class="small">${esc(p.rule.note)}</div>` : ""}${p.hint ? `<div class="small" style="color:var(--warn);font-weight:600">${esc(p.hint)}</div>` : ""}</td>
       <td class="hide-s mono small" data-l="Address">${esc(p.ip || "")}<div>${p.platform === "efi" ? "UEFI" : p.platform === "pcbios" ? "BIOS" : ""}</div></td>
       <td class="hide-s small" data-l="Last seen">${p.lastSeen && !p.lastSeen.startsWith("0001") ? ago(p.lastSeen) : "not seen yet"}${p.count ? `<div class="muted">${p.count}× menu</div>` : ""}</td>
       <td class="hide-s small" data-l="Doing">${esc(p.lastAction || "")}</td>
       <td data-l="What it does at start"><select class="inline" data-mac="${esc(p.mac)}" aria-label="What ${esc(p.mac)} does at start">${actionOptions(p.rule ? p.rule.action : "menu")}</select></td>
-      <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-name="${esc(p.mac)}" aria-label="Name ${esc(p.mac)}">${p.name ? "Rename" : "Name"}</button><button class="btn small" data-kopt="${esc(p.mac)}" title="Extra kernel arguments and debug switches for every ISO this PC starts" aria-label="Kernel options of ${esc(p.mac)}">${p.options ? "Kernel options ✓" : "Kernel options"}</button>${(p.history || []).length ? `<button class="btn small" data-history="${esc(p.mac)}" aria-label="History of ${esc(p.mac)}">History</button>` : ""}<button class="btn small" data-wake="${esc(p.mac)}" title="Send a Wake-on-LAN packet" aria-label="Wake ${esc(p.mac)}">Wake</button>${p.rule ? `<button class="btn small danger" data-del="${esc(p.mac)}" aria-label="Remove the rule of ${esc(p.mac)}">Remove rule</button>` : ""}${p.count ? `<button class="btn small" data-forget="${esc(p.mac)}" aria-label="Forget ${esc(p.mac)}">Forget</button>` : ""}</div></td></tr>`).join("")}</tbody></table>` : `<div class="empty">${view.q ? "No PC matches the search." : "No PC has asked for a menu yet."}</div>`;
+      <td><div class="row" style="gap:6px;flex-wrap:nowrap"><button class="btn small" data-name="${esc(p.mac)}" aria-label="Name ${esc(p.mac)}">${p.name ? "Rename" : "Name"}</button><button class="btn small" data-kopt="${esc(p.mac)}" title="Extra kernel arguments and debug switches for every ISO this PC starts" aria-label="Kernel options of ${esc(p.mac)}">${p.options ? "Kernel options ✓" : "Kernel options"}</button>${state.secureBoot === "pcs" ? `<button class="btn small" data-sb="${esc(p.mac)}" title="This PC has UEFI Secure Boot on: its network boot goes through a signed shim (the key has to be enrolled in the PC once)" aria-pressed="${p.options && p.options.secureBoot ? "true" : "false"}" aria-label="Secure Boot route of ${esc(p.mac)}">${p.options && p.options.secureBoot ? "Secure Boot route ✓" : "Secure Boot route"}</button>` : ""}${(p.history || []).length ? `<button class="btn small" data-history="${esc(p.mac)}" aria-label="History of ${esc(p.mac)}">History</button>` : ""}<button class="btn small" data-wake="${esc(p.mac)}" title="Send a Wake-on-LAN packet" aria-label="Wake ${esc(p.mac)}">Wake</button>${p.rule ? `<button class="btn small danger" data-del="${esc(p.mac)}" aria-label="Remove the rule of ${esc(p.mac)}">Remove rule</button>` : ""}${p.count || (p.lastSeen && !p.lastSeen.startsWith("0001")) ? `<button class="btn small" data-forget="${esc(p.mac)}" aria-label="Forget ${esc(p.mac)}">Forget</button>` : ""}</div></td></tr>`).join("")}</tbody></table>` : `<div class="empty">${view.q ? "No PC matches the search." : "No PC has asked for a boot file or a menu yet."}</div>`;
     const pages = Math.max(1, Math.ceil(view.total / view.size)), cur = Math.floor(view.offset / view.size) + 1;
     $("#pager").innerHTML = `<span class="muted small">${view.total ? `${view.offset + 1}–${view.offset + state.pcs.length} of ${view.total}` : "0 PCs"}</span><span class="row" style="gap:6px"><button class="btn small" id="pprev" ${cur <= 1 ? "disabled" : ""}>Previous</button><span class="small">Page ${cur} of ${pages}</span><button class="btn small" id="pnext" ${cur >= pages ? "disabled" : ""}>Next</button></span>`;
     $("#pprev").onclick = () => { view.offset = Math.max(0, view.offset - view.size); guard(draw)(); };
@@ -1050,6 +1064,11 @@ async function pagePCs() {
       };
       q("#kk").onclick = save; q("#ka").onkeydown = e => { if (e.key === "Enter") save(); };
     }));
+    page.querySelectorAll("button[data-sb]").forEach(b => b.onclick = guard(async () => {
+      const p = state.pcs.find(x => x.mac === b.dataset.sb) || {}, on = !(p.options && p.options.secureBoot);
+      await api("/api/pcs/" + encodeURIComponent(b.dataset.sb) + "/secureboot", "PUT", { on });
+      toast(on ? "Secure Boot route on: the next network boot of this PC goes through the shim" : "Secure Boot route off"); await draw();
+    }));
     page.querySelectorAll("button[data-del]").forEach(b => b.onclick = guard(async () => { await api("/api/rules/" + encodeURIComponent(b.dataset.del), "DELETE"); toast("Rule removed"); await draw(); }));
     page.querySelectorAll("button[data-forget]").forEach(b => b.onclick = guard(async () => { await api("/api/pcs/" + encodeURIComponent(b.dataset.forget), "DELETE"); toast("Forgotten"); await draw(); }));
   };
@@ -1075,7 +1094,7 @@ async function pagePCs() {
   if (!current()) return;
   await guard(drawGroups)();
   if (!current()) return;
-  every(5000, async () => { if (!page.contains(document.activeElement) || document.activeElement === document.body) await draw(); });
+  every(5000, async () => { if (!$("#pctable").contains(document.activeElement) || document.activeElement === document.body) await draw(); }); // (not while a choice inside the table is being made: redrawing it would close it; the search box and the page size are outside it)
 }
 
 // ---- first-start guide

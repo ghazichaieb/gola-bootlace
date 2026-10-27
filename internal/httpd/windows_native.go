@@ -252,6 +252,7 @@ func (s *Server) NoteDHCP(mac string, efi, ipxe bool) {
 		c.LastAction = "asked for a boot file"
 	}
 	c.LastSeen = now
+	c.note("asked for a boot file", now) // (so that a PC which never gets as far as the menu has a history to read)
 	if c.Platform == "" {
 		c.Platform = "pcbios"
 		if efi {

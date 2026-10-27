@@ -156,7 +156,7 @@ change is needed. It works for x64 UEFI PCs; BIOS and ARM64 PCs are not answered
 - **Does it change what is installed or how the system runs?** The installed system is the installer's own, and Bootlace never writes to the ISO or the PC's disks. But a system that runs from
   the network does not start exactly as it would from a disc: the network has to stay up, and a few features that need the boot stick (Tails's persistent storage, for example) are not
   there. Read [docs/what-bootlace-changes.md](docs/what-bootlace-changes.md) before relying on it for something important.
-- **Secure Boot** (a firmware setting) blocks the programs Bootlace starts with. Switch it off on the PC, except for Windows and Ubuntu, which have a way through ([docs/secure-boot.md](docs/secure-boot.md)).
+- **Secure Boot** (a firmware setting) blocks the programs Bootlace starts with. Either switch it off on the PC, or turn on the Secure Boot route: Windows and Ubuntu have a way through of their own, and the iPXE project's signed shim carries other Linux ISOs (off by default; steps in [docs/secure-boot.md](docs/secure-boot.md), tested on one real PC).
 - **Windows ISOs** read their installation files from a small read-only file share the server runs itself (port 445). A Windows server already uses that port for its own
   sharing: use `-smb-port` or run Bootlace on a Linux machine, a container or a Proxmox host.
 - **Speed:** a gigabit network is fine. An installer reads from the server as it goes, so a slow network makes a slow installation.

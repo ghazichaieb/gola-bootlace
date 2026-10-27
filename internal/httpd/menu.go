@@ -180,6 +180,8 @@ func (s *Server) entryInfos(cfg config.Config) ([]entryInfo, error) {
 		}
 		e.Usual = e.Entry
 		e.Entry = selectedEntry(cfg, e)
+		e.Entry.Commands = s.withShim(iso.ID, e.Boot.Family, e.Entry.Commands) // (the Secure Boot route: the ISO's own shim starts the kernel)
+		e.Usual.Commands = s.withShim(iso.ID, e.Boot.Family, e.Usual.Commands)
 		out = append(out, e)
 	}
 	for i := range out { // an ISO with a password: the menu asks for it first (a rule that starts it does not: Direct leaves the guard out)

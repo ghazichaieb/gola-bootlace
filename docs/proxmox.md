@@ -81,7 +81,7 @@ for the versions between the one installed in the container and the new one.
 - The web page is `http://<container address>:8080/admin/`; the password was made up at the first start. The script shows it at the end of the installation; it is also in the log (`pct exec <number> -- journalctl -u bootlace | grep -i password`), and written there only once. Change it under Account. If it is lost, add a line `BOOTLACE_ADMIN_PASSWORD=<new password>` to `/etc/default/bootlace` in the container (`/etc/bootlace.env` if it was made by the community-scripts script) and run `systemctl restart bootlace`.
 - The container must be on the same network (bridge) as the PCs to install. Bootlace answers PCs that ask to network-boot (proxy DHCP) and leaves the network's own DHCP server alone; it answers the local network only.
 - Remove: `pct stop <number> && pct destroy <number>` (and, for a share, the two lines of `/etc/fstab`).
-- Secure Boot has to be off on the PCs to install, except for Windows and Ubuntu (issue #10).
+- Secure Boot: a PC with it on refuses plain iPXE (`Security Violation`). Windows and Ubuntu have their own way; for other Linux ISOs turn the Secure Boot route on (the iPXE project's signed shim: five commands in the container, two lines in `/etc/default/bootlace`, nothing to install or enrol; the container's default proxy-DHCP mode is what it was tested with): [secure-boot.md](secure-boot.md). The **Server** page of the web interface shows whether the route is on and whether its files are there.
 - What the container needs: [requirements.md](requirements.md).
 - Until a release exists the program cannot be downloaded: give the script `BOOTLACE_FILE=/path/to/bootlace-<version>-linux-amd64.tar.gz` (made by `tools/release.sh --snapshot`).
 

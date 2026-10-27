@@ -212,11 +212,14 @@ type PCOptions struct {
 	Args   string    `json:"args,omitempty"`
 	Debug  DebugMode `json:"debug,omitempty"`
 	Answer string    `json:"answer,omitempty"` // the answer file this PC gets for the ISOs that take one: an id, NoAnswer to keep it away, or empty to follow the ISO
+	// SecureBoot says that this PC has UEFI Secure Boot on and is to be sent to iPXE through a signed shim (see package httpd, secureboot.go; the server must have been
+	// started with -secure-boot-dir). The server cannot see the firmware's Secure Boot state, so a person says it, once per PC.
+	SecureBoot bool `json:"secureBoot,omitempty"`
 }
 
 // Empty says that nothing is set: such an entry is not kept.
 func (o PCOptions) Empty() bool {
-	return o.Args == "" && !o.Debug.On() && o.Answer == ""
+	return o.Args == "" && !o.Debug.On() && o.Answer == "" && !o.SecureBoot
 }
 
 // MaxArgs is the longest extra kernel arguments line.
