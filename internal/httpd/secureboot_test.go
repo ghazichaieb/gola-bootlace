@@ -150,3 +150,103 @@ func TestKernelEntriesStartThroughTheIsosOwnShimOnlyWhenTheRouteIsOn(t *testing.
 		t.Error("Fedora too")
 	}
 }
+
+func TestTheSecondStageTheShimAsksForFollowsTheShimsName(t *testing.T) {
+	for shim, want := range map[string]string{"": "grubx64.efi", "shimx64.efi": "grubx64.efi", "ipxe-shimx64.efi": "ipxe.efi", "IPXE-shimx64.efi": "ipxe.efi"} {
+		if got := (SecureBoot{Dir: "/sb", Shim: shim}).SecondStage(); got != want {
+			t.Errorf("shim %q: %q, want %q", shim, got, want)
+		}
+	}
+}
+
+func fileStates(st SecureBootStatus) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range st.Files {
+		out[f.Name] = f.Present
+	}
+	return out
+}
+
+func TestTheStatusOfTheRouteSaysWhatIsThereAndWhatIsMissing(t *testing.T) {
+	off := (SecureBoot{}).Status()
+	if off.On || off.Mode != "" || off.Ready || !strings.Contains(off.Message, "BOOTLACE_SECURE_BOOT_DIR") || len(off.Files) != 0 {
+		t.Fatalf("off: %+v", off)
+	}
+	if p := (SecureBoot{}).Problems(); len(p) != 0 {
+		t.Fatalf("off has no problems: %v", p)
+	}
+
+	dir := sbFolder(t) // shimx64.efi, grubx64.efi, mmx64.efi
+	st := SecureBoot{Dir: dir}.Status()
+	if !st.On || !st.Ready || st.Mode != "pcs" || st.Problem != "" || st.Shim != "shimx64.efi" || st.Dir != dir {
+		t.Fatalf("a distribution's shim with its files: %+v", st)
+	}
+	if got := fileStates(st); !reflect.DeepEqual(got, map[string]bool{"shimx64.efi": true, "grubx64.efi": true, "mmx64.efi": true}) {
+		t.Fatalf("files: %v", got)
+	}
+	if all := (SecureBoot{Dir: dir, All: true}).Status(); all.Mode != "all" || !strings.Contains(all.Message, "every 64-bit UEFI PC") {
+		t.Fatalf("all: %+v", all)
+	}
+
+	// the iPXE project's shim without the ipxe.efi it asks for: the shim is there, the start is not refused, the status and the warning say what to copy
+	only := t.TempDir()
+	if err := os.WriteFile(filepath.Join(only, "ipxe-shimx64.efi"), []byte("SHIM"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sb := SecureBoot{Dir: only, Shim: "ipxe-shimx64.efi", All: true}
+	if err := sb.Check(); err != nil {
+		t.Fatalf("a missing second stage is not a reason to refuse the start: %v", err)
+	}
+	st = sb.Status()
+	if st.Ready || !strings.Contains(st.Problem, "ipxe.efi is missing") || st.Message != st.Problem {
+		t.Fatalf("missing ipxe.efi: %+v", st)
+	}
+	if got := fileStates(st); !reflect.DeepEqual(got, map[string]bool{"ipxe-shimx64.efi": true, "ipxe.efi": false}) {
+		t.Fatalf("files: %v (a distribution's MokManager is not expected for this shim)", got)
+	}
+	if p := sb.Problems(); len(p) != 1 || !strings.Contains(p[0], "ipxe.efi") || !strings.Contains(p[0], "docs/secure-boot.md") {
+		t.Fatalf("problems: %v", p)
+	}
+	// copied in while the server runs: counts at once, with the case of the name not mattering
+	if err := os.WriteFile(filepath.Join(only, "IPXE.EFI"), []byte("X"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if st = sb.Status(); !st.Ready || len(sb.Problems()) != 0 {
+		t.Fatalf("after copying it: %+v", st)
+	}
+	// MokManager is optional
+	if st := (SecureBoot{Dir: dir}).Status(); !st.Ready {
+		t.Fatal("ready")
+	}
+	if err := os.Remove(filepath.Join(dir, "mmx64.efi")); err != nil {
+		t.Fatal(err)
+	}
+	if st := (SecureBoot{Dir: dir}).Status(); !st.Ready {
+		t.Fatalf("MokManager is only needed to enrol a key: %+v", st)
+	}
+	// the shim removed after the start, and a folder that is gone
+	if err := os.Remove(filepath.Join(dir, "shimx64.efi")); err != nil {
+		t.Fatal(err)
+	}
+	if st := (SecureBoot{Dir: dir}).Status(); st.Ready || !strings.Contains(st.Problem, "shimx64.efi is missing") {
+		t.Fatalf("no shim: %+v", st)
+	}
+	if st := (SecureBoot{Dir: filepath.Join(dir, "gone")}).Status(); st.Ready || !strings.Contains(st.Problem, "cannot be read") {
+		t.Fatalf("no folder: %+v", st)
+	}
+}
+
+func TestTheServersStatusCountsThePCsMarkedForTheRoute(t *testing.T) {
+	dir := sbFolder(t)
+	s := sbServer(t, SecureBoot{Dir: dir}, "aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02")
+	if st := s.SecureBootStatus(); st.Marked != 2 || !strings.Contains(st.Message, "2 PC(s) are marked") {
+		t.Fatalf("%+v", st)
+	}
+	none := sbServer(t, SecureBoot{Dir: dir})
+	if st := none.SecureBootStatus(); st.Marked != 0 || !strings.Contains(st.Message, "No PC is marked yet") {
+		t.Fatalf("%+v", st)
+	}
+	if st := sbServer(t, SecureBoot{Dir: dir, All: true}).SecureBootStatus(); strings.Contains(st.Message, "marked yet") {
+		t.Fatalf("with every PC sent, marking does not matter: %+v", st)
+	}
+}

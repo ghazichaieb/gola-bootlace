@@ -63,6 +63,137 @@ func (sb SecureBoot) Check() error {
 // Enabled says whether the route is offered at all.
 func (sb SecureBoot) Enabled() bool { return sb.Dir != "" }
 
+// Mode is how the route is offered, for the web interface: "" (off), "pcs" (to the PCs marked for it) or "all".
+func (sb SecureBoot) Mode() string {
+	switch {
+	case !sb.Enabled():
+		return ""
+	case sb.All:
+		return "all"
+	}
+	return "pcs"
+}
+
+// SecondStage is the file the shim asks for after itself, by TFTP from the same folder. The iPXE project's shim (its file is called ipxe-shimx64.efi here) asks for ipxe.efi, a
+// distribution's shim for grubx64.efi: the name is guessed from the shim's file name, which is the only thing known about it without reading it.
+func (sb SecureBoot) SecondStage() string {
+	if strings.Contains(strings.ToLower(sb.shim()), "ipxe") {
+		return "ipxe.efi"
+	}
+	return "grubx64.efi"
+}
+
+// mokManager is the file a distribution's shim starts to enrol a key (Way 1 in docs/secure-boot.md); the iPXE project's shim needs none.
+const mokManager = "mmx64.efi"
+
+// SecureBootFileState is one file the route expects in the folder.
+type SecureBootFileState struct {
+	Name     string `json:"name"`
+	Role     string `json:"role"`     // what the file is for, in a few words
+	Required bool   `json:"required"` // the route cannot work without it
+	Present  bool   `json:"present"`
+}
+
+// SecureBootStatus is what the web interface shows about the route: whether it is on, the folder, what is in it, and one plain sentence.
+type SecureBootStatus struct {
+	On      bool                  `json:"on"`
+	Mode    string                `json:"mode"` // "", "pcs" or "all"
+	Dir     string                `json:"dir,omitempty"`
+	Shim    string                `json:"shim,omitempty"`
+	Marked  int                   `json:"marked"` // PCs marked for the route on the PCs page (they matter when Mode is "pcs")
+	Files   []SecureBootFileState `json:"files,omitempty"`
+	Ready   bool                  `json:"ready"`   // on, and every required file is there
+	Problem string                `json:"problem"` // what is missing or wrong, in a sentence; empty when Ready or off
+	Message string                `json:"message"` // the state in a sentence
+}
+
+// Status looks in the folder now (the files are read at every request, so a file copied in later counts without a restart).
+func (sb SecureBoot) Status() SecureBootStatus {
+	st := SecureBootStatus{On: sb.Enabled(), Mode: sb.Mode(), Dir: sb.Dir}
+	if !st.On {
+		st.Message = "The Secure Boot route is off. A PC with UEFI Secure Boot on refuses iPXE and stops with \"Security Violation\". To turn it on, set BOOTLACE_SECURE_BOOT_DIR (see docs/secure-boot.md)."
+		return st
+	}
+	st.Shim = sb.shim()
+	have := map[string]bool{}
+	entries, err := os.ReadDir(sb.Dir)
+	for _, e := range entries {
+		if e.Type().IsRegular() {
+			have[strings.ToLower(e.Name())] = true
+		}
+	}
+	files := []SecureBootFileState{{Name: st.Shim, Role: "the boot file the PC is told to start (the shim)", Required: true}, {Name: sb.SecondStage(), Role: "what the shim starts next (iPXE)", Required: true}}
+	if sb.SecondStage() == "grubx64.efi" {
+		files = append(files, SecureBootFileState{Name: mokManager, Role: "MokManager, to enrol a key (only for a key of your own)"})
+	}
+	var missing []string
+	for i := range files {
+		files[i].Present = have[strings.ToLower(files[i].Name)]
+		if files[i].Required && !files[i].Present {
+			missing = append(missing, files[i].Name)
+		}
+	}
+	st.Files = files
+	switch {
+	case err != nil:
+		st.Problem = fmt.Sprintf("The Secure Boot folder %s cannot be read (%v), so no PC can be sent through the shim.", sb.Dir, err)
+	case !plainName(st.Shim):
+		st.Problem = fmt.Sprintf("%q is not a file name, so no PC can be sent through the shim.", st.Shim)
+	case len(missing) == 1 && missing[0] == st.Shim:
+		st.Problem = fmt.Sprintf("%s is missing from %s: a PC sent through the shim cannot get it.", st.Shim, sb.Dir)
+	case len(missing) > 0:
+		st.Problem = fmt.Sprintf("%s is missing from %s: the shim asks for it next, so a PC that gets the shim then stops with \"Security Violation\" or an error. Copy it into the folder.", strings.Join(missing, " and "), sb.Dir)
+	}
+	st.Ready = st.Problem == ""
+	who := "the PCs marked \"Secure Boot route\" on the PCs page"
+	if sb.All {
+		who = "every 64-bit UEFI PC"
+	}
+	if st.Ready {
+		st.Message = fmt.Sprintf("The Secure Boot route is on for %s: they are told to start %s, which then fetches %s.", who, st.Shim, sb.SecondStage())
+	} else {
+		st.Message = st.Problem
+	}
+	return st
+}
+
+// Problems are the things that make the route fail although it is on and the shim is there (the shim itself is Check's business, which stops the start): at the moment, the
+// second stage the shim asks for. They are told at the start and are not a reason to refuse it, because the folder is read at every request: the file can be copied in while
+// the server runs, and a server that refuses to start would take the whole menu down for a folder that is only half filled.
+func (sb SecureBoot) Problems() []string {
+	if !sb.Enabled() {
+		return nil
+	}
+	st := sb.Status()
+	var out []string
+	for _, f := range st.Files {
+		if f.Required && !f.Present && f.Name != st.Shim {
+			out = append(out, fmt.Sprintf("the Secure Boot folder %s has no %s, which the shim %s asks for next: a PC sent through the shim will stop with \"Security Violation\" (see docs/secure-boot.md)", sb.Dir, f.Name, st.Shim))
+		}
+	}
+	return out
+}
+
+// SecureBootStatus is the route's status with the number of PCs marked for it.
+func (s *Server) SecureBootStatus() SecureBootStatus {
+	st := s.SecureBoot.Status()
+	if s.Config != nil {
+		for _, o := range s.Config.Get().PCOptions {
+			if o.SecureBoot {
+				st.Marked++
+			}
+		}
+	}
+	if st.Ready && st.Mode == "pcs" {
+		if st.Marked == 0 {
+			st.Message += " No PC is marked yet: press \"Secure Boot route\" on a PC's row of the PCs page (a PC appears there once it has asked for a boot file), or start with -secure-boot-all."
+		} else {
+			st.Message += fmt.Sprintf(" %d PC(s) are marked.", st.Marked)
+		}
+	}
+	return st
+}
+
 // SecureBootFile is the boot file for a 64-bit UEFI PC that is to go through the shim: its name in the DHCP answer, or false when the route is off or this PC is not one
 // that uses it.
 func (s *Server) SecureBootFile(mac string) (string, bool) {

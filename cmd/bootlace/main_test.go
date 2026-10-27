@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ghazichaieb/gola-bootlace/internal/httpd"
 )
 
 func TestVersionNamesTheProjectAndCarriesTheAttributionLine(t *testing.T) {
@@ -46,5 +50,30 @@ func TestTheSecureBootRouteIsReportedToTheWebInterfaceAsOffMarkedOrAll(t *testin
 		if got := secureBootMode(tc.dir, tc.all); got != tc.want {
 			t.Errorf("%q %v: %q, want %q", tc.dir, tc.all, got, tc.want)
 		}
+	}
+}
+
+func TestTheLogSaysAtTheStartWhetherTheSecureBootRouteIsOnOrOffAndWhatIsMissing(t *testing.T) {
+	off := strings.Join(secureBootStartLines(httpd.SecureBoot{}), "\n")
+	for _, want := range []string{"Secure Boot route: OFF", "BOOTLACE_SECURE_BOOT_DIR", "docs/secure-boot.md"} {
+		if !strings.Contains(off, want) {
+			t.Errorf("off: %q lacks %q", off, want)
+		}
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "ipxe-shimx64.efi"), []byte("SHIM"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sb := httpd.SecureBoot{Dir: dir, Shim: "ipxe-shimx64.efi", All: true}
+	lines := secureBootStartLines(sb)
+	if len(lines) != 2 || !strings.Contains(lines[0], "Secure Boot route: ON for every 64-bit UEFI PC") || !strings.Contains(lines[0], "ipxe-shimx64.efi") || !strings.Contains(lines[0], "asks for ipxe.efi") ||
+		!strings.HasPrefix(lines[1], "warning: ") || !strings.Contains(lines[1], "has no ipxe.efi") {
+		t.Fatalf("a folder without the second stage: %q", lines)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ipxe.efi"), []byte("X"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if lines = secureBootStartLines(httpd.SecureBoot{Dir: dir, Shim: "ipxe-shimx64.efi"}); len(lines) != 1 || !strings.Contains(lines[0], "the PCs marked for it") {
+		t.Fatalf("complete: %q", lines)
 	}
 }
