@@ -26,6 +26,7 @@ import (
 	"github.com/ghazichaieb/gola-bootlace/internal/isos"
 	"github.com/ghazichaieb/gola-bootlace/internal/library"
 	"github.com/ghazichaieb/gola-bootlace/internal/menu"
+	"github.com/ghazichaieb/gola-bootlace/internal/secureboot"
 	"github.com/ghazichaieb/gola-bootlace/internal/winpe"
 )
 
@@ -95,8 +96,10 @@ type Server struct {
 	Handoff *handoff.Registry
 	// TFTPAhead is how many blocks to send ahead of the acknowledgements to FreeBSD's loader, which reads its kernel and the whole ISO by TFTP (1 or less: none).
 	TFTPAhead int
-	// SecureBoot is the signed-iPXE route for PCs with UEFI Secure Boot on (off unless it names a folder; see secureboot.go).
+	// SecureBoot is what the program was started with about the route for PCs with UEFI Secure Boot on (see secureboot.go); what the web interface saved in Config counts when it says nothing.
 	SecureBoot SecureBoot
+	// BuiltinSecureBoot replaces the iPXE project's signed files that are built into the program (tests only).
+	BuiltinSecureBoot *secureboot.Set
 }
 
 type recognised struct {

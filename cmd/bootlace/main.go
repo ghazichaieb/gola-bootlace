@@ -111,9 +111,11 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	logFile := fs.String("log-file", "", "also write the log to this file (kept at the size of -log-size, with one older file next to it); the generated password is never written to it")
 	logSize := fs.Int("log-size", 5, "the size in MB at which the log file is replaced by a new one")
 	noAdmin := fs.Bool("no-admin", false, "do not offer the web interface")
-	sbDir := fs.String("secure-boot-dir", "", "off unless given: a folder with a Microsoft-signed shim and the iPXE it starts (the iPXE project's ipxe-shimx64.efi and ipxe.efi, or a distribution's shimx64.efi and grubx64.efi = iPXE signed with your own key), for PCs with UEFI Secure Boot on (see docs/secure-boot.md); a PC is sent through the shim when it is marked so in the web interface or with -secure-boot-all")
-	sbShim := fs.String("secure-boot-shim", httpd.DefaultShim, "with -secure-boot-dir: the file in that folder that PCs are told to boot (a distribution's shim asks for grubx64.efi next; the iPXE project's ipxe-shimx64.efi asks for ipxe.efi)")
-	sbAll := fs.Bool("secure-boot-all", false, "with -secure-boot-dir: send every 64-bit UEFI PC through the shim, not only the PCs marked in the web interface")
+	sbMode := fs.String("secure-boot", "", `the route for PCs with UEFI Secure Boot on, which refuse the unsigned iPXE (see docs/secure-boot.md): "builtin" (the iPXE project's signed shim and iPXE, part of this program), "own" (a folder with a distribution's shim and an iPXE signed with your own key, see -secure-boot-dir) or "off". Without it the choice made in the web interface counts; a new installation starts with "builtin"`)
+	sbScope := fs.String("secure-boot-scope", "", `which PCs go through the shim: "all" (every 64-bit UEFI PC) or "marked" (only the PCs marked in the web interface). Without it the choice made in the web interface counts`)
+	sbDir := fs.String("secure-boot-dir", "", `the folder of the own-key way: a Microsoft-signed shim and the iPXE it starts (a distribution's shimx64.efi and grubx64.efi = iPXE signed with your own key, or the iPXE project's ipxe-shimx64.efi and ipxe.efi); giving it selects "own" unless -secure-boot says otherwise (default folder for "own": secure-boot next to the settings file)`)
+	sbShim := fs.String("secure-boot-shim", httpd.DefaultShim, `own key: the file in that folder that PCs are told to boot (a distribution's shim asks for grubx64.efi next; the iPXE project's ipxe-shimx64.efi asks for ipxe.efi)`)
+	sbAll := fs.Bool("secure-boot-all", false, `the same as -secure-boot-scope all: send every 64-bit UEFI PC through the shim, not only the PCs marked in the web interface`)
 	debugSMB := fs.Bool("debug-smb", false, "log every message of the Windows file share (a lot: for finding faults)")
 	if err := applyEnv(fs, osLookup); err != nil { // (before the command line, so that the command line wins)
 		fmt.Fprintf(stderr, "bootlace: %v\n", err)
@@ -150,6 +152,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	registry := &handoff.Registry{}
 	seed := config.Config{MenuTimeout: *menuTimeout, PCDays: config.DefaultPCDays, Hidden: map[string]bool{}, Titles: map[string]string{}}
 	seed.Default = "local" // nothing chosen after the timeout: the PC goes on to its own disk, so that a PC started unattended does not sit at the menu
+	freshSecureBoot(&seed)
 	switch {
 	case *menuPick != "":
 		seed.Default = "pick:" + *menuPick
@@ -196,12 +199,12 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	dataDir := filepath.Dir(*configPath)
 	web := &httpd.Server{CheckPassword: admin.CheckPassword, CacheSettings: func() (string, int64) { c := store.Get().Cache; return c.Where, int64(c.LocalLimitMB) << 20 }, Handoff: registry, TFTPAhead: *tftpAhead, SMBPort: *smbPort, SMBPassword: smbPassword, Library: lib, Active: sup.Active, Access: policy, Base: base, Logf: logf, Config: store, PCFile: filepath.Join(dataDir, "pcs.json"),
 		Wimlib: *wimlibFlag, CacheDir: filepath.Join(dataDir, "cache"), NBDPort: *nbdPort, ISCSIPort: *iscsiPort,
-		SecureBoot: httpd.SecureBoot{Dir: *sbDir, Shim: *sbShim, All: *sbAll}}
+		SecureBoot: httpd.SecureBoot{Mode: *sbMode, Scope: *sbScope, Dir: *sbDir, Shim: *sbShim, All: *sbAll, OwnDir: filepath.Join(dataDir, "secure-boot")}}
 	if err := web.SecureBoot.Check(); err != nil {
-		fmt.Fprintf(stderr, "bootlace: -secure-boot-dir: %v\n", err)
+		fmt.Fprintf(stderr, "bootlace: Secure Boot options: %v\n", err)
 		return 2
 	}
-	for _, line := range secureBootStartLines(web.SecureBoot) {
+	for _, line := range web.SecureBootStartLines() {
 		logf("%s", line)
 	}
 	tidier := &tidy.Tidier{Library: lib, Index: indexer.Get, Caches: web.CacheDirs, Logf: logf,
@@ -273,7 +276,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 		facts := [][2]string{{"Web interface", fmt.Sprintf("%s/admin/", base)}, {"Boot menu", base + "/boot.ipxe"}, {"Server address", ip.String()}, {"DHCP", *mode},
 			{"Windows file share", fmt.Sprintf(`\\%s\%s (port %d)`, ip, smbshare.ShareName, *smbPort)}}
 		web.Mount = admin.New(admin.Options{Store: store, Log: history, Backend: web, Facts: facts, Library: lib, Services: sup, Access: policy, ServerIP: ip.String(), Importer: imp, Indexer: indexer, Logf: logf,
-			PXE: pxeChecker, Sync: settingsCopy, SecureBoot: secureBootMode(*sbDir, *sbAll), SecureBootStatus: web.SecureBootStatus,
+			PXE: pxeChecker, Sync: settingsCopy, SecureBootStatus: web.SecureBootStatus, SecureBootSet: web.SetSecureBoot,
 			Wake: func(mac net.HardwareAddr) error {
 				return wol.Send(mac, ip, net.JoinHostPort(wol.Broadcast(ip, maskOf(ip)).String(), "9"), "255.255.255.255:9")
 			}, Version: version.Version, SelfTest: func() selftest.Target {
@@ -329,32 +332,11 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
-// secureBootStartLines are the lines the log gets at the start about the Secure Boot route: that it is on (and for whom) or off, with what to do about it, and a warning for
-// each file it needs that is not in the folder. A PC with Secure Boot on that is not sent through the shim only shows "Security Violation", so the log must say which it is.
-func secureBootStartLines(sb httpd.SecureBoot) []string {
-	if !sb.Enabled() {
-		return []string{"Secure Boot route: OFF, so a PC with UEFI Secure Boot on will refuse iPXE (\"Security Violation\"); to turn it on set BOOTLACE_SECURE_BOOT_DIR, see docs/secure-boot.md"}
-	}
-	who := "the PCs marked for it on the PCs page"
-	if sb.All {
-		who = "every 64-bit UEFI PC"
-	}
-	lines := []string{fmt.Sprintf("Secure Boot route: ON for %s, which are told to start %s from %s; the shim then asks for %s", who, sb.Status().Shim, sb.Dir, sb.SecondStage())}
-	for _, p := range sb.Problems() {
-		lines = append(lines, "warning: "+p)
-	}
-	return lines
-}
-
-// secureBootMode is how the signed-iPXE route is offered, for the web interface: "" (off), "pcs" or "all".
-func secureBootMode(dir string, all bool) string {
-	switch {
-	case dir == "":
-		return ""
-	case all:
-		return "all"
-	}
-	return "pcs"
+// freshSecureBoot gives the settings of a NEW installation the Secure Boot route turned on: the iPXE project's signed files that are built into the program, for every 64-bit
+// UEFI PC. It works with Secure Boot on (measured on a real PC) and with it off (measured in a lab), so it is the default. It is only the seed of a settings file that does not exist
+// yet: a file from an older version has no such setting, which stays "off" (and the web interface offers to turn it on), so an upgrade changes no behaviour.
+func freshSecureBoot(seed *config.Config) {
+	seed.SecureBootMode, seed.SecureBootScope = "builtin", "all"
 }
 
 // openLibrary is the library saved in the settings. On the very first start, a folder given on the command line is added as the library: giving it is the person's
