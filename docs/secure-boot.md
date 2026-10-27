@@ -106,7 +106,7 @@ Things found out on the way:
 - A BIOS PC cannot use this way yet (and does not need it: there is no Secure Boot there).
 
 Tested in the Hyper-V lab with Secure Boot on (Microsoft Windows template): boot manager, BCD, `boot.wim`, WinPE, the share, Windows 11 Setup. On one real PC (an MSI board, proxy-DHCP, the
-iPXE project's shim) a Windows 11 installation was run to the end and Windows started; the start method of that run (this rule or wimboot) was not recorded. Not tested: other firmware.
+iPXE project's shim) a Windows 11 ISO was picked from the menu and its installation was run to the end; Windows started. Not tested: other firmware.
 
 ## Ubuntu, with Secure Boot on (works, on any amount of RAM)
 
@@ -236,7 +236,7 @@ Way 2 (the iPXE project's `ipxe-shimx64.efi` and `ipxe.efi`, `-secure-boot-shim 
 | Way 2, nothing enrolled: the Bootlace menu | on | **works** |
 | Ubuntu Server (chosen from the menu) | on | **booted** |
 | Ubuntu 25.04 (chosen from the menu) | on | **booted** |
-| Windows 11 installed from the menu (Setup to the end) | on | **worked**: Setup ran, the installation finished and Windows started (reported by the person who ran it; the log lines were not kept, so which of the two Windows start methods was used is not recorded) |
+| Windows 11 ISO chosen from the menu (Setup to the end) | on | **worked**: Setup ran, the installation finished and Windows started (reported by the person who ran it; the entry was picked from the menu, not started with the `native:` rule) |
 
 These were the first runs of the route on a real PC; one PC and one firmware say nothing about others (see the troubleshooting table above for what a different firmware may do).
 
