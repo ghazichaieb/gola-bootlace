@@ -223,6 +223,17 @@ func (s *Server) recogniseGeneric(iso isos.ISO) (family.Boot, bool) {
 		s.mu.Unlock()
 		return r.boot, r.ok
 	}
+	s.mu.Unlock()
+	if b, ok := s.cachedGeneric(iso); ok {
+		s.mu.Lock()
+		if s.known == nil {
+			s.known = map[string]recognised{}
+		}
+		s.known[key] = recognised{boot: b, ok: true}
+		s.mu.Unlock()
+		return b, true
+	}
+	s.mu.Lock()
 	if s.looking[key] {
 		s.mu.Unlock()
 		return family.Boot{}, false
@@ -232,11 +243,13 @@ func (s *Server) recogniseGeneric(iso isos.ISO) (family.Boot, bool) {
 	}
 	s.looking[key] = true
 	s.mu.Unlock()
+	epoch := s.findingsGeneration()
 	go func() {
 		s.lookMu.Lock()
 		defer s.lookMu.Unlock()
 		var r recognised
 		r.boot, r.ok = s.detect(iso, family.DetectGeneric)
+		s.saveFindings(iso, epoch)
 		s.mu.Lock()
 		if s.known == nil {
 			s.known = map[string]recognised{}
@@ -263,6 +276,17 @@ func (s *Server) waysOf(iso isos.ISO, primary family.Boot) []family.Way {
 		s.mu.Unlock()
 		return w
 	}
+	s.mu.Unlock()
+	if ways, ok := s.cachedWays(iso, primary); ok {
+		s.mu.Lock()
+		if s.waysKnown == nil {
+			s.waysKnown = map[string][]family.Way{}
+		}
+		s.waysKnown[key] = ways
+		s.mu.Unlock()
+		return ways
+	}
+	s.mu.Lock()
 	if s.looking[key] {
 		s.mu.Unlock()
 		return nil
@@ -272,6 +296,7 @@ func (s *Server) waysOf(iso isos.ISO, primary family.Boot) []family.Way {
 	}
 	s.looking[key] = true
 	s.mu.Unlock()
+	epoch := s.findingsGeneration()
 	go func() {
 		s.lookMu.Lock()
 		defer s.lookMu.Unlock()
@@ -283,6 +308,7 @@ func (s *Server) waysOf(iso isos.ISO, primary family.Boot) []family.Way {
 			}
 		}
 		done()
+		s.saveFindings(iso, epoch)
 		s.mu.Lock()
 		if s.waysKnown == nil {
 			s.waysKnown = map[string][]family.Way{}

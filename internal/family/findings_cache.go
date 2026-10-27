@@ -94,3 +94,9 @@ func (m *Findings) CachedOnly() *Findings {
 	}
 	return out
 }
+
+// Missing reports whether a cache-only reconstruction lacked a required fact.
+func (m *Findings) Missing() bool { m.mu.Lock(); defer m.mu.Unlock(); return m.missed }
+
+// Forget drops inspected facts after an explicit rescan.
+func (m *Findings) Forget() { m.mu.Lock(); defer m.mu.Unlock(); m.facts = nil }

@@ -67,6 +67,7 @@ type Context struct {
 type Findings struct {
 	mu         sync.Mutex
 	facts      map[string]facts
+	missed     bool
 	cachedOnly bool // a snapshot that must never inspect a missing start-up disk
 }
 
@@ -81,6 +82,9 @@ func (m *Findings) remember(key string, look func() (facts, bool)) (facts, bool)
 		return f, true
 	}
 	readOnly := m.cachedOnly
+	if readOnly {
+		m.missed = true
+	}
 	m.mu.Unlock()
 	if readOnly {
 		return facts{}, false

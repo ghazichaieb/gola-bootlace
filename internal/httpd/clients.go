@@ -269,6 +269,7 @@ func (s *Server) ISOInfos() ([]ISOInfo, error) {
 
 // Rescan forgets what was found out about the ISOs, so that the next menu looks inside them again.
 func (s *Server) Rescan() {
+	s.clearFindings()
 	s.mu.Lock()
 	s.known = nil
 	s.waysKnown = nil
