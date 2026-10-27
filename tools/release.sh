@@ -5,7 +5,7 @@
 #   bootlace-<version>-linux-arm64.tar.gz     the same for ARM (a Raspberry Pi, an ARM Proxmox host)
 #   bootlace-<version>-windows-amd64.zip      the program for Windows
 #   bootlace-<version>-linux-<arch>.deb / .rpm  the same program as a Debian and an RPM package (tools/package.sh; needs Docker)
-#   bootlace-<version>-third-party-sources.tar  the source of the GPL programs inside the program (iPXE, wimboot, GRUB), see NOTICE
+#   bootlace-<version>-third-party-sources.tar  the source of the programs inside the program (iPXE, wimboot, GRUB, the iPXE project's Secure Boot shim), see NOTICE
 #   SHA256SUMS                                the checksums of the files above
 #   SHA256SUMS.sig                            their signature (ssh-keygen -Y sign), made when a key is given: BOOTLACE_SIGN_KEY=<private key file>, default ~/.ssh/gola_bootlace_release
 #
