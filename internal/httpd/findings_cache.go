@@ -35,7 +35,7 @@ func (s *Server) findingsPath(iso isos.ISO) string {
 func (s *Server) loadFindings(iso isos.ISO) bool {
 	s.findingsCacheMu.Lock()
 	defer s.findingsCacheMu.Unlock()
-	if s.findingsEpoch != 0 {
+	if s.findingsSkipDisk {
 		return false
 	} // a rescan never reloads files it tried to invalidate
 	key := stamp(iso) + "|" + s.Base
@@ -88,6 +88,7 @@ func (s *Server) saveFindings(iso isos.ISO, epoch uint64) {
 	}
 	payload, err := s.findings.MarshalStamp(stamp(iso))
 	if err != nil {
+		s.logf("cannot snapshot boot recognition cache: %v", err)
 		return
 	}
 	data, err := json.Marshal(findingsFile{1, version.Version, s.Base, stamp(iso), payload})
@@ -99,10 +100,12 @@ func (s *Server) saveFindings(iso isos.ISO, epoch uint64) {
 	}
 }
 
-func (s *Server) clearFindings() {
+// ForgetFindings discards inspected facts only for an explicit administrator rescan.
+func (s *Server) ForgetFindings() {
 	s.findingsCacheMu.Lock()
 	defer s.findingsCacheMu.Unlock()
 	s.findingsEpoch++
+	s.findingsSkipDisk = true
 	s.findingsLoaded = nil
 	s.findings.Forget()
 	if s.CacheDir == "" {

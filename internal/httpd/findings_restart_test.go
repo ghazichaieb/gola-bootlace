@@ -123,6 +123,12 @@ func TestConfiguredBootEntryIsAvailableOnFirstRequestAfterRestart(t *testing.T) 
 	if !strings.Contains(strings.Join(entries[0].Commands, "\n"), "nomodeset") {
 		t.Fatal("first menu ignored configured default", entries)
 	}
+	// Uploads and renames of other files use this same routine refresh.
+	cold.Rescan()
+	entries, err = cold.Entries()
+	if err != nil || len(entries) != 1 || !strings.Contains(strings.Join(entries[0].Commands, "\n"), "nomodeset") {
+		t.Fatal("routine refresh lost configured alternative", err, entries)
+	}
 	infos, err := cold.ISOInfos()
 	if err != nil || len(infos[0].Ways) != 1 || infos[0].Ways[0].ID != ways[0].ID {
 		t.Fatal("first admin request lost entry choices", err, infos)

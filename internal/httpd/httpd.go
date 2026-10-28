@@ -67,34 +67,35 @@ type Server struct {
 	// Mount adds handlers (the web interface) to the paths of the server.
 	Mount map[string]http.Handler
 
-	started         time.Time
-	useMu           sync.Mutex
-	using           map[string]int // ISOs that PCs are reading, by name in the library
-	authMu          sync.Mutex
-	authFails       map[string]*authFailure // wrong boot passwords by address
-	cacheFullMu     sync.Mutex
-	cacheFull       string // why the cache could not make room, and when
-	cacheFullAt     time.Time
-	libCacheMu      sync.Mutex
-	libCacheDir     string
-	libCachePath    string
-	libCacheAt      time.Time
-	busyMu          sync.Mutex
-	busy            map[string]int // PCs with a request in progress, by address
-	clientsMu       sync.Mutex
-	clients         map[string]*Client
-	saveMu          sync.Mutex
-	savePending     bool
-	mu              sync.Mutex
-	extras          []extraCache            // the last few extra initramfs archives that take long to make (see extraArchive)
-	known           map[string]recognised   // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
-	waysKnown       map[string][]family.Way // the other entries of each ISO's own boot menu that it can be started with (see waysOf), by path, size and time
-	looking         map[string]bool         // the ISOs that are being looked into for what no family is known by (see recogniseGeneric)
-	lookMu          sync.Mutex              // one such look at a time: it reads the whole start-up disk
-	findingsCacheMu sync.Mutex
-	findingsLoaded  map[string]bool
-	findingsEpoch   uint64
-	findings        family.Findings // what those looks found
+	started          time.Time
+	useMu            sync.Mutex
+	using            map[string]int // ISOs that PCs are reading, by name in the library
+	authMu           sync.Mutex
+	authFails        map[string]*authFailure // wrong boot passwords by address
+	cacheFullMu      sync.Mutex
+	cacheFull        string // why the cache could not make room, and when
+	cacheFullAt      time.Time
+	libCacheMu       sync.Mutex
+	libCacheDir      string
+	libCachePath     string
+	libCacheAt       time.Time
+	busyMu           sync.Mutex
+	busy             map[string]int // PCs with a request in progress, by address
+	clientsMu        sync.Mutex
+	clients          map[string]*Client
+	saveMu           sync.Mutex
+	savePending      bool
+	mu               sync.Mutex
+	extras           []extraCache            // the last few extra initramfs archives that take long to make (see extraArchive)
+	known            map[string]recognised   // what each ISO was found to be, by path, size and time (reading an ISO's folders takes a moment)
+	waysKnown        map[string][]family.Way // the other entries of each ISO's own boot menu that it can be started with (see waysOf), by path, size and time
+	looking          map[string]bool         // the ISOs that are being looked into for what no family is known by (see recogniseGeneric)
+	lookMu           sync.Mutex              // one such look at a time: it reads the whole start-up disk
+	findingsSkipDisk bool
+	findingsCacheMu  sync.Mutex
+	findingsLoaded   map[string]bool
+	findingsEpoch    uint64
+	findings         family.Findings // what those looks found
 	// Handoff holds the PCs that iPXE sent to FreeBSD's loader; their TFTP requests are answered from the ISO they chose.
 	Handoff *handoff.Registry
 	// TFTPAhead is how many blocks to send ahead of the acknowledgements to FreeBSD's loader, which reads its kernel and the whole ISO by TFTP (1 or less: none).

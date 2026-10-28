@@ -68,7 +68,19 @@ func TestFindingsDiskCacheIsBoundedVersionedAndInvalidated(t *testing.T) {
 	if err := os.WriteFile(path, original, 0600); err != nil {
 		t.Fatal(err)
 	}
+	s.Rescan()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("routine refresh removed cache", err)
+	}
+	after, _ := s.findings.MarshalStamp(stamp(iso))
+	if string(after) != string(got) {
+		t.Fatal("routine refresh removed inspected facts")
+	}
+	if !s.loadFindings(iso) {
+		t.Fatal("routine refresh blocked loading disk facts")
+	}
 	epoch := s.findingsGeneration()
+	s.ForgetFindings()
 	s.Rescan()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("rescan retained disk cache", err)

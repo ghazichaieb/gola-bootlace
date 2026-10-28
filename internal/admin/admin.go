@@ -47,6 +47,7 @@ type Backend interface {
 	ISOInfos() ([]httpd.ISOInfo, error)
 	Clients() []httpd.Client
 	Rescan()
+	ForgetFindings()                    // only an explicit inspection request drops stamped facts
 	ReplaceClients(list []httpd.Client) // the list of PCs from a backup
 	ForgetPC(mac string) bool
 	ForgetPCsNotSeenFor(d time.Duration) int
@@ -875,6 +876,7 @@ func (a *Admin) tuningSet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Admin) rescan(w http.ResponseWriter, _ *http.Request) {
+	a.o.Backend.ForgetFindings()
 	a.o.Backend.Rescan()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
