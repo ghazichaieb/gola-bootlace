@@ -59,7 +59,7 @@ This page lists what, and says for each point whether it was checked on a real r
 | **Fedora, CentOS, Rocky, Alma installers** | `inst.repo=` points at the server for the installation. | expected: the installed system keeps the distribution's own repositories; not run to the end |
 | **Disk images** (`.img`) started "as a disk" | The disk is read-only: a system that writes to its own disk (updates, settings, a journal) fails or runs read-only. | checked on a few images |
 | **FreeBSD, pfSense, OPNsense** | Started by the PC's own firmware loading FreeBSD's loader from the server, with the ISO as a memory disk. | experimental; needs a real PC |
-| **Secure Boot** | iPXE and wimboot are not signed. With Secure Boot on, only Windows and Ubuntu start (their own signed boot managers). A measured boot (TPM) records different values than a start from a disc. | checked in the lab |
+| **Secure Boot** | iPXE and wimboot are not signed. With Secure Boot on, Windows and Ubuntu start through their own signed boot managers, and other Linux ISOs through the Secure Boot route (the iPXE project's signed shim and iPXE, built into the program; [secure-boot.md](secure-boot.md)); an ISO whose kernel is not signed (CachyOS in the lab) still does not start. A measured boot (TPM) records different values than a start from a disc. | checked in the lab |
 
 ## What is worth doing before relying on it
 

@@ -121,3 +121,7 @@ Meant for development and for reporting a problem; none of them changes what is 
 | `nbd`, `iscsi` | the network disk and iSCSI servers; `cmd/bootlace-nbd` is the client that runs in the PC's initramfs |
 | `diskimg`, `isos` | packed files and zip archives, the folder scan |
 | `winpe`, `smbshare`, `handoff`, `tftp`, `dhcp`, `menu`, `gfx` | Windows set-up, FreeBSD/Ubuntu native chains, the boot menu and the network services |
+| `secureboot` | the iPXE project's signed shim and iPXE, embedded with a manifest that is checked at start (the Secure Boot route, [secure-boot.md](secure-boot.md)) |
+| `admin`, `config`, `backup`, `access`, `library`, `importer`, `service`, `logbuf` | the management page and its API, answer files for unattended installs, settings backup, the local-network-only rule, the library and its uploads and downloads, starting and stopping the services, the log kept in memory |
+| `ipxesafe` | keeps text that is not Bootlace's own (file names, titles read from an ISO's menu, kernel arguments) from chaining iPXE commands |
+| `wol`, `pxecheck`, `selftest`, `speedtest`, `tidy` | Wake-on-LAN, a look for other PXE/DHCP servers, the server checking itself the way a PC uses it, a folder speed test, removing leftovers (cache, partial files) |

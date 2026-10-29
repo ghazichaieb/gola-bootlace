@@ -6,7 +6,7 @@
 - Contributions are accepted under GPL-3.0-or-later, the same as the project.
 - Keep third-party code and its licence header intact, and add it to `NOTICE`.
 - Add a test with each change when it can be tested, and update `docs/compatibility.md` when you test an ISO.
-- Do not commit secrets, real network names, personal paths or logs. The repository will be public.
+- Do not commit secrets, real network names, personal paths or logs. The repository is public.
 - Do not add Microsoft files or Windows ISOs to the repository.
 
 ## Versioning and releases

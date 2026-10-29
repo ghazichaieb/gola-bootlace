@@ -10,7 +10,7 @@
 **Install Windows and Linux on any PC without a USB stick.** Put your ISO files in a folder on one computer; every other PC on the network can start any of them from its
 boot menu, run it, and install it. Think of [Ventoy](https://github.com/ventoy/Ventoy), but over the network. Made by [Gola Services](https://gola.tn).
 
-**Status: early.** It works on the ISOs listed in [docs/compatibility.md](docs/compatibility.md), tested in a lab of virtual machines (Proxmox and Hyper-V), with a
+**Status: early (pre-1.0; see [CHANGELOG.md](CHANGELOG.md) for the latest release and what is not yet released).** It works on the ISOs listed in [docs/compatibility.md](docs/compatibility.md), tested in a lab of virtual machines (Proxmox and Hyper-V), with a
 handful of real PCs still to try. The ISO files are never changed.
 
 ---
@@ -30,7 +30,7 @@ You get:
 - one folder of ISOs instead of a drawer of sticks; add an ISO by copying a file, remove it by deleting the file;
 - the same menu on every PC, UEFI or older BIOS, without touching its settings beyond "boot from network";
 - ISOs that start **as they are**: nothing is unpacked or edited on the way;
-- **unattended installs** where you want them: keep answer files (Debian preseed, Ubuntu autoinstall, Red Hat kickstart, openSUSE AutoYaST) on the *Unattended* page and attach one to an ISO or to a single PC; the installer is pointed at it on its kernel line (see [the web interface](docs/web-interface.md#unattended-installs)).
+- **unattended installs** where you want them: keep answer files (Debian preseed, Ubuntu autoinstall, Red Hat kickstart, openSUSE AutoYaST, Windows autounattend.xml) on the *Unattended* page and attach one to an ISO or to a single PC; the installer is pointed at it on its kernel line (see [the web interface](docs/web-interface.md#unattended-installs)).
 
 ### What you need
 
@@ -213,9 +213,10 @@ shaped the code, and a recipe for adding a system, in **[docs/architecture.md](d
 | `internal/nbd`, `iscsi`, `smbshare`, `tftp`, `dhcp` | the network services |
 | `internal/disc`, `iso9660`, `udf`, `fat`, `partition`, `diskimg`, `isos` | reading ISOs, images and archives |
 | `internal/winpe`, `handoff` | Windows set-up, and the chains that need the PC's own firmware (FreeBSD, Secure Boot) |
+| `internal/secureboot`, `ipxesafe`, `wol`, `pxecheck`, `selftest`, `speedtest`, `tidy`, `backup`, `config` | the built-in signed Secure Boot files, safe text for iPXE scripts, Wake-on-LAN, checks of the network and the server, leftovers cleanup, settings backup, answer files |
 | `tools/` | the lab: Proxmox and Hyper-V scripts that boot ISOs in virtual machines and take pictures; the iPXE build; `release.sh` and the Proxmox container script |
 | `deploy/` | the Docker Compose file and the community-scripts files for Proxmox |
-| `docs/` | architecture, compatibility results, Secure Boot, Proxmox, Docker, requirements, the web interface |
+| `docs/` | architecture, compatibility results, Secure Boot, Proxmox, Docker, requirements, the web interface, [project status](docs/status.md) (open work and how to build and test) |
 
 ### Building and testing
 
