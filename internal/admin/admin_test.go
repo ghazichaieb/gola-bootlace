@@ -26,15 +26,17 @@ import (
 )
 
 type fakeBackend struct {
-	isos    []httpd.ISOInfo
-	clients []httpd.Client
-	rescans int
-	inUse   map[string]bool
-	cache   string // the container's cache folder CacheUsage reports
+	isos           []httpd.ISOInfo
+	clients        []httpd.Client
+	rescans        int
+	forgotFindings int
+	inUse          map[string]bool
+	cache          string // the container's cache folder CacheUsage reports
 }
 
 func (f *fakeBackend) ISOInfos() ([]httpd.ISOInfo, error) { return f.isos, nil }
 func (f *fakeBackend) Clients() []httpd.Client            { return f.clients }
+func (f *fakeBackend) ForgetFindings()                    { f.forgotFindings++ }
 func (f *fakeBackend) Rescan()                            { f.rescans++ }
 func (f *fakeBackend) ReplaceClients(list []httpd.Client) { f.clients = list }
 func (f *fakeBackend) ForgetPC(mac string) bool {
@@ -219,7 +221,7 @@ func TestSettingsAndIsosAreChangedThroughTheApi(t *testing.T) {
 	if code, out := r.do("GET", "/api/isos", nil, nil); code != 200 || out["default"] != "iso:0123456789" {
 		t.Fatalf("%d %v", code, out)
 	}
-	if code, _ := r.do("POST", "/api/rescan", map[string]any{}, nil); code != 200 || r.backend.rescans != 1 {
+	if code, _ := r.do("POST", "/api/rescan", map[string]any{}, nil); code != 200 || r.backend.rescans != 1 || r.backend.forgotFindings != 1 {
 		t.Fatal(code, r.backend.rescans)
 	}
 	if code, _ := r.do("PUT", "/api/settings", map[string]any{"bogus": 1}, nil); code != 400 {
@@ -442,7 +444,7 @@ func TestTuningAndPatternsAreSavedAndPatternsHideIsos(t *testing.T) {
 		t.Fatalf("a block size under 512: %d", code)
 	}
 	code, _ := r.do("PUT", "/api/tuning", map[string]any{"tftpBlockSize": 1024, "tftpWindow": 2, "hidePatterns": []string{" old/ ", "", "*beta*"}, "setupChecks": map[string]bool{"tpm": true, "ram": true}}, nil)
-	if code != 200 || r.backend.rescans != 1 {
+	if code != 200 || r.backend.rescans != 1 || r.backend.forgotFindings != 0 {
 		t.Fatalf("%d, rescans %d", code, r.backend.rescans)
 	}
 	_, out := r.do("GET", "/api/tuning", nil, nil)

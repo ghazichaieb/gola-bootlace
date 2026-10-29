@@ -267,11 +267,15 @@ func (s *Server) ISOInfos() ([]ISOInfo, error) {
 	return out, nil
 }
 
-// Rescan forgets what was found out about the ISOs, so that the next menu looks inside them again.
+// Rescan refreshes ISO recognition after routine changes, retaining stamped initramfs facts.
 func (s *Server) Rescan() {
+	s.findingsCacheMu.Lock()
+	s.findingsEpoch++
+	s.findingsCacheMu.Unlock()
 	s.mu.Lock()
 	s.known = nil
 	s.waysKnown = nil
+	s.looking = nil
 	s.mu.Unlock()
 }
 

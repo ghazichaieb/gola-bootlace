@@ -65,8 +65,10 @@ type Context struct {
 
 // Findings keeps what was found by looking into start-up disks, for as long as the ISO does not change.
 type Findings struct {
-	mu    sync.Mutex
-	facts map[string]facts
+	mu         sync.Mutex
+	facts      map[string]facts
+	missed     bool
+	cachedOnly bool // a snapshot that must never inspect a missing start-up disk
 }
 
 // remember returns the facts kept under the key, or finds them with look and keeps them.
@@ -79,7 +81,14 @@ func (m *Findings) remember(key string, look func() (facts, bool)) (facts, bool)
 		m.mu.Unlock()
 		return f, true
 	}
+	readOnly := m.cachedOnly
+	if readOnly {
+		m.missed = true
+	}
 	m.mu.Unlock()
+	if readOnly {
+		return facts{}, false
+	}
 	f, ok := look()
 	if ok {
 		m.mu.Lock()

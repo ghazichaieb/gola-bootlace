@@ -81,3 +81,14 @@ Entries are identified by their boot payload and volume, rather than their title
 but an unavailable default temporarily uses the usual start. After recognition finishes, reopen the dialog to choose a replacement.
 This manages only the compatible entries already offered by Bootlace; it does not expand family support or change disc-check and persistence behavior.
 The management paths and generated UEFI/BIOS scripts are tested in software; these new settings have not been walked through on a booting VM or physical PC.
+### Boot entries after a server restart
+
+Bootlace keeps inspected initramfs facts in the server's local cache under `boot-findings/` (one bounded file per ISO path).
+When the ISO, server address and program version still match, the first request after a restart rebuilds its usual start and alternative entries from the ISO's current menus and those facts.
+A configured alternative can therefore be the default immediately, without waiting for background initramfs inspection. Boot commands, passwords and custom archive-building functions are not serialized.
+The archive builder is reconstructed from the current ISO tree; this cache does not store a bootable initramfs archive itself.
+
+The cache is disposable. A missing, corrupt, oversized or incompatible file falls back to background recognition; the usual start remains the temporary fallback in that case.
+Changing the ISO path, size or modification time, server address, or program version causes a miss. The cache does not detect a replacement that preserves both size and modification time.
+**Look inside the ISOs again** discards the disk facts and re-runs inspection. Failure to write the cache is logged and does not prevent booting.
+Servers embedded without a cache directory retain the previous in-memory behavior. The restart path is tested with a small ISO fixture and concurrent requests; no new VM or hardware boot was performed.

@@ -223,6 +223,17 @@ func (s *Server) recogniseGeneric(iso isos.ISO) (family.Boot, bool) {
 		s.mu.Unlock()
 		return r.boot, r.ok
 	}
+	s.mu.Unlock()
+	if b, ok := s.cachedGeneric(iso); ok {
+		s.mu.Lock()
+		if s.known == nil {
+			s.known = map[string]recognised{}
+		}
+		s.known[key] = recognised{boot: b, ok: true}
+		s.mu.Unlock()
+		return b, true
+	}
+	s.mu.Lock()
 	if s.looking[key] {
 		s.mu.Unlock()
 		return family.Boot{}, false
@@ -232,18 +243,20 @@ func (s *Server) recogniseGeneric(iso isos.ISO) (family.Boot, bool) {
 	}
 	s.looking[key] = true
 	s.mu.Unlock()
+	epoch := s.findingsGeneration()
 	go func() {
 		s.lookMu.Lock()
 		defer s.lookMu.Unlock()
 		var r recognised
 		r.boot, r.ok = s.detect(iso, family.DetectGeneric)
-		s.mu.Lock()
-		if s.known == nil {
-			s.known = map[string]recognised{}
-		}
-		s.known[key] = r
-		delete(s.looking, key)
-		s.mu.Unlock()
+		s.saveFindings(iso, epoch)
+		s.publishRecognition(epoch, func() {
+			if s.known == nil {
+				s.known = map[string]recognised{}
+			}
+			s.known[key] = r
+			delete(s.looking, key)
+		})
 		if r.ok {
 			s.logf("%s: not known by name, but it is made like one that is: %s", iso.Title, r.boot.Family)
 		}
@@ -252,7 +265,7 @@ func (s *Server) recogniseGeneric(iso isos.ISO) (family.Boot, bool) {
 }
 
 // waysOf are the other entries of an ISO's own boot menu that it can be started with, next to the usual start `primary` (issue #35). Like the generic recognition this looks into
-// start-up disks, which takes seconds: the first call starts the look in the background and answers none, and the menu that follows has the answer.
+// start-up disks, which takes seconds on a cache miss. Matching persisted findings rebuild the entries immediately; otherwise a background look fills them.
 func (s *Server) waysOf(iso isos.ISO, primary family.Boot) []family.Way {
 	if iso.Disk || iso.Packed != "" {
 		return nil
@@ -263,6 +276,17 @@ func (s *Server) waysOf(iso isos.ISO, primary family.Boot) []family.Way {
 		s.mu.Unlock()
 		return w
 	}
+	s.mu.Unlock()
+	if ways, ok := s.cachedWays(iso, primary); ok {
+		s.mu.Lock()
+		if s.waysKnown == nil {
+			s.waysKnown = map[string][]family.Way{}
+		}
+		s.waysKnown[key] = ways
+		s.mu.Unlock()
+		return ways
+	}
+	s.mu.Lock()
 	if s.looking[key] {
 		s.mu.Unlock()
 		return nil
@@ -272,6 +296,7 @@ func (s *Server) waysOf(iso isos.ISO, primary family.Boot) []family.Way {
 	}
 	s.looking[key] = true
 	s.mu.Unlock()
+	epoch := s.findingsGeneration()
 	go func() {
 		s.lookMu.Lock()
 		defer s.lookMu.Unlock()
@@ -283,13 +308,14 @@ func (s *Server) waysOf(iso isos.ISO, primary family.Boot) []family.Way {
 			}
 		}
 		done()
-		s.mu.Lock()
-		if s.waysKnown == nil {
-			s.waysKnown = map[string][]family.Way{}
-		}
-		s.waysKnown[key] = found
-		delete(s.looking, key)
-		s.mu.Unlock()
+		s.saveFindings(iso, epoch)
+		s.publishRecognition(epoch, func() {
+			if s.waysKnown == nil {
+				s.waysKnown = map[string][]family.Way{}
+			}
+			s.waysKnown[key] = found
+			delete(s.looking, key)
+		})
 		if len(found) > 0 {
 			s.logf("%s: its own boot menu has %d other way(s) to start it", iso.Title, len(found))
 		}

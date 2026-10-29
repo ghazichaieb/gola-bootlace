@@ -21,6 +21,11 @@ import (
 func withLibrary(t *testing.T) (*rig, string) {
 	t.Helper()
 	r := newRig(t)
+	t.Cleanup(func() {
+		if r.backend.forgotFindings != 0 {
+			t.Error("routine file/library actions discarded boot findings")
+		}
+	})
 	r.login()
 	dir := t.TempDir()
 	if code, out := r.do("PUT", "/api/library", map[string]any{"path": dir, "create": true}, nil); code != 200 {
