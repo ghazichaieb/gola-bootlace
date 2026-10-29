@@ -5,11 +5,8 @@ Kept short on purpose. Last checked against the code, `git log` and the issues o
 
 ## Where things stand
 
-- **Latest release:** 0.4.2 (2026-10-26). **Latest pre-release:** 0.5.0-rc.1 (2026-10-27, the Secure Boot route as a prototype).
-- **Unreleased on main:** the Secure Boot route built into the program (the iPXE project's signed shim and iPXE, a way and a scope as settings, a Server page block, `PUT /api/secureboot`),
-  the route's start-up log and status, the PCs page label for a PC that only asked for a boot file, and the Secure Boot documentation. See "Unreleased" in the changelog.
-- **Not yet done for that work:** a run of the *built-in* route on a real PC (the same files were measured from a folder), a look at the Server page in a browser, and the choice of
-  version number for the release. A release is made by the maintainer only (see CONTRIBUTING.md).
+- **Latest release:** 0.5.0 (2026-10-29): the Secure Boot route built into the program (the iPXE project's signed shim and iPXE, a way and a scope as settings, a Server page block, `PUT /api/secureboot`), boot entries that survive a restart without waiting for inspection (#75, @omar-akermi), and the Secure Boot documentation. See the changelog. The previous pre-release was 0.5.0-rc.1.
+- **Not yet done for that work:** a run of the *built-in* route on a real PC (the same files were measured from a folder) and a look at the Server page in a browser. A release is made by the maintainer only (see CONTRIBUTING.md).
 - **Branches:** `main` is the only line that matters. `sb10` is the Secure Boot prototype of 0.5.0-rc.1, kept for reference, not to be merged.
 - **Pull requests:** none open. #75 (restore configured boot entries immediately after restart, from @omar-akermi) was reviewed, changed by its author as asked, and merged (item 2 of #70).
 
