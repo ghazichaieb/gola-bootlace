@@ -35,7 +35,7 @@ func TestWhenTheShareCannotBeReachedTheCommandFileNamesTheDevicesThatLackADriver
 		t.Fatalf("no failure branch in\n%s", c)
 	}
 	failed := c[from:to]
-	for _, want := range []string{"ipconfig /all", `pnputil /enum-devices /problem | findstr /i "Instance Description"`, `drivers\all\`, "VEN_"} {
+	for _, want := range []string{"ipconfig /all", `pnputil /enum-devices /problem | find /i "Instance ID"`, `drivers\all\`, "VEN_"} {
 		if !strings.Contains(failed, want) {
 			t.Errorf("the failure branch lacks %q:\n%s", want, failed)
 		}
@@ -48,6 +48,33 @@ func TestWhenTheShareCannotBeReachedTheCommandFileNamesTheDevicesThatLackADriver
 				t.Errorf("an unescaped redirection or & in %q", l)
 			}
 		}
+	}
+}
+
+// What drvload says is kept in a file and its refusals are shown when the share cannot be reached; without drivers there is no log to show. (findstr is not in Windows PE.)
+func TestTheDriverLoadingIsLoggedAndItsRefusalsShownOnFailure(t *testing.T) {
+	with := set
+	with.Drivers = true
+	c := Cmd(with)
+	if !strings.Contains(c, `>> "%SystemDrive%\drvload.log" 2>&1`) {
+		t.Errorf("drvload is not logged:\n%s", c)
+	}
+	// loaded before wpeinit and once more after it (a network card of a real PC only got its driver the second time)
+	const load = `for /r "%SystemDrive%\$WinPEDriver$" %%f in (*.inf) do drvload`
+	if first, last, wpe := strings.Index(c, load), strings.LastIndex(c, load), strings.Index(c, "\r\nwpeinit\r\n"); first < 0 || wpe < 0 || first > wpe || last < wpe || strings.Count(c, load) != 2 {
+		t.Errorf("the drivers are not loaded both before and after wpeinit (first %d, wpeinit %d, last %d):\n%s", first, wpe, last, c)
+	}
+	failed := c[strings.Index(c, ":failed"):strings.Index(c, ":up")]
+	if !strings.Contains(failed, `type "%SystemDrive%\drvload.log" | find /i "Unable"`) {
+		t.Errorf("the failure branch does not show the refusals:\n%s", failed)
+	}
+	without := set
+	without.Drivers = false
+	if strings.Contains(Cmd(without), "drvload") {
+		t.Errorf("a command file without drivers mentions drvload")
+	}
+	if strings.Contains(c, "findstr") {
+		t.Errorf("findstr is not part of Windows PE")
 	}
 }
 
