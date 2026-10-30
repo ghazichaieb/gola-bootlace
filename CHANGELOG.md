@@ -5,6 +5,10 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+## 0.5.2-rc.1 - 2026-10-30
+
+A pre-release for trying the fix on a real PC: `update -v 0.5.2-rc.1` in the container installs it (a plain `update` only follows full releases).
+
 - **The drivers of the library are loaded in Windows PE at all.** The command file only loaded them `if exist "%SystemDrive%\$WinPEDriver$\nul"`, and that folder test is false on Windows PE's drive, so the step silently skipped every driver (Windows Setup itself picks up a `$WinPEDriver$` folder, which hid it for disk drivers in the earlier tests). Found on a real PC: the Intel network card had no driver and the same `for /r ... drvload` loop typed by hand worked at once, with a DHCP address. The test is gone (the folder is always in the image when the drivers are on), and a test keeps it out of the command file.
 
 ## 0.5.1 - 2026-10-30
