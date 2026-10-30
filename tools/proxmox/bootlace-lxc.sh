@@ -134,7 +134,7 @@ whatsnew() {
 		line = $0
 		sub(/^- [*][*]/, "", line)
 		sub(/[*][*].*$/, "", line)
-		sub(/[.]$/, "", line)
+		sub(/[.,;:]$/, "", line)
 		if (length(line) > 90) line = substr(line, 1, 87) "..."
 		print "    - " line
 		next

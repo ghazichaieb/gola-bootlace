@@ -20,7 +20,7 @@ const sampleChangelog = `# Changelog
 ## 0.5.0 - 2026-10-29
 
 - **Secure Boot is built in (#10).** More text that the list does not show.
-- **Entries survive a restart (#70).** More text.
+- **Entries survive a restart (#70),** and more text after the comma.
 
 ## 0.5.0-rc.1 - 2026-10-27
 
@@ -121,8 +121,8 @@ func TestWhatsNew(t *testing.T) {
 		want, notWant            []string
 	}{
 		{"release after its own pre-release", "0.5.0-rc.1", "0.5.0",
-			[]string{"0.5.0 (2026-10-29)", "- Secure Boot is built in (#10)", "- Entries survive a restart (#70)"},
-			[]string{"0.5.0-rc.1", "prototype"}},
+			[]string{"0.5.0 (2026-10-29)", "- Secure Boot is built in (#10)", "- Entries survive a restart (#70)\n"},
+			[]string{"0.5.0-rc.1", "prototype", "(#70),"}},
 		{"two releases behind", "0.4.1", "0.5.0",
 			[]string{"0.5.0 (2026-10-29)", "0.5.0-rc.1 (2026-10-27)", "0.4.2 (2026-10-26)"},
 			[]string{"An older change"}},
