@@ -137,6 +137,7 @@ On the Menu page, under Tuning, three groups of ticks change how a Windows ISO i
   package (the folder with its `.inf`, `.sys` and `.cat`) in `drivers/all/` of the library for every Windows ISO, or in `drivers/<the ISO's file name without .iso>/` for one ISO; the Menu page lists what it finds. The packages are copied into the image at `\$WinPEDriver$`,
   which Windows Setup also takes into the installation it makes (seen: after an install the driver store of the new Windows held the package, on a machine that has no such hardware). The start-up image is held in the PC's memory, so at most 1024 MB of drivers are added. The ISO itself is never changed (the copy is made with wimlib and kept in the cache; a
   change in the folder makes a new copy). A copy is made on first use, which takes a few seconds for the 600 MB image. The same copy serves the Secure Boot start.
+  A network card is the usual case on a recent PC: Windows 11's set-up image does not carry the driver of every chip, and then Setup cannot reach the share (the screen says so and lists the devices without a driver, with their `PCI\VEN_` and `DEV_` numbers). Take the maker's driver pack (for Intel cards the "Ethernet Adapter Complete Driver Pack"), keep only the 64-bit Windows 10/11 folders, and put them in `drivers/all/<name>/` (or in the folder of one ISO). Seen on a real PC: the newer "W11" driver of the Intel pack loaded but passed no traffic, the older one in `Winx64/NDIS68` worked ([compatibility](compatibility.md#real-pcs)).
 
 ## Long menus
 

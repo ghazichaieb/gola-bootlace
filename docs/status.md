@@ -5,7 +5,7 @@ Kept short on purpose. Last checked against the code, `git log` and the issues o
 
 ## Where things stand
 
-- **Latest release:** 0.5.0 (2026-10-29): the Secure Boot route built into the program (the iPXE project's signed shim and iPXE, a way and a scope as settings, a Server page block, `PUT /api/secureboot`), boot entries that survive a restart without waiting for inspection (#75, @omar-akermi), and the Secure Boot documentation. See the changelog. The previous pre-release was 0.5.0-rc.1.
+- **Latest release:** 0.5.1 (2026-10-30): the update command lists the changes for an installation that ran a pre-release (and drops a trailing comma from the lines), the Server page no longer reads like an error about the own-key way, Windows set-up names the devices without a driver when it cannot reach the share, and the library's drivers are loaded again after `wpeinit` and logged. Before it: 0.5.0 (2026-10-29), the Secure Boot route built into the program and boot entries that survive a restart (#75, @omar-akermi).
 - **Not yet done for that work:** a run of the *built-in* route on a real PC (the same files were measured from a folder) and a look at the Server page in a browser. A release is made by the maintainer only (see CONTRIBUTING.md).
 - **Branches:** `main` is the only line that matters. `sb10` is the Secure Boot prototype of 0.5.0-rc.1, kept for reference, not to be merged.
 - **Pull requests:** none open. #75 (restore configured boot entries immediately after restart, from @omar-akermi) was reviewed, changed by its author as asked, and merged (item 2 of #70).
