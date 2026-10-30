@@ -101,6 +101,14 @@ func Cmd(s Settings) string {
 	line(connect)
 	line("echo.")
 	line("ipconfig /all")
+	// no adapter in that list usually means that Windows PE has no driver for the network card: name the devices it has no driver for (the PCI\VEN_ and DEV_ numbers
+	// are what a driver is looked up by) and say where a driver package goes
+	line("echo.")
+	line("echo Devices that Windows has no driver for ^(the network card has Ethernet or Network in its name, its PCI\\VEN_xxxx^&DEV_xxxx numbers say which chip it is^):")
+	line(`pnputil /enum-devices /problem | findstr /i "Instance Description"`)
+	line("echo.")
+	// (< and > are redirections for the command interpreter: they are escaped)
+	line(`echo If the network card is there, put its driver ^(the folder with the .inf, .sys and .cat files^) in the library, in drivers\all\^<name^>\, and start this PC again.`)
 	line("goto end")
 	line(":up")
 	line("echo Starting Windows Setup ...")

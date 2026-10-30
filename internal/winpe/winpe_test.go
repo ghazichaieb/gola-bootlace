@@ -26,6 +26,31 @@ func TestTheScriptLoadsWimbootWithTheBootFilesAndOurTwoFiles(t *testing.T) {
 	}
 }
 
+// A PC whose network card Windows PE has no driver for cannot reach the share: the failure branch must show which devices lack a driver (the IDs to look the driver up by) and
+// say where a driver goes, instead of only printing an adapter list that has no adapter in it.
+func TestWhenTheShareCannotBeReachedTheCommandFileNamesTheDevicesThatLackADriverAndWhereTheDriverGoes(t *testing.T) {
+	c := Cmd(set)
+	from, to := strings.Index(c, ":failed"), strings.Index(c, ":up")
+	if from < 0 || to < from {
+		t.Fatalf("no failure branch in\n%s", c)
+	}
+	failed := c[from:to]
+	for _, want := range []string{"ipconfig /all", `pnputil /enum-devices /problem | findstr /i "Instance Description"`, `drivers\all\`, "VEN_"} {
+		if !strings.Contains(failed, want) {
+			t.Errorf("the failure branch lacks %q:\n%s", want, failed)
+		}
+	}
+	// the command interpreter takes < and > in an echo for redirections (and & for a second command): they have to be escaped
+	for _, l := range strings.Split(failed, "\n") {
+		if text, ok := strings.CutPrefix(strings.TrimSpace(l), "echo "); ok {
+			text = strings.NewReplacer("^<", "", "^>", "", "^&", "").Replace(text)
+			if strings.ContainsAny(text, "<>&") {
+				t.Errorf("an unescaped redirection or & in %q", l)
+			}
+		}
+	}
+}
+
 func TestTheCommandFileConnectsToTheShareOnTheRightPortAndStartsTheSetupOfTheEnvironment(t *testing.T) {
 	c := Cmd(set)
 	for _, want := range []string{`net use Z: \\10.0.0.1\iso /user:bootlace s3cret /TCPPORT:4445`, `set IMAGE=Z:\ab\sources\install.wim`, `install.esd`,
