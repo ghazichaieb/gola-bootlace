@@ -81,20 +81,39 @@ fi
 # once: this script sources it, and the container's "update" command gets the same text.
 write_whatsnew() {
 	cat >"$tmp/whatsnew.sh" <<'WHATSNEW'
+# vcmp A B: prints -1, 0 or 1 as version A is lower than, equal to or higher than version B. A version is X.Y.Z with an optional suffix: -rc.N (a pre-release, LOWER than
+# X.Y.Z, which "sort -V" gets wrong) or -N-gHASH (a test build made after X.Y.Z, HIGHER than it). Written in awk so that it behaves the same with every sort and every shell.
+vcmp() {
+	awk -v a="$1" -v b="$2" '
+	function pad(s,   out, n) {
+		out = ""
+		while (match(s, /[0-9]+/)) { out = out substr(s, 1, RSTART - 1) sprintf("%06d", substr(s, RSTART, RLENGTH) + 0); s = substr(s, RSTART + RLENGTH) }
+		return out s
+	}
+	function key(v,   i, base, suf) {
+		i = index(v, "-")
+		base = (i > 0) ? substr(v, 1, i - 1) : v
+		suf = (i > 0) ? substr(v, i + 1) : ""
+		if (suf == "") return pad(base) "~5"
+		if (suf ~ /^[0-9]/) return pad(base) "~6" pad(suf)
+		return pad(base) "~4" pad(suf)
+	}
+	BEGIN { ka = key(a); kb = key(b); print (ka < kb) ? -1 : (ka > kb) ? 1 : 0 }'
+}
 # whatsnew CHANGELOG.md installed-version new-version
 # Every release AFTER the installed one, up to and including the new one, is listed: a server that is three releases behind sees all three, one that is a single release
-# behind sees one. The releases are compared as versions (sort -V), not looked up by name, so an installed version that is not in the changelog (a test build such as
+# behind sees one. The releases are compared as versions (vcmp), not looked up by name, so an installed version that is not in the changelog (a test build such as
 # 0.3.0-9-gabc, which counts as newer than 0.3.0) still gets the right ones. With no installed version known, only the new release is shown.
 whatsnew() {
 	[ "$2" != "$3" ] || return 0 # nothing is new
-	if [ -n "$2" ] && [ "$(printf '%s\n%s\n' "$2" "$3" | sort -V | tail -n 1)" != "$3" ]; then return 0; fi # the offered version is older than the installed one
+	if [ -n "$2" ] && [ "$(vcmp "$2" "$3")" -gt 0 ]; then return 0; fi # the offered version is older than the installed one
 	wanted=" "
 	for v in $(grep '^## [0-9]' "$1" 2>/dev/null | awk '{print $2}'); do
 		if [ "$v" = "$3" ]; then wanted="$wanted$v "; continue; fi
 		[ -n "$2" ] || continue
 		[ "$v" != "$2" ] || continue
-		[ "$(printf '%s\n%s\n' "$v" "$2" | sort -V | tail -n 1)" = "$v" ] || continue # not newer than the installed one
-		[ "$(printf '%s\n%s\n' "$v" "$3" | sort -V | tail -n 1)" = "$3" ] || continue # newer than the one that is offered
+		[ "$(vcmp "$v" "$2")" -gt 0 ] || continue # not newer than the installed one
+		[ "$(vcmp "$v" "$3")" -le 0 ] || continue # newer than the one that is offered
 		wanted="$wanted$v "
 	done
 	awk -v wanted="$wanted" '
@@ -209,7 +228,7 @@ echo "installed: ${CUR:-unknown}   available: $NEW"
 if [ "$CUR" = "$NEW" ]; then echo "Already up to date."; exit 0; fi
 # what is new: a short line for each entry of that release's changelog that is newer than the installed version; nothing when it cannot be fetched or when going back to an older version
 if [ -n "${BOOTLACE_BASE:-}" ]; then CHLOG=$BASE/CHANGELOG.md; else CHLOG=https://raw.githubusercontent.com/$REPO/v$NEW/CHANGELOG.md; fi
-if [ -z "$CUR" ] || [ "$(printf '%s\n%s\n' "$CUR" "$NEW" | sort -V | tail -n 1)" = "$NEW" ]; then
+if [ -z "$CUR" ] || [ "$(vcmp "$CUR" "$NEW")" -le 0 ]; then
 	if curl -fsSL "$CHLOG" -o "$TMP/CHANGELOG.md" 2>/dev/null; then
 		echo "What's new${CUR:+ since $CUR}:"
 		whatsnew "$TMP/CHANGELOG.md" "$CUR" "$NEW"
@@ -296,7 +315,7 @@ show_changes() {
 	cur=$(pct exec "$1" -- /usr/local/bin/bootlace --version 2>/dev/null | head -n 1 | awk '{print $3}') || cur=""
 	new=$("$tmp/bootlace" --version | head -n 1 | awk '{print $3}')
 	{ [ -n "$new" ] && [ "$cur" != "$new" ]; } || return 0
-	if [ -n "$cur" ] && [ "$(printf '%s\n%s\n' "$cur" "$new" | sort -V | tail -n 1)" != "$new" ]; then return 0; fi
+	if [ -n "$cur" ] && [ "$(vcmp "$cur" "$new")" -gt 0 ]; then return 0; fi
 	say "What's new${cur:+ since $cur}:"
 	whatsnew "$tmp/CHANGELOG.md" "$cur" "$new"
 	echo "Full notes: https://github.com/$BOOTLACE_REPO/releases/tag/v$new"

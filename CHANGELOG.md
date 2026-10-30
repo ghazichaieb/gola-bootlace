@@ -5,6 +5,8 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **The container's `update` command lists the changes when the installed version is a pre-release.** The list is built by comparing versions, and `sort -V` ranks `0.5.0-rc.1` above `0.5.0`, so an installation that ran a release candidate was told nothing at all ("installed: 0.5.0-rc.1 available: 0.5.0" and straight to the question). The comparison is now a small function (`vcmp`) in which a pre-release is lower than its release and a test build such as `0.3.0-9-gabc` is higher than the release it follows; the host script uses it too. Tests: `go test ./tools/proxmox` runs the script's own text with sh and awk. The fix reaches a container with its next update (the archive carries the command); to have it at once, run on the Proxmox host `curl -fsSL https://raw.githubusercontent.com/ghazichaieb/gola-bootlace/main/tools/proxmox/bootlace-lxc.sh | bash -s -- --print-update >/tmp/update.new && pct push <number> /tmp/update.new /usr/local/bin/update --perms 0755`.
+
 ## 0.5.0 - 2026-10-29
 
 - **Configured boot entries survive a server restart without waiting for inspection (#70, cache follow-up).** Bounded initramfs facts are cached locally and used to rebuild compatible starts on the first request. Changed files, program versions or server addresses invalidate the cache; corrupt caches fall back safely, and explicit rescan discards them. Thanks to @omar-akermi (PR #75).
