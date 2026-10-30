@@ -5,6 +5,10 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+## 0.5.2-rc.2 - 2026-10-30
+
+A pre-release for trying the shim on the ASUS ExpertBook B3405CCA: `update -v 0.5.2-rc.2` in the container installs it (a plain `update` only follows full releases). It also contains everything of 0.5.2-rc.1.
+
 - **The built-in shim is signed with both Microsoft CAs (2011 and 2023).** A PC whose firmware no longer trusts Microsoft's 2011 third-party CA cannot start a shim that only the 2011 CA signed, and the shim in the iPXE v2.0.0 archive was that build. The ASUS ExpertBook B3405CCA refused the route, probably for this reason (its key database was not read). The iPXE project replaced its `ipxe-16.1` shim release on 2026-05-27 with a dual-signed one; Bootlace now carries that file (1,048,424 bytes, SHA-256 `5eecca27…fa6cf`), while `ipxe.efi` stays the v2.0.0 one. `tools/update-secure-boot-assets.sh` takes the shim from a shim release with `--shim-release <tag> <sha256>` and records the release, the address and the CAs found in its signature (`signedWith`) in `MANIFEST.json`; the Server page shows them; a test fails when the shim does not carry both certificates. **Not yet tried on the ExpertBook.**
 
 ## 0.5.2-rc.1 - 2026-10-30
