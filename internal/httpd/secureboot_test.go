@@ -432,7 +432,7 @@ func TestTheStatusOfTheBuiltInRouteNamesTheFilesTheReleaseAndTheWayItWasChosen(t
 	// it is also described while another mode is on, and the own folder's state is there for the person who thinks of switching
 	dir := t.TempDir()
 	off := sbServer(t, SecureBoot{OwnDir: dir}, offChosen).SecureBootStatus()
-	if off.On || off.Ready || off.Mode != "off" || off.ModeSource != SourceDashboard || !off.Builtin.OK || off.Own.Ready || off.Own.Dir != dir || !strings.Contains(off.Own.Problem, "is missing") ||
+	if off.On || off.Ready || off.Mode != "off" || off.ModeSource != SourceDashboard || !off.Builtin.OK || off.Own.Ready || off.Own.Dir != dir || !strings.Contains(off.Own.Problem, "are missing") ||
 		!strings.Contains(off.Message, "Built in") {
 		t.Errorf("off: %+v", off)
 	}
@@ -445,6 +445,17 @@ func TestTheStatusOfTheBuiltInRouteNamesTheFilesTheReleaseAndTheWayItWasChosen(t
 	}
 	if all := sbServer(t, SecureBoot{}, freshDefault).SecureBootStatus(); strings.Contains(all.Message, "marked yet") {
 		t.Errorf("with every PC sent, marking does not matter: %+v", all)
+	}
+}
+
+// TestAnEmptyOwnFolderNamesBothFilesInTheRightGrammar checks the sentence for a folder that holds neither the shim nor the file it asks for.
+func TestAnEmptyOwnFolderNamesBothFilesInTheRightGrammar(t *testing.T) {
+	files, problem := ownFiles(t.TempDir(), DefaultShim)
+	if !strings.HasPrefix(problem, "shimx64.efi and grubx64.efi are missing from ") || !strings.HasSuffix(problem, "Copy them into the folder.") {
+		t.Fatalf("problem: %q", problem)
+	}
+	if len(files) < 2 || files[0].Present || files[1].Present {
+		t.Fatalf("files: %+v", files)
 	}
 }
 

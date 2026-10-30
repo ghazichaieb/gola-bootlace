@@ -514,7 +514,7 @@ function drawSecureBoot(sb, refresh) {
     ${seg("sbscope", "Which PCs", sbScopes, scope, sb.scopeLocked, sbSource(sb.scopeSource, false, "-secure-boot-scope, -secure-boot-all or BOOTLACE_SECURE_BOOT_SCOPE"))}
     ${mode === "off" ? "" : `<table class="rt"><tbody>${detail}<tr><td class="k">Sent through the shim</td><td>${esc(sent)}</td></tr></tbody></table>
       <table class="rt" style="margin-top:8px"><tbody>${(sb.files || []).map(fileRow).join("")}</tbody></table>`}
-    ${mode !== "own" && sb.own && sb.own.problem ? `<p class="small muted" style="margin:10px 0 0">The own-key folder (${esc(sb.own.dir)}) is not ready: ${esc(sb.own.problem)}</p>` : ""}
+    ${mode !== "own" && sb.own && sb.own.problem ? `<p class="small muted" style="margin:10px 0 0">The own-key way is not set up yet, which does not matter while you use another way. It matters only if you choose "Own key": the folder (${esc(sb.own.dir)}) is not ready. ${esc(sb.own.problem)}</p>` : ""}
     <p class="${sb.problem ? "banner bad" : "small muted"}" style="${sb.problem ? "margin:10px 0 0" : "margin-bottom:0"}">${esc(sb.message || "")}</p>`;
   const card = $("#sbcard");
   const save = async body => { try { await api("/api/secureboot", "PUT", body); } catch (e) { refresh(); throw e; } toast("Saved"); refresh(); };

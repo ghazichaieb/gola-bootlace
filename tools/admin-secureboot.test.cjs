@@ -80,7 +80,8 @@ test('own key: the folder and the missing files are shown, off shows no file tab
   const off = rig(); off.draw({...base, on: false, mode: 'off', scope: 'marked', files: [], ready: false, message: 'The Secure Boot route is off.'});
   assert.match(off.html(), /<input type="radio" name="sbmode" value="off" checked>/);
   assert.ok(!off.html().includes('ipxe-shimx64.efi</td>'));
-  assert.ok(off.html().includes('The own-key folder (/data/secure-boot) is not ready'));
+  assert.ok(off.html().includes('The own-key way is not set up yet, which does not matter while you use another way'));
+  assert.ok(off.html().includes('the folder (/data/secure-boot) is not ready'));
 });
 
 test('an installation that has not chosen is offered the switch, here and on the dashboard', async () => {

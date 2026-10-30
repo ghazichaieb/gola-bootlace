@@ -284,8 +284,10 @@ func ownFiles(dir, shim string) (files []SecureBootFileState, problem string) {
 		problem = fmt.Sprintf("%q is not a file name, so no PC can be sent through the shim.", shim)
 	case len(missing) == 1 && missing[0] == shim:
 		problem = fmt.Sprintf("%s is missing from %s: a PC sent through the shim cannot get it.", shim, dir)
-	case len(missing) > 0:
-		problem = fmt.Sprintf("%s is missing from %s: the shim asks for it next, so a PC that gets the shim then stops with \"Security Violation\" or an error. Copy it into the folder.", strings.Join(missing, " and "), dir)
+	case len(missing) > 1:
+		problem = fmt.Sprintf("%s are missing from %s: a PC sent through the shim cannot get the shim, and the shim asks for the second file next. Copy them into the folder.", strings.Join(missing, " and "), dir)
+	case len(missing) == 1:
+		problem = fmt.Sprintf("%s is missing from %s: the shim asks for it next, so a PC that gets the shim then stops with \"Security Violation\" or an error. Copy it into the folder.", missing[0], dir)
 	}
 	return files, problem
 }
