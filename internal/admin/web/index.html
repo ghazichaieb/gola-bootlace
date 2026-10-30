@@ -500,7 +500,8 @@ function drawSecureBoot(sb, refresh) {
   const mode = sb.mode || "off", scope = sb.scope || "marked";
   const sent = scope === "all" ? "Every 64-bit UEFI PC" : `Only the PCs marked "Secure Boot route" on the PCs page (${sb.marked || 0} marked)`;
   const present = f => f.present ? `<span class="badge ok">${mode === "builtin" ? "built in" : "present"}</span>` : f.required ? `<span class="badge red">missing</span>` : `<span class="badge">not there</span>`;
-  const fileRow = f => `<tr><td class="mono">${esc(f.name)}<div class="muted small">${esc(f.role)}</div></td><td class="small">${f.size ? bytes(f.size) : ""}${f.sha256 ? `<div class="mono muted" title="SHA-256 ${esc(f.sha256)}">${esc(f.sha256.slice(0, 16))}…</div>` : ""}</td><td>${present(f)}</td></tr>`;
+  const shimFrom = f => f.release ? `<div class="muted small">from the iPXE shim release <a href="${esc(f.source)}" rel="noopener">${esc(f.release)}</a>${f.signedWith && f.signedWith.length ? `, signed with Microsoft's ${f.signedWith.map(esc).join(" and ")} CA` : ""}</div>` : "";
+  const fileRow = f => `<tr><td class="mono">${esc(f.name)}<div class="muted small">${esc(f.role)}</div>${shimFrom(f)}</td><td class="small">${f.size ? bytes(f.size) : ""}${f.sha256 ? `<div class="mono muted" title="SHA-256 ${esc(f.sha256)}">${esc(f.sha256.slice(0, 16))}…</div>` : ""}</td><td>${present(f)}</td></tr>`;
   const b = sb.builtin || {};
   const seg = (name, legend, opts, value, locked, note) => `<fieldset class="seg"><legend>${legend}</legend><div class="opts">${opts.map(([v, t]) => `<label><input type="radio" name="${name}" value="${v}"${value === v ? " checked" : ""}${locked ? " disabled" : ""}><span>${esc(t)}</span></label>`).join("")}</div><p class="hint">${esc(note)}</p></fieldset>`;
   const detail = mode === "builtin"

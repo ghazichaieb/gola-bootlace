@@ -43,7 +43,7 @@ function rig() {
   };
 }
 
-const files = [{name: 'ipxe-shimx64.efi', role: 'the boot file the PC is told to start (the shim, signed by Microsoft)', required: true, present: true, size: 1038920, sha256: '83ad71c7d4f2cf328b75b653d09bf3bea5f29bee2e67ca058f37d83c07133885'},
+const files = [{name: 'ipxe-shimx64.efi', role: 'the boot file the PC is told to start (the shim, signed by Microsoft)', required: true, present: true, size: 1048424, sha256: '5eecca2780bd49c900565e124516a1bd666ec5e012825f34991b6ba1ef2fa6cf', release: 'ipxe-16.1', source: 'https://github.com/ipxe/shim/releases/download/ipxe-16.1/ipxe-shimx64.efi', signedWith: ['2011', '2023']},
   {name: 'ipxe.efi', role: 'what the shim starts next (iPXE, signed by the iPXE project)', required: true, present: true, size: 397160, sha256: '6558e37887516b246d6a97122e8d18bedfe4197b7ba7f67bf1bf102a16678d33'}];
 const builtin = {ok: true, release: 'v2.0.0', released: '2026-03-06', added: '2026-10-27', source: 'https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz', tarballSha256: '01a526d4cc791fc30362259c609d6c506cc64a7bdff51b9a5eb788354e17eee1', files};
 const base = {on: true, mode: 'builtin', scope: 'all', modeSource: 'default', scopeSource: 'default', modeLocked: false, scopeLocked: false, unset: false, shim: 'ipxe-shimx64.efi', marked: 0, files, ready: true, problem: '', message: 'The Secure Boot route is on.', builtin, own: {dir: '/data/secure-boot', dirFromOption: false, shim: 'shimx64.efi', files: [], ready: false, problem: 'shimx64.efi is missing from /data/secure-boot'}};
@@ -56,7 +56,7 @@ test('built in: the way and the scope are chosen with radio buttons, the files, 
   assert.match(h, /<input type="radio" name="sbmode" value="off">/);
   assert.match(h, /<input type="radio" name="sbscope" value="all" checked>/);
   assert.match(h, /<legend>Way<\/legend>/);
-  for (const text of ['ipxe-shimx64.efi', 'ipxe.efi', 'v2.0.0', '2026-03-06', '01a526d4cc791fc30362259c609d6c506cc64a7bdff51b9a5eb788354e17eee1', '83ad71c7d4f2cf328b75b653d09bf3bea5f29bee2e67ca058f37d83c07133885'.slice(0, 16), 'built in', 'The default of a new installation']) assert.ok(h.includes(text), text);
+  for (const text of ['ipxe-shimx64.efi', 'ipxe.efi', 'v2.0.0', '2026-03-06', '01a526d4cc791fc30362259c609d6c506cc64a7bdff51b9a5eb788354e17eee1', '5eecca2780bd49c900565e124516a1bd666ec5e012825f34991b6ba1ef2fa6cf'.slice(0, 16), 'ipxe-16.1', "Microsoft's 2011 and 2023 CA", 'built in', 'The default of a new installation']) assert.ok(h.includes(text), text);
   for (const way of ['Built in.', 'Own key.', 'Off.']) assert.ok(h.includes(way), way);
   assert.ok(!h.includes(' disabled'), 'nothing is locked');
   assert.ok(!h.includes('data-sb-on'), 'a chosen installation gets no banner');

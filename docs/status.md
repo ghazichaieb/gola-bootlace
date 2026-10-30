@@ -15,7 +15,7 @@ Kept short on purpose. Last checked against the code, `git log` and the issues o
 
 | Group | Issues | State |
 |---|---|---|
-| Secure Boot | #10, #73 | #10: ARM64 and a real-PC run of the built-in files are open; whether to wait for an iPXE release signed with the 2023 Microsoft certificate is undecided. #73: could not be reproduced in-process; waiting for the next real-PC run |
+| Secure Boot | #10, #73 | #10: ARM64 and a real-PC run of the built-in files are open; the built-in shim is now the project's re-signed release (2011 and 2023), waiting for a run on a PC that trusts only the 2023 CA (the ExpertBook). #73: could not be reproduced in-process; waiting for the next real-PC run |
 | Real-PC faults | #51 (ASUS P8Z77-V LX UEFI freeze), #57 (Pop!_OS 24.04 on an ASUS X299) | waiting for a packet capture (#51) and a test with a newer Pop!_OS image (#57) |
 | Boot menu | #35, #70, #72 | #35: entries are offered and manageable per ISO; the rest is items 1, 3, 4 and 5 of #70 (item 2, entries right after a restart, is done by #75) and entries of systems with their own rules. #72: a button to reopen the first-start guide |
 | Unattended and Windows | #17, #18, #16 | #17: groups of PCs and end-to-end kickstart/AutoYaST runs are missing. #18: drivers and check bypass done and verified; kept open for the parts listed in its last comment. #16: low priority by decision |

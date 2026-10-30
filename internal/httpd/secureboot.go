@@ -209,6 +209,10 @@ type SecureBootFileState struct {
 	Present  bool   `json:"present"`
 	Size     int64  `json:"size,omitempty"`   // built-in files: the size in bytes
 	SHA256   string `json:"sha256,omitempty"` // built-in files: the checksum
+	// Release, Source and SignedWith are set for a built-in file that comes from another release than the archive (the re-signed shim): its tag, its address, and the Microsoft CAs that signed it.
+	Release    string   `json:"release,omitempty"`
+	Source     string   `json:"source,omitempty"`
+	SignedWith []string `json:"signedWith,omitempty"`
 }
 
 // SecureBootBuiltin says what is built into the program.
@@ -303,7 +307,7 @@ func (s *Server) builtinStatus() SecureBootBuiltin {
 		b.Error = err.Error()
 	}
 	for _, f := range set.Infos() {
-		b.Files = append(b.Files, SecureBootFileState{Name: f.Name, Role: f.Role, Required: true, Present: b.OK, Size: f.Size, SHA256: f.SHA256})
+		b.Files = append(b.Files, SecureBootFileState{Name: f.Name, Role: f.Role, Required: true, Present: b.OK, Size: f.Size, SHA256: f.SHA256, Release: f.Release, Source: f.Source, SignedWith: f.SignedWith})
 	}
 	return b
 }

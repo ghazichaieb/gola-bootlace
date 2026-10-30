@@ -429,6 +429,9 @@ func TestTheStatusOfTheBuiltInRouteNamesTheFilesTheReleaseAndTheWayItWasChosen(t
 	if !b.OK || b.Release != "v2.0.0" || b.TarballSHA256 != "01a526d4cc791fc30362259c609d6c506cc64a7bdff51b9a5eb788354e17eee1" || !strings.HasSuffix(b.Source, "/v2.0.0/ipxeboot.tar.gz") || len(b.Files) != 2 {
 		t.Errorf("builtin: %+v", b)
 	}
+	if shim := b.Files[0]; shim.Release != "ipxe-16.1" || strings.Join(shim.SignedWith, " ") != "2011 2023" || !strings.HasSuffix(shim.Source, "/ipxe-16.1/ipxe-shimx64.efi") {
+		t.Errorf("the shim's release and the CAs that signed it must reach the Server page: %+v", shim)
+	}
 	// it is also described while another mode is on, and the own folder's state is there for the person who thinks of switching
 	dir := t.TempDir()
 	off := sbServer(t, SecureBoot{OwnDir: dir}, offChosen).SecureBootStatus()

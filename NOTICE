@@ -33,16 +33,16 @@ This offer is valid for at least three years after the version in question was l
     GPL2_ONLY, GPL_ANY, BSD2, BSD2_PATENT, BSD3, MIT or PUBLIC_DOMAIN. This binary is distributed here under the GPL, with its source (above), and not under the UBDL.
     No linking exception was found in COPYING, COPYING.GPLv2, COPYING.UBDL or README.md of v2.0.0. The licence of this particular binary (the result of iPXE's own `make bin/<target>.licence`
     for the Secure Boot build) was not computed here, so whether it is GPL-2.0-or-later or GPL-2.0-only is not stated. It is a separate program that is handed to PCs, not linked into Bootlace.
-  - ipxe-shimx64.efi (the name it is served under; the release archive's x86_64-sb/shimx64.efi, SHA-256 83ad71c7d4f2cf328b75b653d09bf3bea5f29bee2e67ca058f37d83c07133885): the iPXE project's shim for
-    iPXE, signed by Microsoft (UEFI CA 2011; this build has no 2023 signature), BSD-2-Clause (the COPYRIGHT file of https://github.com/ipxe/shim: Copyright 2012 Red Hat, Inc, with parts
+  - ipxe-shimx64.efi (the name it is served under; the file ipxe-shimx64.efi of the release `ipxe-16.1` of https://github.com/ipxe/shim, replaced by the project on 2026-05-27,
+    https://github.com/ipxe/shim/releases/download/ipxe-16.1/ipxe-shimx64.efi, SHA-256 5eecca2780bd49c900565e124516a1bd666ec5e012825f34991b6ba1ef2fa6cf, 1,048,424 bytes): the iPXE project's
+    shim for iPXE, signed by Microsoft with both the UEFI CA 2011 and the UEFI CA 2023 (the build in the iPXE v2.0.0 archive, 83ad71c7d4f2cf328b75b653d09bf3bea5f29bee2e67ca058f37d83c07133885,
+    which this program carried until then, had the 2011 signature only), BSD-2-Clause (the COPYRIGHT file of https://github.com/ipxe/shim: Copyright 2012 Red Hat, Inc, with parts
     derived from Tianocore, Copyright 2009-2012 Intel Corporation), which also contains parts of OpenSSL 1.0.2k (OpenSSL and SSLeay licences) and gnu-efi (BSD-style licences of its files).
-    The file says "UEFI SHIM $Version: 16.1 $ $Commit: master $"; it reports the SBAT entries shim,4 and shim.ipxe,1. The exact commit it was built from is NOT recorded in the file or in the
-    release notes of iPXE v2.0.0. What is established: the iPXE v2.0.0 release workflow (.github/workflows/build.yml) takes the shim from
-    https://github.com/ipxe/shim/releases/latest/download/ipxe-shimx64.efi at the time of the build, and the latest release of that repository then was `ipxe-16.1` (2025-11-07, "Based on
-    upstream shim-16.1"; tag commit d0367b25d04ec90d332909b99d932571f15e5a06). That release's files were later replaced (2026-05-27) by shims signed with both the 2011 and 2023 certificates,
-    so the shim here does not have the checksum of today's ipxe-16.1 release file. The source given for it (third_party/SOURCES) is therefore the tag ipxe-16.1 of https://github.com/ipxe/shim
-    plus gnu-efi at the commit the tag's submodule points to (https://github.com/rhboot/gnu-efi, dc7fd96f23d6b582416f672844362d776d175cf4); it is the source of the same version, not a
-    proven source of this exact binary.
+    The file says "UEFI SHIM $Version: 16.1 $ $Commit: master $"; it reports the SBAT entries shim,4 and shim.ipxe,1, the same as the build in the v2.0.0 archive. The release `ipxe-16.1` is "Based on upstream
+    shim-16.1" (2025-11-07; tag commit d0367b25d04ec90d332909b99d932571f15e5a06); its files were replaced on 2026-05-27 by shims signed with both the 2011 and the 2023 certificates, and this
+    file is that replacement. The source given for it (third_party/SOURCES) is the tag ipxe-16.1 of https://github.com/ipxe/shim plus gnu-efi at the commit the tag's submodule points to
+    (https://github.com/rhboot/gnu-efi, dc7fd96f23d6b582416f672844362d776d175cf4); it is the source of the same version, and the project does not state that the re-signed binary was rebuilt
+    from a different commit, but that is not proven either.
   - Not shipped: the ARM64 files of the same release (arm64-sb/shimaa64.efi, arm64-sb/ipxe.efi). See docs/secure-boot.md.
 - wimboot 2.9.0 (https://ipxe.org/wimboot), GPL-2.0-or-later, source at https://github.com/ipxe/wimboot. SHIPPED unchanged in internal/assets/ipxe/wimboot (downloaded 2026-10-21
   from the project's release, SHA-256 5f067ccdc4d084d5bf77b6c853bd0f8402dfc2b4cd1b103d358993ae97fae8e3). Starts Windows setup images.

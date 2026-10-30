@@ -2,11 +2,11 @@
   "source": "https://github.com/ipxe/ipxe/releases/download/v2.0.0/ipxeboot.tar.gz",
   "release": "v2.0.0",
   "released": "2026-03-06",
-  "added": "2026-10-27",
+  "added": "2026-10-30",
   "tarballSha256": "01a526d4cc791fc30362259c609d6c506cc64a7bdff51b9a5eb788354e17eee1",
   "folder": "x86_64-sb",
   "files": [
-    {"name": "ipxe-shimx64.efi", "from": "shimx64.efi", "size": 1038920, "sha256": "83ad71c7d4f2cf328b75b653d09bf3bea5f29bee2e67ca058f37d83c07133885"},
+    {"name": "ipxe-shimx64.efi", "from": "ipxe-shimx64.efi", "release": "ipxe-16.1", "source": "https://github.com/ipxe/shim/releases/download/ipxe-16.1/ipxe-shimx64.efi", "signedWith": ["2011", "2023"], "size": 1048424, "sha256": "5eecca2780bd49c900565e124516a1bd666ec5e012825f34991b6ba1ef2fa6cf"},
     {"name": "ipxe.efi", "from": "ipxe.efi", "size": 397160, "sha256": "6558e37887516b246d6a97122e8d18bedfe4197b7ba7f67bf1bf102a16678d33"}
   ]
 }

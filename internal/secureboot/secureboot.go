@@ -37,6 +37,11 @@ type File struct {
 	From   string `json:"from"`   // its name in the release archive
 	Size   int64  `json:"size"`   // bytes
 	SHA256 string `json:"sha256"` // of the file, lower-case hexadecimal
+	// Release, Source and SignedWith are set for a file that was taken from another release than the archive (the shim, re-signed by the project after the
+	// release): the tag, the address of the file itself, and the Microsoft CAs ("2011", "2023") whose signature the file carries.
+	Release    string   `json:"release,omitempty"`
+	Source     string   `json:"source,omitempty"`
+	SignedWith []string `json:"signedWith,omitempty"`
 }
 
 // Manifest says where the files came from. It is assets/MANIFEST.json, written by tools/update-secure-boot-assets.sh.
@@ -154,6 +159,10 @@ type Info struct {
 	Size   int64  `json:"size"`
 	SHA256 string `json:"sha256"`
 	Role   string `json:"role"`
+	// Release, Source and SignedWith: see File.
+	Release    string   `json:"release,omitempty"`
+	Source     string   `json:"source,omitempty"`
+	SignedWith []string `json:"signedWith,omitempty"`
 }
 
 // Infos are the manifest's files with what each is for, in the order the shim and iPXE are fetched.
@@ -168,7 +177,7 @@ func (s *Set) Infos() []Info {
 			if name == SecondStage {
 				role = "what the shim starts next (iPXE, signed by the iPXE project)"
 			}
-			out = append(out, Info{Name: f.Name, From: f.From, Size: f.Size, SHA256: f.SHA256, Role: role})
+			out = append(out, Info{Name: f.Name, From: f.From, Size: f.Size, SHA256: f.SHA256, Role: role, Release: f.Release, Source: f.Source, SignedWith: f.SignedWith})
 		}
 	}
 	return out

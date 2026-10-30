@@ -40,8 +40,27 @@ func TestTheBuiltInFilesAreTheOnesTheManifestListsAndNothingElse(t *testing.T) {
 		}
 	}
 	infos := s.Infos()
-	if len(infos) != 2 || infos[0].Name != Shim || infos[1].Name != SecondStage || infos[0].From != "shimx64.efi" || infos[0].Role == "" {
+	if len(infos) != 2 || infos[0].Name != Shim || infos[1].Name != SecondStage || infos[0].From != "ipxe-shimx64.efi" || infos[0].Role == "" {
 		t.Errorf("infos: %+v", infos)
+	}
+}
+
+// A PC whose firmware dropped Microsoft's 2011 third-party CA (found on an ASUS ExpertBook B3405CCA) refuses a shim that only the 2011 CA signed, and a PC that has not
+// received the 2023 CA yet refuses one that only the 2023 CA signed: the shim has to carry both signatures. The manifest says so and the bytes have to agree.
+func TestTheShimIsSignedWithBothMicrosoftCAs(t *testing.T) {
+	s := Builtin()
+	shim, _ := s.Open(Shim)
+	for ca, name := range map[string]string{"2011": "Microsoft Corporation UEFI CA 2011", "2023": "Microsoft UEFI CA 2023"} {
+		if !strings.Contains(string(shim), name) {
+			t.Errorf("the shim does not carry the %q certificate: it would be refused by a firmware that trusts only the %s CA", name, ca)
+		}
+	}
+	info := s.Infos()[0]
+	if got := strings.Join(info.SignedWith, " "); got != "2011 2023" {
+		t.Errorf("the manifest says the shim is signed with %q, want \"2011 2023\"", got)
+	}
+	if info.Release != "ipxe-16.1" || info.Source != "https://github.com/ipxe/shim/releases/download/ipxe-16.1/ipxe-shimx64.efi" {
+		t.Errorf("the manifest does not say where the re-signed shim came from: %+v", info)
 	}
 }
 
