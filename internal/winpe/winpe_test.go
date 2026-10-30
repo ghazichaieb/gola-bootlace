@@ -59,7 +59,11 @@ func TestTheDriverLoadingIsLoggedAndItsRefusalsShownOnFailure(t *testing.T) {
 	if !strings.Contains(c, `>> "%SystemDrive%\drvload.log" 2>&1`) {
 		t.Errorf("drvload is not logged:\n%s", c)
 	}
-	// loaded before wpeinit and once more after it (a network card of a real PC only got its driver the second time)
+	// `if exist <folder>\nul` is false for a folder on Windows PE's drive: with it the script loaded no driver at all (found on a real PC, where the same loop typed by hand worked)
+	if strings.Contains(c, `\nul`) || strings.Contains(c, "if exist \"%SystemDrive%\\$WinPEDriver$") {
+		t.Errorf("the driver loading is guarded by a folder test that fails in Windows PE:\n%s", c)
+	}
+	// loaded before wpeinit and once more after it
 	const load = `for /r "%SystemDrive%\$WinPEDriver$" %%f in (*.inf) do drvload`
 	if first, last, wpe := strings.Index(c, load), strings.LastIndex(c, load), strings.Index(c, "\r\nwpeinit\r\n"); first < 0 || wpe < 0 || first > wpe || last < wpe || strings.Count(c, load) != 2 {
 		t.Errorf("the drivers are not loaded both before and after wpeinit (first %d, wpeinit %d, last %d):\n%s", first, wpe, last, c)

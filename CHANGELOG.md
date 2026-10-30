@@ -5,6 +5,8 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **The drivers of the library are loaded in Windows PE at all.** The command file only loaded them `if exist "%SystemDrive%\$WinPEDriver$\nul"`, and that folder test is false on Windows PE's drive, so the step silently skipped every driver (Windows Setup itself picks up a `$WinPEDriver$` folder, which hid it for disk drivers in the earlier tests). Found on a real PC: the Intel network card had no driver and the same `for /r ... drvload` loop typed by hand worked at once, with a DHCP address. The test is gone (the folder is always in the image when the drivers are on), and a test keeps it out of the command file.
+
 ## 0.5.1 - 2026-10-30
 
 - **The drivers of the library are loaded again after `wpeinit`, and what `drvload` says is kept.** On a real PC (ASUS ExpertBook, Intel I219-V card) loading the drivers only before `wpeinit` left the card without a driver, while the same load run by hand afterwards gave it a driver and a DHCP address. The command file now loads them before and after `wpeinit` (loading a driver that is already loaded is harmless), writes what `drvload` says to `X:\drvload.log`, and shows the refusals on the failure screen. The failure screen's list of devices without a driver uses `find`, because `findstr` is not part of Windows PE.

@@ -80,13 +80,15 @@ func Cmd(s Settings) string {
 	connect := fmt.Sprintf(`net use Z: \\%s\%s /user:%s %s%s`, s.Host, s.Share, s.User, s.Password, port)
 	line("@echo off")
 	line("title Gola Bootlace")
-	// The drivers are loaded twice: before wpeinit, so that a disk or a card that Windows does not know is there when the network and Setup start, and again after it. On a real PC (an ASUS
-	// with an Intel I219 card) the first load left the card without a driver, while the same load run by hand after wpeinit gave it a driver and an address. Loading a driver that is
-	// already loaded is harmless. What drvload says is kept in a file that the failure branch shows: a driver that Windows PE refuses is otherwise invisible.
+	// The drivers are loaded before wpeinit, so that a disk or a card that Windows does not know is there when the network and Setup start, and once more after it (a cheap second chance
+	// for a device that was not ready the first time; loading a driver that is already loaded is harmless). What drvload says is kept in a file that the failure branch shows: a driver
+	// that Windows PE refuses is otherwise invisible.
 	loadDrivers := func(what string) {
 		if s.Drivers {
-			raw(`if exist "%SystemDrive%\$WinPEDriver$\nul" echo Loading the drivers` + what + ` ...`)
-			raw(`if exist "%SystemDrive%\$WinPEDriver$\nul" for /r "%SystemDrive%\$WinPEDriver$" %%f in (*.inf) do drvload "%%f" >> "%SystemDrive%\drvload.log" 2>&1`)
+			// (no `if exist folder\nul` guard: that test is false for a folder on Windows PE's drive, which made this whole step silently skip every driver; the folder is in the
+			// image whenever Drivers is set)
+			line("echo Loading the drivers%s ...", what)
+			raw(`for /r "%SystemDrive%\$WinPEDriver$" %%f in (*.inf) do drvload "%%f" >> "%SystemDrive%\drvload.log" 2>&1`)
 		}
 	}
 	loadDrivers("")
