@@ -5,6 +5,7 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **The first-start guide can be opened again (#72).** The Account page has a "Show the first-start guide again" button, and `#start` in the address works too; nothing is reset or changed, and the guide's checks and Finish/Skip buttons work as before. Covered by `tools/admin-views.test.cjs`; the page was not looked at in a browser.
 - **A PC that refuses the Secure Boot shim is named on its row (#79).** A PC that fetched the whole shim by TFTP and did not ask for `ipxe.efi` or the menu within 30 seconds now shows `This PC took the Secure Boot shim but never started iPXE`, with why (its firmware trusts only Windows' own boot code) and the choices that need no firmware work: the rule *Install <ISO>, once (works with Secure Boot)*, or Secure Boot off for the session. A transfer still running is not flagged, and the row clears when the PC reaches the menu. Nothing is switched automatically. The TFTP server reports each transfer's start and end to the web server for this.
 - **Result of the `-offer-delay` experiment (rc.3): it did not help.** On the HP laptop with a Realtek chip it changed nothing, and with Bootlace's DHCP switched off altogether the PC still never moved past "Start PXE over IPv4": its firmware does not take up even the router's own offer. See the compatibility notes.
 

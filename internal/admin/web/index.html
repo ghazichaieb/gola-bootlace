@@ -1277,6 +1277,8 @@ async function pageLog() {
 }
 
 // ---- account
+/** Opens the first-start guide (also after it was finished or skipped) without changing any setting. */
+function openGuide() { state.view = "start"; location.hash = "start"; render(); }
 function pageAccount() {
   const page = $("#page");
   const { request: api } = viewScope(page);
@@ -1284,6 +1286,7 @@ function pageAccount() {
   <div class="field"><label for="p0">Current password</label><input id="p0" type="password" autocomplete="current-password" required></div>
   <div class="field"><label for="p1">New password</label><input id="p1" type="password" autocomplete="new-password" minlength="8" required><p class="hint">At least 8 characters. Other open sessions are logged out.</p></div>
   <div class="field"><label for="p2">New password again</label><input id="p2" type="password" autocomplete="new-password" minlength="8" required></div><button class="btn primary">Change password</button></form>
+  <div class="card" style="max-width:520px;margin-top:14px"><h2>First-start guide</h2><p class="small muted">Open the four-step guide again, to show it to someone or to run its checks. Nothing is reset and no setting changes.</p><button class="btn" id="guide">Show the first-start guide again</button></div>
   <p class="muted small" style="margin-top:14px">Anyone on the network can open this page, so keep the password to yourself. PCs that start from the network do not need it.</p>`;
   $("#pf").onsubmit = guard(async e => {
     e.preventDefault();
@@ -1291,12 +1294,13 @@ function pageAccount() {
     await api("/api/password", "POST", { current: $("#p0").value, new: $("#p1").value });
     $("#pf").reset(); toast("Password changed");
   });
+  $("#guide").onclick = openGuide;
 }
 
 // ---- start
 (async () => {
   const h = location.hash.slice(1);
-  if (views.some(v => v[0] === h)) state.view = h;
+  if (h === "start" || views.some(v => v[0] === h)) state.view = h; // (#start works after the guide was finished too)
   try { const s = await fetch("/api/session", { credentials: "same-origin" }).then(r => r.json()); state.authed = !!s.authenticated; state.version = s.version || ""; } catch (e) { state.authed = false; }
   render();
 })();

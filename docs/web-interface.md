@@ -24,7 +24,7 @@ minutes. Anyone on the network can reach the login page, so use a password you w
 
 | Page | What it does |
 |---|---|
-| Start here | (only on a new installation) four short steps: your own password, the library, who may use the server, and the checks |
+| Start here | (offered first only on a new installation, and from the Account page afterwards) four short steps: your own password, the library, who may use the server, and the checks |
 | Dashboard | ISOs, PCs seen, how long the server has run, the addresses PCs use, recent activity |
 | Server | the library (the folder with the ISOs): choose it with a folder picker, see its state and free space; the services PCs talk to (boot menu, Windows file share, iSCSI, network disk, TFTP, PXE) with their state and any error, start and stop them (with a warning when PCs are using the server), and whether they start by themselves when the program starts; the cache (with its entries, oldest first, and what is kept); who may use the server; a **self-test** that asks the server's own address for what a PC asks for, a **look for other PXE/DHCP servers** on the network, a **library speed test**, and a **backup of the settings** (download, restore, and the copy kept in the library) |
 | Library | the files of the library: upload, add from a web address (with a checksum), copy-in detection, rename, move, new folder, delete, who is using what, the checksums |
@@ -32,7 +32,7 @@ minutes. Anyone on the network can reach the login page, so use a password you w
 | PCs | every PC that asked for a menu (name from its firmware, MAC, address, UEFI or BIOS, what it did last) and a name of your choice for each (kept with the MAC address; when the PC offers a host name in its DHCP request, or an asset tag in its SMBIOS, one click takes it as the name), and a rule for each: show the menu, boot from its own disk, or start one ISO without a menu; a **Wake** button (Wake-on-LAN) and a **History** of what the server saw (also as a CSV for every PC). Rules can also be added by MAC address for a PC that has not started yet |
 | Menu | heading, seconds before the default choice starts, what starts by itself (nothing, the PC's own disk, an ISO), with a preview; **Tuning**: patterns that keep ISOs out of the menu, the colour of the highlighted line, the largest TFTP block and the blocks sent ahead |
 | Log | the last 2000 lines of the server log, live, with a filter, and a button that downloads the whole log (see `-log-file` for a log that survives a restart) |
-| Account | change the password |
+| Account | change the password; a **Show the first-start guide again** button opens "Start here" (also by `#start`) at any time, without resetting or changing anything; its checks and Finish/Skip work as on a new installation |
 
 Everything applies at the next start of a PC: the menu is made again for each one.
 

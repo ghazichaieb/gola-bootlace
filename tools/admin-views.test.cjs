@@ -69,3 +69,14 @@ test('active requests return data; sent mutations finish without stale UI feedba
  await mutation;
  assert.deepEqual(f.notices,[]);
 });
+test('the Account page offers the first-start guide again without changing a setting',()=>{
+ const f=fixture();
+ f.run('pageAccount()');
+ assert.match(f.page.innerHTML,/id="guide"/);
+ assert.match(f.page.innerHTML,/Show the first-start guide again/);
+ f.run('globalThis.drawn=0; render=()=>{drawn++}; state.setupDone=true; openGuide()');
+ assert.equal(f.run('state.view'),'start');
+ assert.equal(f.run('location.hash'),'start');
+ assert.equal(f.run('drawn'),1);
+ assert.equal(f.pending.length,0,'opening the guide sends nothing');
+});
