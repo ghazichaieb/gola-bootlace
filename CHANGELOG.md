@@ -5,6 +5,8 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **Result of the `-offer-delay` experiment (rc.3): it did not help.** On the HP laptop with a Realtek chip it changed nothing, and with Bootlace's DHCP switched off altogether the PC still never moved past "Start PXE over IPv4": its firmware does not take up even the router's own offer. See the compatibility notes.
+
 ## 0.5.2-rc.3 - 2026-10-31
 
 A pre-release for trying `-offer-delay` on the PCs that never accept the offers: `update -v 0.5.2-rc.3` in the container installs it (a plain `update` only follows full releases). It also contains everything of 0.5.2-rc.2.
