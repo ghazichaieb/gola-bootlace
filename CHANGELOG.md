@@ -5,6 +5,8 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **The ExpertBook's refusal of the shim is explained, and the notes say how to check a PC.** The ASUS ExpertBook B3405CCA still answers "Invalid signature" to the shim signed with both Microsoft CAs. Its key database was read (2026-10-31): it holds only "Microsoft Windows Production PCA 2011", neither "Microsoft Corporation UEFI CA 2011" nor "Microsoft UEFI CA 2023", so no shim can pass on it. The compatibility notes and the Secure Boot troubleshooting table now say so, with the PowerShell lines that read a PC's database. No program change.
+
 ## 0.5.2-rc.2 - 2026-10-30
 
 A pre-release for trying the shim on the ASUS ExpertBook B3405CCA: `update -v 0.5.2-rc.2` in the container installs it (a plain `update` only follows full releases). It also contains everything of 0.5.2-rc.1.
