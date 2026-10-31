@@ -22,3 +22,27 @@ test('long addresses and paths wrap on a phone instead of widening the page', ()
   assert.ok(/table\.rt td\{overflow-wrap:anywhere\}/.test(phone));
   assert.ok(/table\.rt td\.k,table\.rt td\.nowrap\{white-space:normal\}/.test(phone));
 });
+
+/** The colour tokens of a block of the stylesheet that starts at `marker`, as {name: "#rrggbb"}. */
+function tokens(marker) {
+  const block = css.slice(css.indexOf(marker)).match(/\{([^}]*)\}/)[1];
+  return Object.fromEntries([...block.matchAll(/--([\w-]+):\s*(#[0-9a-f]{6})/gi)].map(m => [m[1], m[2]]));
+}
+/** WCAG relative luminance of "#rrggbb". */
+function luminance(hex) {
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+/** WCAG contrast ratio of two "#rrggbb" colours. */
+function contrast(a, b) {
+  const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+for (const [theme, marker] of [['light', ':root{'], ['dark', ':root[data-theme="dark"]{']]) {
+  test(`${theme}: red text reads on the page's panels (AA, 4.5:1) and form controls have a 3:1 outline`, () => {
+    const t = Object.assign(tokens(':root{'), tokens(marker));
+    for (const bg of ['panel', 'panel2', 'bg', 'accent-soft']) assert.ok(contrast(t['accent-fg'], t[bg]) >= 4.5, `accent-fg on ${bg}: ${contrast(t['accent-fg'], t[bg]).toFixed(2)}`);
+    for (const bg of ['panel', 'bg']) assert.ok(contrast(t.field, t[bg]) >= 3, `field outline on ${bg}: ${contrast(t.field, t[bg]).toFixed(2)}`);
+  });
+}
