@@ -302,11 +302,22 @@ async function pageDash() {
 }
 
 // ---- server: the library and the services
+const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type=hidden]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+// trapTab keeps the Tab key inside a dialog: from the last control it goes to the first, from the first (or from outside the dialog) with Shift to the last
+function trapTab(e, root, active) {
+  if (e.key !== "Tab") return;
+  const items = [...root.querySelectorAll(FOCUSABLE)], i = items.indexOf(active);
+  if (!items.length) e.preventDefault();
+  else if (e.shiftKey ? i <= 0 : i < 0 || i === items.length - 1) { e.preventDefault(); items[e.shiftKey ? items.length - 1 : 0].focus(); }
+}
 function modal(html) {
   const back = document.createElement("div"); back.className = "modal-back";
   back.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`;
   const prev = document.activeElement;
-  const onKey = e => { if (e.key === "Escape" && [...document.querySelectorAll(".modal-back")].pop() === back) close(); };
+  const onKey = e => {
+    if ([...document.querySelectorAll(".modal-back")].pop() !== back) return;
+    if (e.key === "Escape") close(); else trapTab(e, back, document.activeElement);
+  };
   const close = () => { back.remove(); document.removeEventListener("keydown", onKey); if (prev && prev.focus) prev.focus(); };
   document.addEventListener("keydown", onKey);
   back.addEventListener("mousedown", e => { if (e.target === back) close(); });

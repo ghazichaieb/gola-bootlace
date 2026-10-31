@@ -80,3 +80,17 @@ test('the Account page offers the first-start guide again without changing a set
  assert.equal(f.run('drawn'),1);
  assert.equal(f.pending.length,0,'opening the guide sends nothing');
 });
+test('Tab stays inside a dialog: it wraps from the last control to the first and back (#70)', () => {
+  const f = fixture();
+  const control = name => ({ name, focused: 0, focus() { this.focused++; } });
+  const [a, b, c] = ['a', 'b', 'c'].map(control);
+  const root = { querySelectorAll: () => [a, b, c] };
+  const press = (active, shiftKey) => { const e = { key: 'Tab', shiftKey, prevented: false, preventDefault() { this.prevented = true; } }; f.context.trapTab(e, root, active); return e.prevented; };
+  assert.equal(press(c, false), true); assert.equal(a.focused, 1);
+  assert.equal(press(a, true), true); assert.equal(c.focused, 1);
+  assert.equal(press(null, false), true); assert.equal(a.focused, 2, 'focus outside the dialog comes back in');
+  assert.equal(press(b, false), false, 'a Tab inside the dialog is left to the browser');
+  assert.equal(press(b, true), false);
+  const other = { key: 'a', preventDefault() { assert.fail('only Tab is handled'); } }; f.context.trapTab(other, root, c);
+  const none = { key: 'Tab', prevented: false, preventDefault() { this.prevented = true; } }; f.context.trapTab(none, { querySelectorAll: () => [] }, null); assert.equal(none.prevented, true);
+});
