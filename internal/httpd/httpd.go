@@ -104,6 +104,8 @@ type Server struct {
 	SecureBoot SecureBoot
 	// Now, when set, is the clock the PC list and the detection of a PC that refuses the shim read (tests).
 	Now func() time.Time
+	// entryList, when set, replaces the look at the library in the answers about the Windows-native start (tests).
+	entryList func(config.Config) ([]entryInfo, error)
 	// BuiltinSecureBoot replaces the iPXE project's signed files that are built into the program (tests only).
 	BuiltinSecureBoot *secureboot.Set
 }

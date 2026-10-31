@@ -38,8 +38,10 @@ type Client struct {
 	MenuAt      time.Time `json:"menuAt,omitempty"`
 	AnswersLeft int       `json:"answersLeft,omitempty"`
 	// ShimRefused: the PC fetched the whole Secure Boot shim, did not ask for iPXE within shimGrace and has not reached the menu since (issue #79).
-	ShimRefused bool      `json:"shimRefused,omitempty"`
-	shimDone    time.Time // when the shim's transfer to this PC ended, until it asks for iPXE or the menu
+	ShimRefused bool `json:"shimRefused,omitempty"`
+	// ShimFallback is what the PC's next network boot gets because of that (see shimfallback.go); only set while ShimRefused is, and not when a rule decides.
+	ShimFallback *ShimFallback `json:"shimFallback,omitempty"`
+	shimDone     time.Time     // when the shim's transfer to this PC ended, until it asks for iPXE or the menu
 }
 
 const maxClients = 200
@@ -203,6 +205,13 @@ func (s *Server) noteFetch(remoteAddr, title string) {
 
 // Clients are the PCs that asked for a menu, the one seen last first.
 func (s *Server) Clients() []Client {
+	out := s.clientsSnapshot()
+	s.annotateShimFallback(out) // (outside the lock: it looks at the library)
+	return out
+}
+
+// clientsSnapshot copies the list of PCs, the one seen last first, with the flag of those that refuse the shim.
+func (s *Server) clientsSnapshot() []Client {
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
 	if days := s.settings().PCDays; days > 0 {

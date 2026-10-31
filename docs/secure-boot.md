@@ -132,6 +132,28 @@ systemctl restart bootlace
 
 (For another release replace `v2.0.0` and the checksum; if `tar` does not find `ipxeboot/x86_64-sb`, list the archive with `tar tzf ipxeboot.tar.gz`. Without the `BOOTLACE_SECURE_BOOT_DIR` line, the folder `/var/lib/bootlace/secure-boot` next to the settings file is the one used when *Own key* is chosen in the web interface; the shim's name is still given by `BOOTLACE_SECURE_BOOT_SHIM`.) The log says `Secure Boot route: ON, own key (...)`, and warns (`warning: ... has no ipxe.efi`) when the folder has the shim but not the file the shim asks for next; the start is not refused for that, because the folder is read at every request and the file can be copied in while the server runs. The Server page marks each file `present` or `missing`.
 
+## A PC that refuses the shim: the Windows offer
+
+A PC whose firmware takes the shim but never starts iPXE is flagged on the PCs page after 30 seconds ([web-interface.md](web-interface.md#the-list-of-pcs)). For such a PC the next
+network boot can be answered with the Windows start described in the next section, with no rule and no setting touched. The choices made, and why:
+
+- **When.** Only to a PC that is flagged at the moment of its UEFI boot request. A PC that is not flagged, a BIOS boot and a PC that runs iPXE are never affected. Anything that
+  shows iPXE is running (a request for `ipxe.efi`, a DHCP request from iPXE, the menu) ends the flag, so the offer stops by itself when Secure Boot is switched off or the firmware
+  is fixed.
+- **Which ISO.** Only when exactly one Windows installation ISO that is visible in the menu can be started this way ("Windows setup"; not a Windows PE, not a Linux ISO, not a hidden
+  ISO). With several, or none, the boot is not changed and the row says so; the person then chooses with the ordinary rule *Install <ISO>, once (works with Secure Boot)*, so there is
+  one mechanism for the choice, not two.
+- **Once.** The offer is used up when it is made, as a `native:` rule is: it ends the flag, so a PC that has installed Windows and still boots from the network first is not sent to
+  install it again. If it refuses the shim again it is flagged again, and the following boot is offered once more. The ordinary hand-off for the start is the same as for a rule.
+- **Never over a rule.** A rule for the PC (any action, including a `native:` rule, which then works as before), or a rule for a kind of PC that fits it, decides alone.
+- **Visible and reversible.** The row says why and names the ISO, with one button to turn the offer off for that PC (kept in the PC's options, so it lasts across restarts) and to
+  turn it on again. The start is also in the PC's history and last action as `native: <title>`, and in the log.
+- **No menu, no Linux.** With Secure Boot on such a PC gets only the Windows install: no menu and no Linux. The interface text says so in every state.
+- **Memory only.** Like the flag it depends on, the pending offer is not saved across a restart of the program; the off switch is.
+
+Not validated on a real PC: the decision and its effect on the DHCP boot file name are covered by tests with a fake clock and a fake library; the Windows start itself is the one
+tested in the next section.
+
 ## Windows, with Secure Boot on (works)
 
 Windows' own boot manager is signed by Microsoft, so the firmware accepts it. A rule in the web interface (PCs page, "Install ..., once (works with Secure Boot)", or a

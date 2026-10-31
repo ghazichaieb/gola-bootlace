@@ -225,11 +225,14 @@ type PCOptions struct {
 	// SecureBoot says that this PC has UEFI Secure Boot on and is to be sent to iPXE through a signed shim (see package httpd, secureboot.go; the server must have been
 	// started with -secure-boot-dir). The server cannot see the firmware's Secure Boot state, so a person says it, once per PC.
 	SecureBoot bool `json:"secureBoot,omitempty"`
+	// NoShimFallback says that this PC is not to be answered with the Windows-native start when its firmware refuses the Secure Boot shim (see package httpd,
+	// shimfallback.go); a person turns the automatic offer off for it on the PCs page.
+	NoShimFallback bool `json:"noShimFallback,omitempty"`
 }
 
 // Empty says that nothing is set: such an entry is not kept.
 func (o PCOptions) Empty() bool {
-	return o.Args == "" && !o.Debug.On() && o.Answer == "" && !o.SecureBoot
+	return o.Args == "" && !o.Debug.On() && o.Answer == "" && !o.SecureBoot && !o.NoShimFallback
 }
 
 // MaxArgs is the longest extra kernel arguments line.

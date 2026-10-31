@@ -197,12 +197,19 @@ func (s *Server) NativeBootFile(mac string, efi bool) (string, bool) {
 			id = strings.TrimPrefix(r.Action, "native:")
 		}
 	}
-	if id == "" {
-		return "", false
+	auto := id == "" // no rule of the person's: a PC whose firmware refused the shim may still be offered the start (shimfallback.go)
+	pc, refusing := s.refusingPC(m)
+	if auto && !refusing {
+		return "", false // (the usual case: the library is not looked at for every PC)
 	}
-	list, err := s.entryInfos(s.settings())
+	list, err := s.libraryEntries(s.settings())
 	if err != nil {
 		return "", false
+	}
+	if auto {
+		if id = s.shimFallbackISO(pc, list); id == "" {
+			return "", false
+		}
 	}
 	for _, e := range list {
 		if e.ISO.ID != id {
@@ -218,22 +225,28 @@ func (s *Server) NativeBootFile(mac string, efi bool) (string, bool) {
 			s.logf("%s: the rule names %s, which cannot be started this way yet (only Windows set-up and Ubuntu can): showing the menu", m, e.Title)
 			return "", false
 		}
-		_ = s.Config.Update(func(c *config.Config) error {
-			for i, r := range c.Rules {
-				if r.MAC == m && r.Action == "native:"+id {
-					c.Rules = append(c.Rules[:i], c.Rules[i+1:]...)
-					break
+		why := "its rule starts %s with the firmware's own signed boot loaders (works with Secure Boot); the rule is used up"
+		if auto {
+			s.useUpShimFallback(m)
+			why = "its firmware refused the Secure Boot shim, so it is offered %s with the firmware's own signed boot loaders (no menu, no Linux); the offer is used up"
+		} else {
+			_ = s.Config.Update(func(c *config.Config) error {
+				for i, r := range c.Rules {
+					if r.MAC == m && r.Action == "native:"+id {
+						c.Rules = append(c.Rules[:i], c.Rules[i+1:]...)
+						break
+					}
 				}
-			}
-			return nil
-		})
+				return nil
+			})
+		}
 		s.Handoff.Pending(m, id, kind)
 		s.grantAnswers(m)
 		s.setAction(m, "native: "+e.Title)
-		s.logf("%s: its rule starts %s with the firmware's own signed boot loaders (works with Secure Boot); the rule is used up", m, e.Title)
+		s.logf("%s: "+why, m, e.Title)
 		return s.Handoff.BootFile(m, true)
 	}
-	s.logf("%s: its rule names an ISO that is not there any more", m)
+	s.logf("%s: it is to be started natively, but that ISO is not there any more", m)
 	return "", false
 }
 
@@ -252,6 +265,9 @@ func (s *Server) NoteDHCP(mac string, efi, ipxe bool) {
 		c.LastAction = "asked for a boot file"
 	}
 	c.LastSeen = now
+	if ipxe {
+		c.shimDone = time.Time{} // it runs iPXE now (Secure Boot is off or fixed): no refusal to answer
+	}
 	c.note("asked for a boot file", now) // (so that a PC which never gets as far as the menu has a history to read)
 	if c.Platform == "" {
 		c.Platform = "pcbios"

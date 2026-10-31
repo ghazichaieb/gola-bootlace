@@ -136,6 +136,7 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("PUT /api/pcs/{mac}/name", a.authed(a.pcRename))
 	api.HandleFunc("PUT /api/pcs/{mac}/options", a.authed(a.pcOptions))
 	api.HandleFunc("PUT /api/pcs/{mac}/secureboot", a.authed(a.pcSecureBoot))
+	api.HandleFunc("PUT /api/pcs/{mac}/shimfallback", a.authed(a.pcShimFallback))
 	api.HandleFunc("GET /api/secureboot", a.authed(a.secureBootGet))
 	api.HandleFunc("PUT /api/secureboot", a.authed(a.secureBootPut))
 	api.HandleFunc("POST /api/pcs/{mac}/wake", a.authed(a.pcWake))
@@ -913,8 +914,27 @@ func (a *Admin) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // shimRefusedHint is said on the row of a PC that took the whole Secure Boot shim and never started iPXE (issue #79).
-const shimRefusedHint = "This PC took the Secure Boot shim but never started iPXE. That usually means its firmware trusts only Windows' own boot code (it lacks the Microsoft third-party UEFI CA). " +
-	`Choices that need no firmware work: give it the rule "Install <ISO>, once (works with Secure Boot)", which starts Windows' own boot manager, or switch Secure Boot off for the session (docs/secure-boot.md).`
+const shimRefusedHint = "This PC took the Secure Boot shim but never started iPXE. That usually means its firmware trusts only Windows' own boot code (it lacks the Microsoft third-party UEFI CA). "
+
+// noMenuWarning is added to every sentence about the Windows-native start: that start has no menu and no Linux.
+const noMenuWarning = " While Secure Boot is on, such a PC gets no menu and no Linux: only the Windows install."
+
+// shimRefusedText is the whole text on the row of a flagged PC: why it is flagged and what its next network boot gets (see httpd.ShimFallback). A nil fallback means that a
+// rule of the person's decides.
+func shimRefusedText(fb *httpd.ShimFallback) string {
+	switch {
+	case fb == nil:
+		return shimRefusedHint + "The rule you gave this PC (or its kind of PC) decides what it is sent to; Bootlace changes nothing."
+	case fb.State == "offered":
+		return shimRefusedHint + "Its next network boot therefore starts " + fb.Title + " with Windows' own boot manager (works with Secure Boot), so a Windows install needs no setting." + noMenuWarning +
+			" The offer is used once and stops by itself when the PC starts iPXE. Press \"Turn off the Windows offer\" to stop it."
+	case fb.State == "choose":
+		return shimRefusedHint + fmt.Sprintf("The library has %d Windows ISOs that can be started with Windows' own boot manager, so nothing is changed for this PC's boot: choose one by giving it the rule \"Install <ISO>, once (works with Secure Boot)\".", fb.Count) + noMenuWarning
+	case fb.State == "none":
+		return shimRefusedHint + "No Windows ISO in the library can be started with Windows' own boot manager, so nothing is changed for this PC's boot. Add one, or switch Secure Boot off for the session (docs/secure-boot.md)." + noMenuWarning
+	}
+	return shimRefusedHint + "The automatic Windows offer is turned off for this PC, so nothing is changed for its boot. Press \"Turn on the Windows offer\" to allow it, or give it the rule \"Install <ISO>, once (works with Secure Boot)\"." + noMenuWarning
+}
 
 func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	c := a.o.Store.Get()
@@ -931,7 +951,7 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	}
 	hintOf := func(cl httpd.Client, o *config.PCOptions) string {
 		if cl.ShimRefused {
-			return shimRefusedHint
+			return shimRefusedText(cl.ShimFallback)
 		}
 		if cl.LastSeen.IsZero() || cl.Count > 0 {
 			return ""
@@ -1124,9 +1144,10 @@ func (a *Admin) pcOptions(w http.ResponseWriter, r *http.Request) {
 		if c.PCOptions == nil {
 			c.PCOptions = map[string]config.PCOptions{}
 		}
-		in.Answer = c.PCOptions[mac].Answer         // (the answer file choice has a call of its own and is not changed here)
-		in.SecureBoot = c.PCOptions[mac].SecureBoot // (so has the Secure Boot route)
-		c.PCOptions[mac] = in                       // (Validate trims the arguments and drops an entry with nothing set)
+		in.Answer = c.PCOptions[mac].Answer                 // (the answer file choice has a call of its own and is not changed here)
+		in.SecureBoot = c.PCOptions[mac].SecureBoot         // (so has the Secure Boot route)
+		in.NoShimFallback = c.PCOptions[mac].NoShimFallback // (and the fallback for a PC that refuses the shim)
+		c.PCOptions[mac] = in                               // (Validate trims the arguments and drops an entry with nothing set)
 		return nil
 	})
 	if err != nil {
@@ -1221,6 +1242,38 @@ func (a *Admin) pcSecureBoot(w http.ResponseWriter, r *http.Request) {
 	}
 	if a.o.Logf != nil {
 		a.o.Logf("web interface: Secure Boot route for %s: %v", mac, in.On)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// pcShimFallback turns the automatic Windows-native start of a PC that refuses the Secure Boot shim on or off for that PC (httpd.ShimFallback).
+func (a *Admin) pcShimFallback(w http.ResponseWriter, r *http.Request) {
+	mac, ok := config.NormalizeMAC(r.PathValue("mac"))
+	if !ok {
+		fail(w, http.StatusBadRequest, "that is not a MAC address (like aa:bb:cc:dd:ee:ff)")
+		return
+	}
+	var in struct {
+		On bool `json:"on"`
+	}
+	if !readJSON(w, r, &in) {
+		return
+	}
+	err := a.o.Store.Update(func(c *config.Config) error {
+		if c.PCOptions == nil {
+			c.PCOptions = map[string]config.PCOptions{}
+		}
+		o := c.PCOptions[mac]
+		o.NoShimFallback = !in.On
+		c.PCOptions[mac] = o // (an entry with nothing set is dropped by the check)
+		return nil
+	})
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if a.o.Logf != nil {
+		a.o.Logf("web interface: Windows offer for %s when it refuses the Secure Boot shim: %v", mac, in.On)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

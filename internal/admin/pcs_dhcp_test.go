@@ -232,7 +232,7 @@ func TestThePCsPageSaysWhenAPCTookTheShimAndNeverStartedIPXE(t *testing.T) {
 	row = pcRows(t, r.rig, "/api/pcs")[0].(map[string]any)
 	hint, _ := row["hint"].(string)
 	if row["shimRefused"] != true || !strings.Contains(hint, "took the Secure Boot shim but never started iPXE") ||
-		!strings.Contains(hint, `"Install <ISO>, once (works with Secure Boot)"`) || !strings.Contains(hint, "switch Secure Boot off") {
+		!strings.Contains(hint, "No Windows ISO in the library") || !strings.Contains(hint, "switch Secure Boot off") || !strings.Contains(hint, "no menu and no Linux") {
 		t.Fatalf("row %v", row)
 	}
 	menu := httptest.NewRequest("GET", "/menu?mac=d8:43:ae:d6:2f:05&ip=10.0.0.50", nil)
@@ -241,5 +241,73 @@ func TestThePCsPageSaysWhenAPCTookTheShimAndNeverStartedIPXE(t *testing.T) {
 	row = pcRows(t, r.rig, "/api/pcs")[0].(map[string]any)
 	if hint, _ = row["hint"].(string); row["shimRefused"] != nil || hint != "" {
 		t.Fatalf("still flagged after the menu: %v", row)
+	}
+}
+
+// The Windows offer of a flagged PC is switched with its own call, kept in the PC's options, and the row's text follows it.
+func TestTheWindowsOfferOfAFlaggedPCCanBeTurnedOffAndOn(t *testing.T) {
+	r := newRealRig(t, httpd.SecureBoot{Dir: t.TempDir(), Shim: "ipxe-shimx64.efi", All: true})
+	now := time.Date(2026, 10, 31, 10, 0, 0, 0, time.UTC)
+	r.web.Now = func() time.Time { return now }
+	r.web.NoteDHCP("d8:43:ae:d6:2f:05", true, false)
+	ip := net.ParseIP("10.0.0.50")
+	r.web.NoteTFTP(ip, "sb/ipxe-shimx64.efi", false)
+	r.web.NoteTFTP(ip, "sb/ipxe-shimx64.efi", true)
+	now = now.Add(time.Minute)
+	if code, _ := r.do("PUT", "/api/pcs/not-a-mac/shimfallback", map[string]any{"on": false}, nil); code != 400 {
+		t.Fatalf("a bad MAC address: %d", code)
+	}
+	anon := &rig{t: t, ts: r.ts}
+	if code, _ := anon.do("PUT", "/api/pcs/d8:43:ae:d6:2f:05/shimfallback", map[string]any{"on": false}, nil); code != 401 {
+		t.Fatalf("without a login: %d", code)
+	}
+	if code, _ := r.do("PUT", "/api/pcs/d8:43:ae:d6:2f:05/shimfallback", map[string]any{"on": false}, nil); code != 200 {
+		t.Fatalf("turning it off: %d", code)
+	}
+	if !r.store.Get().PCOptions["d8:43:ae:d6:2f:05"].NoShimFallback {
+		t.Fatalf("not kept: %+v", r.store.Get().PCOptions)
+	}
+	row := pcRows(t, r.rig, "/api/pcs")[0].(map[string]any)
+	if hint, _ := row["hint"].(string); !strings.Contains(hint, "turned off for this PC") || !strings.Contains(hint, "Turn on the Windows offer") {
+		t.Fatalf("row %v", row)
+	}
+	if code, _ := r.do("PUT", "/api/pcs/d8:43:ae:d6:2f:05/shimfallback", map[string]any{"on": true}, nil); code != 200 {
+		t.Fatalf("turning it on: %d", code)
+	}
+	if _, kept := r.store.Get().PCOptions["d8:43:ae:d6:2f:05"]; kept {
+		t.Fatalf("an entry with nothing set was kept: %+v", r.store.Get().PCOptions)
+	}
+}
+
+// The kernel-options call does not wipe the choice made with the Windows offer's own call.
+func TestSavingKernelOptionsKeepsTheWindowsOfferChoice(t *testing.T) {
+	r := newRealRig(t, httpd.SecureBoot{Dir: t.TempDir(), Shim: "ipxe-shimx64.efi", All: true})
+	const mac = "d8:43:ae:d6:2f:05"
+	r.do("PUT", "/api/pcs/"+mac+"/shimfallback", map[string]any{"on": false}, nil)
+	if code, _ := r.do("PUT", "/api/pcs/"+mac+"/options", map[string]any{"args": "nomodeset"}, nil); code != 200 {
+		t.Fatalf("saving options: %d", code)
+	}
+	if o := r.store.Get().PCOptions[mac]; !o.NoShimFallback || o.Args != "nomodeset" {
+		t.Fatalf("options %+v", o)
+	}
+}
+
+// Every state of the offer has its sentence, and every sentence that may lead to the Windows start says that such a PC gets no menu and no Linux.
+func TestTheRowTextSaysWhatEveryStateOfTheOfferMeans(t *testing.T) {
+	for _, tc := range []struct {
+		fb     *httpd.ShimFallback
+		want   string
+		warned bool
+	}{
+		{&httpd.ShimFallback{State: "offered", Title: "Windows 11"}, "next network boot therefore starts Windows 11", true},
+		{&httpd.ShimFallback{State: "choose", Count: 3}, "3 Windows ISOs", true},
+		{&httpd.ShimFallback{State: "none"}, "No Windows ISO in the library", true},
+		{&httpd.ShimFallback{State: "off"}, "turned off for this PC", true},
+		{nil, "decides what it is sent to", false},
+	} {
+		got := shimRefusedText(tc.fb)
+		if !strings.Contains(got, tc.want) || strings.Contains(got, "no menu and no Linux") != tc.warned {
+			t.Errorf("%+v: %s", tc.fb, got)
+		}
 	}
 }
