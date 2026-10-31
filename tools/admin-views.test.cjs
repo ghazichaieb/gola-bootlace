@@ -94,3 +94,18 @@ test('Tab stays inside a dialog: it wraps from the last control to the first and
   const other = { key: 'a', preventDefault() { assert.fail('only Tab is handled'); } }; f.context.trapTab(other, root, c);
   const none = { key: 'Tab', prevented: false, preventDefault() { this.prevented = true; } }; f.context.trapTab(none, { querySelectorAll: () => [] }, null); assert.equal(none.prevented, true);
 });
+test('the boot-entries dialog neither offers a hidden entry as the default nor lets the default be hidden (#70)', () => {
+  const f = fixture();
+  const row = (id, checked) => ({ dataset: { entry: id }, box: { checked, disabled: false }, querySelector(s) { assert.equal(s, '[data-hidden]'); return this.box; } });
+  const rows = [row('a', false), row('b', true)];
+  const options = [{ value: '', disabled: false }, { value: 'a', disabled: false }, { value: 'b', disabled: false }];
+  const select = { value: 'a', options };
+  const root = { querySelector: () => select, querySelectorAll: () => rows };
+  f.context.syncEntryDefault(root);
+  assert.deepEqual(options.map(o => o.disabled), [false, false, true], 'the hidden entry is not offered');
+  assert.deepEqual(rows.map(r => r.box.disabled), [true, false], 'the default entry cannot be hidden');
+  select.value = ''; rows[0].box.checked = true;
+  f.context.syncEntryDefault(root);
+  assert.deepEqual(options.map(o => o.disabled), [false, true, true]);
+  assert.deepEqual(rows.map(r => r.box.disabled), [false, false]);
+});
