@@ -5,6 +5,7 @@ program is not yet in its final form and any release may change how it is set up
 
 ## Unreleased
 
+- **The restore comparison counts boot-entry settings (#70).** The table shown before a backup is restored (Server > backup) now has a row "ISOs with boot-entry settings", Now and After; they were already part of the backup and restored, but not counted. Covered by a test.
 - **Boot entries dialog: a hidden entry is not offered as the default (#70).** The "Default entry" list leaves out (greys) the entries ticked "Hide this entry", and the entry chosen as the default cannot be hidden, instead of the server refusing the save afterwards. Covered by `tools/admin-views.test.cjs`; not tried in a real browser (no ISO with several entries was available).
 - **Answer-file arguments go before a bare `--` too (#70).** An ISO whose boot line has a lone `--` (Linux Mint style) now gets the answer-file arguments in front of it, where the kernel reads them, as the extra arguments of an entry already did. Covered by a test.
 - **Dialogs keep the Tab key inside (#70).** Every dialog of the web interface set `aria-modal` but Tab could still reach the page behind it. Tab now goes from the last control to the first and Shift+Tab the other way, and focus that is outside the dialog comes back in. Tested in `tools/admin-views.test.cjs` and in Edge (31 key presses, focus never left the dialog).

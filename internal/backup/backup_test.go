@@ -232,3 +232,14 @@ func TestBootEntryChoicesRoundTripThroughBackup(t *testing.T) {
 		t.Fatalf("lost entry choices: %+v", got)
 	}
 }
+
+// The comparison before a restore counts the saved boot-entry settings too, since they are part of the backup and are restored (issue #70).
+func TestCountsIncludeTheBootEntrySettings(t *testing.T) {
+	c := config.Config{ISOEntries: map[string]config.ISOEntrySettings{"a": {Default: "x"}, "b": {Entries: map[string]config.EntryOptions{"y": {Hidden: true}}}}}
+	if got := CountsOf(c, 0).Entries; got != 2 {
+		t.Fatalf("entry settings counted as %d, want 2", got)
+	}
+	if got := CountsOf(config.Config{}, 0).Entries; got != 0 {
+		t.Fatalf("an empty config counts %d", got)
+	}
+}
