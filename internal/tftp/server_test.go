@@ -274,12 +274,102 @@ func TestAWindowSurvivesBlockNumbersGoingRoundAndAnExactMultiple(t *testing.T) {
 	}
 }
 
-func TestAClientThatAsksForAWindowIsLeftToTheNormalWay(t *testing.T) {
-	data := content(1428*20 + 5)
-	srv := startWindow(t, fstest.MapFS{"f": {Data: data}}, 8)
-	got, _, errMsg := get(t, srv, "f", "blksize\x001428", "windowsize\x004")
-	if errMsg != "" || !bytes.Equal(got, data) {
-		t.Errorf("err %q, %d bytes", errMsg, len(got))
+// windowClient is a client that follows RFC 7440 as Windows' boot loader does: it asks for a window size, takes the window the server confirms (1 when the server
+// does not confirm one), and acknowledges only the last block of every window, or the last block of the file. A block from the future is answered with the
+// acknowledgement of the last block taken. drop says which packets get lost on the way. It returns the data, the confirmed window and how many acknowledgements
+// it sent (one per round trip).
+func windowClient(t *testing.T, server *net.UDPAddr, file string, ask int, drop func(block uint16, seen int) bool) (data []byte, window, acks int) {
+	t.Helper()
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	req := append([]byte{0, opRRQ}, []byte(file+"\x00octet\x00blksize\x001428\x00windowsize\x00"+fmt.Sprint(ask)+"\x00")...)
+	conn.WriteTo(req, server)
+	buf := make([]byte, 70000)
+	var peer net.Addr
+	window = 1
+	expect, inWindow := uint16(1), 0
+	seen := map[uint16]int{}
+	ack := func(block uint16) {
+		acks++
+		conn.WriteTo([]byte{0, opACK, byte(block >> 8), byte(block)}, peer)
+	}
+	for {
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		n, from, err := conn.ReadFrom(buf)
+		if err != nil {
+			t.Fatalf("no answer: %v", err)
+		}
+		if peer == nil {
+			peer = from
+		}
+		switch binary.BigEndian.Uint16(buf) {
+		case opERROR:
+			t.Fatalf("error: %s", buf[4:n])
+		case opOACK:
+			parts := strings.Split(string(buf[2:n]), "\x00")
+			for i := 0; i+1 < len(parts); i += 2 {
+				if parts[i] == "windowsize" {
+					fmt.Sscanf(parts[i+1], "%d", &window)
+				}
+			}
+			ack(0)
+		case opDATA:
+			b := binary.BigEndian.Uint16(buf[2:])
+			seen[b]++
+			if drop != nil && drop(b, seen[b]) {
+				continue
+			}
+			if b != expect {
+				ack(expect - 1)
+				inWindow = 0
+				continue
+			}
+			data = append(data, buf[4:n]...)
+			expect++
+			inWindow++
+			last := n-4 < 1428
+			if last || inWindow == window {
+				ack(b)
+				inWindow = 0
+			}
+			if last {
+				return data, window, acks
+			}
+		}
+	}
+}
+
+func TestAClientThatAsksForAWindowGetsItConfirmedAndNeedsFewerRoundTrips(t *testing.T) {
+	data := content(1428*320 + 5)
+	srv := start(t, fstest.MapFS{"f": {Data: data}})
+	for _, ask := range []int{1, 4, 16} {
+		got, window, acks := windowClient(t, srv, "f", ask, nil)
+		if !bytes.Equal(got, data) || window != ask {
+			t.Errorf("asked %d: window %d confirmed, %d bytes arrived", ask, window, len(got))
+		}
+		t.Logf("asked %d: %d acknowledgements (round trips) for 321 blocks", ask, acks)
+		if blocks := 321; acks > blocks/ask+3 {
+			t.Errorf("asked %d: %d acknowledgements for %d blocks, the server did not send a window ahead", ask, acks, blocks)
+		}
+	}
+}
+
+func TestAWindowAskedForIsCutDownAndSurvivesLoss(t *testing.T) {
+	data := content(1428*300 + 77)
+	srv := start(t, fstest.MapFS{"f": {Data: data}})
+	got, window, _ := windowClient(t, srv, "f", 64, func(b uint16, seen int) bool { return (b == 10 || b == 150 || b == 301) && seen == 1 })
+	if window != maxWindow || !bytes.Equal(got, data) {
+		t.Errorf("window %d confirmed (want %d), %d bytes arrived, want %d, or the content differs", window, maxWindow, len(got), len(data))
+	}
+}
+
+func TestAnUnreadableWindowSizeIsNotConfirmed(t *testing.T) {
+	srv := start(t, fstest.MapFS{"f": {Data: content(5000)}})
+	if _, oack, msg := get(t, srv, "f", "windowsize", "lots"); msg != "" || oack["windowsize"] != "" {
+		t.Errorf("error %q, option acknowledgement %v", msg, oack)
 	}
 }
 

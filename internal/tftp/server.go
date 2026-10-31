@@ -193,6 +193,17 @@ func (s *Server) read(conn net.PacketConn, client net.Addr, raw []byte) error {
 	if _, ok := req.options["tsize"]; ok {
 		oack = append(oack, "tsize", strconv.FormatInt(info.Size(), 10))
 	}
+	window := 1
+	if v, asked := req.options["windowsize"]; asked {
+		if n, err := strconv.Atoi(v); err == nil && n >= 1 {
+			window = min(n, maxWindow)
+			oack = append(oack, "windowsize", strconv.Itoa(window))
+		}
+	} else if s.Window != nil {
+		if udp, ok := client.(*net.UDPAddr); ok {
+			window = s.Window(udp.IP, name)
+		}
+	}
 	retries := s.Retries
 	if retries <= 0 {
 		retries = 5
@@ -201,12 +212,6 @@ func (s *Server) read(conn net.PacketConn, client net.Addr, raw []byte) error {
 	if len(oack) > 0 { // options: the client confirms them with ACK 0 before the data starts
 		if err := t.send(oackPacket(oack), 0); err != nil {
 			return err
-		}
-	}
-	window := 1
-	if _, asked := req.options["windowsize"]; !asked && s.Window != nil {
-		if udp, ok := client.(*net.UDPAddr); ok {
-			window = s.Window(udp.IP, name)
 		}
 	}
 	started := time.Now()
