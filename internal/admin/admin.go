@@ -912,6 +912,10 @@ func (a *Admin) settingsUpdate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// shimRefusedHint is said on the row of a PC that took the whole Secure Boot shim and never started iPXE (issue #79).
+const shimRefusedHint = "This PC took the Secure Boot shim but never started iPXE. That usually means its firmware trusts only Windows' own boot code (it lacks the Microsoft third-party UEFI CA). " +
+	`Choices that need no firmware work: give it the rule "Install <ISO>, once (works with Secure Boot)", which starts Windows' own boot manager, or switch Secure Boot off for the session (docs/secure-boot.md).`
+
 func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 	c := a.o.Store.Get()
 	rules := map[string]config.Rule{}
@@ -926,6 +930,9 @@ func (a *Admin) pcs(w http.ResponseWriter, r *http.Request) {
 		Hint    string            `json:"hint,omitempty"`    // for a PC that asked for a boot file and never loaded the menu: why that may be
 	}
 	hintOf := func(cl httpd.Client, o *config.PCOptions) string {
+		if cl.ShimRefused {
+			return shimRefusedHint
+		}
 		if cl.LastSeen.IsZero() || cl.Count > 0 {
 			return ""
 		}

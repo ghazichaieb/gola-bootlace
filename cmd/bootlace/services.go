@@ -108,7 +108,7 @@ func (p serverPlan) startTFTP() (service.Instance, error) {
 		return service.Instance{}, fmt.Errorf("cannot open port 69: %w", err)
 	}
 	go func() {
-		if err := (&tftp.Server{FS: assets.IPXE(), Logf: p.logf, LocalIP: p.ip, Lookup: p.web.TFTPLookup, Window: p.web.TFTPWindow, MaxBlock: p.web.TFTPMaxBlock, Allow: p.allow}).Serve(conn); err != nil {
+		if err := (&tftp.Server{FS: assets.IPXE(), Logf: p.logf, LocalIP: p.ip, Lookup: p.web.TFTPLookup, Window: p.web.TFTPWindow, MaxBlock: p.web.TFTPMaxBlock, Served: p.web.NoteTFTP, Allow: p.allow}).Serve(conn); err != nil {
 			p.logf("TFTP: %v", err)
 		}
 	}()

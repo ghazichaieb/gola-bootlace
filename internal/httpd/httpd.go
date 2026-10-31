@@ -102,6 +102,8 @@ type Server struct {
 	TFTPAhead int
 	// SecureBoot is what the program was started with about the route for PCs with UEFI Secure Boot on (see secureboot.go); what the web interface saved in Config counts when it says nothing.
 	SecureBoot SecureBoot
+	// Now, when set, is the clock the PC list and the detection of a PC that refuses the shim read (tests).
+	Now func() time.Time
 	// BuiltinSecureBoot replaces the iPXE project's signed files that are built into the program (tests only).
 	BuiltinSecureBoot *secureboot.Set
 }

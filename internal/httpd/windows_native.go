@@ -243,7 +243,7 @@ func (s *Server) NoteDHCP(mac string, efi, ipxe bool) {
 	if !ok {
 		return
 	}
-	now := time.Now()
+	now := s.now()
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
 	c := s.clients[m]

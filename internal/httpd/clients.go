@@ -37,6 +37,9 @@ type Client struct {
 	MenuIP      string    `json:"menuIp,omitempty"`
 	MenuAt      time.Time `json:"menuAt,omitempty"`
 	AnswersLeft int       `json:"answersLeft,omitempty"`
+	// ShimRefused: the PC fetched the whole Secure Boot shim, did not ask for iPXE within shimGrace and has not reached the menu since (issue #79).
+	ShimRefused bool      `json:"shimRefused,omitempty"`
+	shimDone    time.Time // when the shim's transfer to this PC ended, until it asks for iPXE or the menu
 }
 
 const maxClients = 200
@@ -131,7 +134,7 @@ func (s *Server) noteClient(r *http.Request) Client {
 	if mac == "" {
 		mac = "unknown-" + host // an old script without its identity: still listed, by address
 	}
-	now := time.Now()
+	now := s.now()
 	s.clientsMu.Lock()
 	defer s.clientsMu.Unlock()
 	if s.clients == nil {
@@ -142,6 +145,7 @@ func (s *Server) noteClient(r *http.Request) Client {
 		s.logf("%s", warn)
 	}
 	c.IP, c.LastSeen = ip, now
+	c.shimDone = time.Time{} // it reached the menu, so iPXE did start
 	c.Count++
 	c.note("asked for the menu", now)
 	s.changed()
@@ -205,8 +209,11 @@ func (s *Server) Clients() []Client {
 		s.forgetBefore(time.Now().AddDate(0, 0, -days))
 	}
 	out := make([]Client, 0, len(s.clients))
+	now := s.now()
 	for _, c := range s.clients {
-		out = append(out, *c)
+		copied := *c
+		copied.ShimRefused = c.refusesShim(now)
+		out = append(out, copied)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].LastSeen.After(out[j].LastSeen) })
 	return out

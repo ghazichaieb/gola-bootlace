@@ -305,3 +305,35 @@ func TestTheBlockSizeCanBeCapped(t *testing.T) {
 		t.Errorf("no cap: %v", oack)
 	}
 }
+
+// The Served hook hears when a request is accepted and when the whole file has been acknowledged, and nothing for a file that is not there.
+func TestServedReportsTheStartAndTheEndOfATransfer(t *testing.T) {
+	conn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	events := make(chan string, 8)
+	s := &Server{FS: fstest.MapFS{"a.bin": {Data: content(2000)}}, Timeout: 300 * time.Millisecond, Retries: 3, Served: func(client net.IP, name string, done bool) {
+		events <- fmt.Sprintf("%v %s %v", client, name, done)
+	}}
+	go s.Serve(conn)
+	addr := conn.LocalAddr().(*net.UDPAddr)
+	get(t, addr, "missing.bin")
+	get(t, addr, "a.bin")
+	for _, want := range []string{"127.0.0.1 a.bin false", "127.0.0.1 a.bin true"} {
+		select {
+		case got := <-events:
+			if got != want {
+				t.Fatalf("event %q, want %q", got, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("no event %q", want)
+		}
+	}
+	select {
+	case got := <-events:
+		t.Fatalf("unexpected event %q", got)
+	default:
+	}
+}

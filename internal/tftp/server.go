@@ -54,6 +54,16 @@ type Server struct {
 	// MaxBlock, when set, is asked for every transfer and gives the largest block size to agree to (0: whatever the client asks for). Some switches and firmware only
 	// work with small blocks.
 	MaxBlock func() int
+	// Served, when set, is told about the progress of every transfer to a client with an IP address: once when the request is accepted (done false) and once
+	// when the whole file has been acknowledged (done true). A transfer that is abandoned or fails is never reported as done.
+	Served func(client net.IP, name string, done bool)
+}
+
+// served reports a transfer's progress to the Served hook.
+func (s *Server) served(client net.Addr, name string, done bool) {
+	if udp, ok := client.(*net.UDPAddr); ok && s.Served != nil {
+		s.Served(udp.IP, name, done)
+	}
 }
 
 func (s *Server) logf(format string, args ...any) {
@@ -163,6 +173,7 @@ func (s *Server) read(conn net.PacketConn, client net.Addr, raw []byte) error {
 		return fmt.Errorf("%s: not a file", name)
 	}
 	s.logf("tftp: %v asks for %s (options %v), %d bytes", client, name, req.options, info.Size())
+	s.served(client, name, false)
 	block, oack := defaultBlock, []string{}
 	if v, ok := req.options["blksize"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -203,6 +214,9 @@ func (s *Server) read(conn net.PacketConn, client net.Addr, raw []byte) error {
 		err = t.dataWindow(f, block, min(window, maxWindow))
 	} else {
 		err = t.data(f, block)
+	}
+	if err == nil {
+		s.served(client, name, true)
 	}
 	if took := time.Since(started); err == nil && info.Size() >= 4<<20 && took > 0 { // how fast a large file went: the way to see whether a setting helps
 		s.logf("tftp: %v got %s: %d bytes in %.1f s (%.1f MB/s, %d blocks ahead)", client, name, info.Size(), took.Seconds(), float64(info.Size())/1e6/took.Seconds(), max(window, 1))

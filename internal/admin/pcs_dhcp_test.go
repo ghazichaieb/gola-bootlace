@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ghazichaieb/gola-bootlace/internal/access"
 	"github.com/ghazichaieb/gola-bootlace/internal/config"
@@ -207,5 +208,38 @@ func TestTheSecureBootEndpointListsTheFilesAndWhatIsMissing(t *testing.T) {
 	anon := &rig{t: t, ts: r.ts}
 	if code, _ := anon.do("GET", "/api/secureboot", nil, nil); code != 401 {
 		t.Fatalf("without a login: %d", code)
+	}
+}
+
+// A PC that took the whole shim and never asked for iPXE gets the plain-words hint and the shimRefused flag on its row once the grace time has passed, and loses both at the menu.
+func TestThePCsPageSaysWhenAPCTookTheShimAndNeverStartedIPXE(t *testing.T) {
+	r := newRealRig(t, httpd.SecureBoot{Dir: t.TempDir(), Shim: "ipxe-shimx64.efi", All: true})
+	now := time.Date(2026, 10, 31, 10, 0, 0, 0, time.UTC)
+	r.web.Now = func() time.Time { return now }
+	mac := [6]byte{0xd8, 0x43, 0xae, 0xd6, 0x2f, 0x05}
+	req, _ := discover(t, dhcp.Discover, mac, 7, "0.0.0.0")
+	if reply, ok := r.boot.Reply(req); !ok || reply.File != "sb/ipxe-shimx64.efi" {
+		t.Fatalf("the answer: %v %q", ok, replyFile(reply))
+	}
+	ip := net.ParseIP("10.0.0.50")
+	r.web.NoteTFTP(ip, "sb/ipxe-shimx64.efi", false)
+	r.web.NoteTFTP(ip, "sb/ipxe-shimx64.efi", true)
+	row := pcRows(t, r.rig, "/api/pcs")[0].(map[string]any)
+	if row["shimRefused"] != nil {
+		t.Fatalf("flagged at once: %v", row)
+	}
+	now = now.Add(time.Minute)
+	row = pcRows(t, r.rig, "/api/pcs")[0].(map[string]any)
+	hint, _ := row["hint"].(string)
+	if row["shimRefused"] != true || !strings.Contains(hint, "took the Secure Boot shim but never started iPXE") ||
+		!strings.Contains(hint, `"Install <ISO>, once (works with Secure Boot)"`) || !strings.Contains(hint, "switch Secure Boot off") {
+		t.Fatalf("row %v", row)
+	}
+	menu := httptest.NewRequest("GET", "/menu?mac=d8:43:ae:d6:2f:05&ip=10.0.0.50", nil)
+	menu.RemoteAddr = "10.0.0.50:5555"
+	r.web.Handler().ServeHTTP(httptest.NewRecorder(), menu)
+	row = pcRows(t, r.rig, "/api/pcs")[0].(map[string]any)
+	if hint, _ = row["hint"].(string); row["shimRefused"] != nil || hint != "" {
+		t.Fatalf("still flagged after the menu: %v", row)
 	}
 }
