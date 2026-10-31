@@ -73,7 +73,7 @@ input[type=text],input[type=search],input[type=password],input[type=number],sele
 input[type=text].inline,input[type=search].inline,select.inline{min-height:38px;padding:5px 9px}
 .field{margin:0 0 14px;max-width:560px}
 table.rt select.inline[data-mac]{min-width:14em}
-table.rt td.nowrap{white-space:nowrap}
+table.rt td.nowrap{white-space:nowrap;overflow-wrap:normal}
 td.mono{overflow-wrap:anywhere}
 .hint{color:var(--muted);font-size:13px;margin:4px 0 0}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
@@ -137,7 +137,7 @@ td.k{color:var(--muted);white-space:nowrap}
   table.rt td[data-l]::before{content:attr(data-l);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
   table.rt td.hide-s{display:block}
   table.rt td{overflow-wrap:anywhere}
-  table.rt td.k,table.rt td.nowrap{white-space:normal}
+  table.rt td.k,table.rt td.nowrap{white-space:normal;overflow-wrap:anywhere}
 }
 </style>
 </head>
@@ -1072,7 +1072,7 @@ async function pagePCs() {
     $("#ract").innerHTML = actionOptions("local", false);
     $("#pctable").innerHTML = state.pcs.length ? `<table class="rt"><thead><tr><th>PC</th><th class="hide-s">Address</th><th class="hide-s">Last seen</th><th class="hide-s">Doing</th><th>What it does at start</th><th></th></tr></thead><tbody>${state.pcs.map(p => `<tr>
       <td><strong>${esc(p.name || [p.manufacturer, p.product].filter(Boolean).join(" ") || "Unknown PC")}</strong>${p.name && (p.manufacturer || p.product) ? `<div class="small muted">${esc([p.manufacturer, p.product].filter(Boolean).join(" "))}</div>` : ""}<div class="muted small mono">${esc(p.mac)}</div>${!p.name && (p.hostname || p.asset) ? `<div class="small muted">Offers the name <button class="btn small" data-take="${esc(p.mac)}" data-offer="${esc(p.hostname || p.asset)}" aria-label="Use the name ${esc(p.hostname || p.asset)} for ${esc(p.mac)}">${esc(p.hostname || p.asset)}</button></div>` : ""}${p.rule && p.rule.note ? `<div class="small">${esc(p.rule.note)}</div>` : ""}${p.hint ? `<div class="small" style="color:var(--warn);font-weight:600">${esc(p.hint)}</div>` : ""}</td>
-      <td class="hide-s mono small" data-l="Address">${esc(p.ip || "")}<div>${p.platform === "efi" ? "UEFI" : p.platform === "pcbios" ? "BIOS" : ""}</div></td>
+      <td class="hide-s mono small nowrap" data-l="Address">${esc(p.ip || "")}<div>${p.platform === "efi" ? "UEFI" : p.platform === "pcbios" ? "BIOS" : ""}</div></td>
       <td class="hide-s small nowrap" data-l="Last seen">${p.lastSeen && !p.lastSeen.startsWith("0001") ? ago(p.lastSeen) : "not seen yet"}${p.count ? `<div class="muted">${p.count}× menu</div>` : ""}</td>
       <td class="hide-s small" data-l="Doing">${esc(p.lastAction || "")}</td>
       <td data-l="What it does at start"><select class="inline" data-mac="${esc(p.mac)}" aria-label="What ${esc(p.mac)} does at start">${actionOptions(p.rule ? p.rule.action : "menu")}</select></td>

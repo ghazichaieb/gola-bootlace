@@ -20,7 +20,7 @@ test('long addresses and paths wrap on a phone instead of widening the page', ()
   assert.ok(/td\.mono\{overflow-wrap:anywhere\}/.test(css));
   const phone = css.slice(css.indexOf('@media (max-width:640px)'));
   assert.ok(/table\.rt td\{overflow-wrap:anywhere\}/.test(phone));
-  assert.ok(/table\.rt td\.k,table\.rt td\.nowrap\{white-space:normal\}/.test(phone));
+  assert.ok(/table\.rt td\.k,table\.rt td\.nowrap\{white-space:normal;overflow-wrap:anywhere\}/.test(phone));
 });
 
 /** The colour tokens of a block of the stylesheet that starts at `marker`, as {name: "#rrggbb"}. */
@@ -46,3 +46,8 @@ for (const [theme, marker] of [['light', ':root{'], ['dark', ':root[data-theme="
     for (const bg of ['panel', 'bg']) assert.ok(contrast(t.field, t[bg]) >= 3, `field outline on ${bg}: ${contrast(t.field, t[bg]).toFixed(2)}`);
   });
 }
+
+test('an address in the PCs table is never broken in the middle', () => {
+  assert.ok(/<td class="hide-s mono small nowrap" data-l="Address">/.test(html));
+  assert.ok(/table\.rt td\.nowrap\{white-space:nowrap;overflow-wrap:normal\}/.test(css));
+});
