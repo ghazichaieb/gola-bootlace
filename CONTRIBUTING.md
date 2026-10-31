@@ -30,3 +30,4 @@ Run `node --test tools/admin-views.test.cjs` with Node.js 18 or later after chan
 The dependency-free harness runs the embedded page functions with deferred API responses and checks that navigation drops stale DOM access, errors and polling.
 It supplements `go test ./...`; it does not replace a real-browser check of layout, focus or interaction.
 `node --test tools/admin-secureboot.test.cjs` does the same for the Secure Boot block of the Server page and its banner (the radio buttons, the questions asked before a switch, what is sent).
+`node --test tools/admin-layout.test.cjs` checks the page's stylesheet (readable widths, wrapping on a phone, the contrast ratios of the colour tokens); [docs/web-interface-audit.md](docs/web-interface-audit.md) lists what a real-browser audit found and what is still open.
