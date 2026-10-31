@@ -180,3 +180,11 @@ func TestAnEntryGetsTheFileOfItsPCOrItsIsoAndNoneKeepsItAway(t *testing.T) {
 		t.Fatal("the shared entry must not change")
 	}
 }
+
+// A line with a bare "--" (Linux Mint's entries) gets the answer-file arguments before it, where the kernel still reads them, like the extra arguments of an entry (issue #70).
+func TestAnswerArgumentsGoBeforeABareDoubleDash(t *testing.T) {
+	got := insertArgs([]string{"kernel http://s/vmlinuz boot=casper -- splash"}, "autoinstall")
+	if want := "kernel http://s/vmlinuz boot=casper autoinstall -- splash"; got[0] != want {
+		t.Fatalf("%q, want %q", got[0], want)
+	}
+}

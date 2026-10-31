@@ -45,7 +45,7 @@ func answerArgs(kind, base string) string {
 }
 
 // insertArgs adds arguments to the kernel line of the commands. The installers of Debian and Ubuntu copy what follows a "---" into the installed system's kernel command line: the
-// arguments go before it.
+// arguments go before it. A bare "--" (Linux Mint style lines) ends what the kernel reads, so they go before that too (see insertKernelWords).
 func insertArgs(commands []string, args string) []string {
 	if args == "" {
 		return commands
@@ -58,7 +58,7 @@ func insertArgs(commands []string, args string) []string {
 		words := strings.Fields(c)
 		at := len(words)
 		for j, w := range words {
-			if w == "---" {
+			if w == "---" || (j > 0 && w == "--") {
 				at = j
 				break
 			}
