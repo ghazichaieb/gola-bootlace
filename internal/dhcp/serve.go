@@ -5,6 +5,7 @@ package dhcp
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -47,13 +48,52 @@ func ServeFiltered(conn *net.UDPConn, r Responder, logf func(format string, args
 			continue
 		}
 		dst := replyAddr(req, src)
-		if _, err := conn.WriteToUDP(reply.Marshal(), dst); err != nil && logf != nil {
-			logf("dhcp: cannot answer %s: %v", req.MAC(), err)
+		send := func() {
+			if _, err := conn.WriteToUDP(reply.Marshal(), dst); err != nil && logf != nil {
+				logf("dhcp: cannot answer %s: %v", req.MAC(), err)
+			}
+			if logf != nil {
+				logf("dhcp: %s %s from %s answered with %q to %s%s", typeName(req.MessageType()), req.MAC(), src.IP, reply.File, dst.IP, heldBack(r, req))
+			}
 		}
-		if logf != nil {
-			logf("dhcp: %s %s from %s answered with %q to %s", typeName(req.MessageType()), req.MAC(), src.IP, reply.File, dst.IP)
+		if d, ok := r.(Delayed); ok && d.Delay(req) > 0 {
+			time.AfterFunc(d.Delay(req), send) // the read loop goes on: other PCs are not kept waiting
+			continue
 		}
+		send()
 	}
+}
+
+// Delayed is a Responder that holds back its answer to a discover for Offer, so that the offer of the network's own DHCP server reaches the PC first. Some firmware
+// (found on two PCs with a Realtek network chip) sends a request for neither of two offers that arrive in the same millisecond and keeps repeating its discover.
+// Requests are answered at once: only the offer is held back.
+type Delayed struct {
+	Responder
+	Offer time.Duration
+}
+
+// WithOfferDelay is r, holding back its offers by d; r itself when d is not positive.
+func WithOfferDelay(r Responder, d time.Duration) Responder {
+	if r == nil || d <= 0 {
+		return r
+	}
+	return Delayed{Responder: r, Offer: d}
+}
+
+// Delay is how long the answer to req is held back: Offer for a discover, nothing for anything else.
+func (d Delayed) Delay(req *Packet) time.Duration {
+	if req.MessageType() == Discover {
+		return d.Offer
+	}
+	return 0
+}
+
+// heldBack is the note added to the log line of an answer that was delayed, empty for one that was not.
+func heldBack(r Responder, req *Packet) string {
+	if d, ok := r.(Delayed); ok && d.Delay(req) > 0 {
+		return fmt.Sprintf(" (held back %s)", d.Delay(req))
+	}
+	return ""
 }
 
 // replyAddr is where the answer goes: a relay when there is one, the client's own address when it asked from one without the broadcast flag,

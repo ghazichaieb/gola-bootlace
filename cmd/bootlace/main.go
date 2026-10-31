@@ -94,6 +94,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	mask := fs.String("mask", "255.255.255.0", "full mode: the network mask")
 	router := fs.String("router", "", "full mode: the router given to PCs (default: none)")
 	dnsIP := fs.String("dns", "", "full mode: the DNS server given to PCs (default: none)")
+	offerDelay := fs.Duration("offer-delay", 0, `proxy mode: hold back this server's offer to a PC's discover (for example 300ms), so that the network's own DHCP server answers first; for firmware that ignores two offers arriving at once (0: answer at once)`)
 	pxeOnly := fs.Bool("pxe-only", false, "full mode: hand out addresses to PCs that start a network boot only (a lab where this computer is also on the network)")
 	menuDefault := fs.Int("menu-default", 0, "the menu entry (counting from 1) that starts by itself after -menu-timeout seconds (0: wait for a choice)")
 	smbPasswordFlag := fs.String("smb-password", "", "the password Windows set-up logs in to the share with (default: made up once and kept in the settings file)")
@@ -296,7 +297,7 @@ func serve(args []string, stdout, stderr io.Writer) int {
 	webErr := make(chan error, 1)
 	go func() { webErr <- http.Serve(httpListener, web.Handler()) }()
 
-	responder, err := dhcpResponder(*mode, ip, base, registry, web, dhcpOptions{first: *first, last: *last, mask: *mask, router: *router, dns: *dnsIP, pxeOnly: *pxeOnly}, logf)
+	responder, err := dhcpResponder(*mode, ip, base, registry, web, dhcpOptions{first: *first, last: *last, mask: *mask, router: *router, dns: *dnsIP, pxeOnly: *pxeOnly, offerDelay: *offerDelay}, logf)
 	if err != nil {
 		fmt.Fprintf(stderr, "bootlace: %v\n", err)
 		return 2
@@ -376,6 +377,7 @@ func openLibrary(store *config.Store, flagDir string, logf func(string, ...any))
 type dhcpOptions struct {
 	first, last, mask, router, dns string
 	pxeOnly                        bool
+	offerDelay                     time.Duration // proxy mode only
 }
 
 // dhcpResponder is what answers PCs that ask for a network boot: nil when DHCP is off. A setting that is wrong is an error here, at the start of the program,
@@ -398,7 +400,10 @@ func dhcpResponder(mode string, ip net.IP, base string, registry *handoff.Regist
 		dhcp.ArchBIOS: "undionly.kpxe", dhcp.ArchX64EFI: "ipxe.efi",
 	}}
 	if mode == "proxy" {
-		return boot, nil
+		if o.offerDelay > 0 {
+			logf("DHCP: this server's offers are held back %s, so that the network's own DHCP server answers first", o.offerDelay)
+		}
+		return dhcp.WithOfferDelay(boot, o.offerDelay), nil
 	}
 	m := net.IPMask(net.ParseIP(o.mask).To4())
 	if m == nil {
