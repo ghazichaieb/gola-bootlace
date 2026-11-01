@@ -158,3 +158,25 @@ test('a PC row keeps Name, History and Remove rule visible and puts the rest und
   assert.doesNotMatch(source, /\$\{p\.count\}× menu/);
   assert.match(source, /It has asked for the menu \$\{p\.count\} time/);
 });
+test('PCs page: status badge per PC from the data the page already has', () => {
+  const f = fixture(), now = Date.parse('2026-11-01T12:00:00Z');
+  const badge = p => JSON.parse(f.run(`JSON.stringify(pcStatus(${JSON.stringify(p)}, ${now}))`));
+  assert.equal(badge({ shimRefused: true, count: 3, lastSeen: '2026-11-01T11:59:00Z' }).text, 'Refused Secure Boot');
+  assert.equal(badge({ shimRefused: true }).cls, 'red');
+  assert.equal(badge({ lastSeen: '0001-01-01T00:00:00Z' }).text, 'Not seen yet');
+  assert.equal(badge({}).text, 'Not seen yet');
+  assert.deepEqual([badge({ count: 0, lastSeen: '2026-11-01T11:59:00Z' }).text, badge({ count: 0, lastSeen: '2026-11-01T11:59:00Z' }).cls], ['Waiting', 'warn']);
+  assert.deepEqual([badge({ count: 2, lastSeen: '2026-11-01T11:55:00Z' }).text, badge({ count: 2, lastSeen: '2026-11-01T11:55:00Z' }).cls], ['Seen recently', 'ok']);
+  assert.equal(badge({ count: 2, lastSeen: '2026-11-01T11:30:00Z' }).text, 'Not seen lately');
+});
+test('PCs page: warning on a plain Windows rule for a PC known to use Secure Boot', () => {
+  const f = fixture();
+  const isos = [{ id: 'w', family: 'Windows setup' }, { id: 'u', family: 'Ubuntu (casper)' }];
+  const warn = p => f.run(`pcRuleWarning(${JSON.stringify(p)}, ${JSON.stringify(isos)})`);
+  assert.match(warn({ shimRefused: true, rule: { action: 'iso:w' } }), /Secure Boot/);
+  assert.match(warn({ options: { secureBoot: true }, rule: { action: 'iso:w' } }), /once \(works with Secure Boot\)/);
+  assert.equal(warn({ rule: { action: 'iso:w' } }), '', 'Secure Boot not known: no warning');
+  assert.equal(warn({ shimRefused: true, rule: { action: 'native:w' } }), '', 'the Secure Boot start is the right rule');
+  assert.equal(warn({ shimRefused: true, rule: { action: 'iso:u' } }), '', 'not a Windows ISO');
+  assert.equal(warn({ shimRefused: true }), '', 'no rule');
+});

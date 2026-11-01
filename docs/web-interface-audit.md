@@ -21,12 +21,12 @@ and `pcs-dark-after.png` after.
 
 ## Open findings (not changed: they need a design decision)
 
-Checklist of #81 (PCs page first): [x] 1 groups (the warning on a plain Windows rule with Secure Boot on is still open), [ ] 2, [x] 3, [x] 4, [x] 5 (#80), [ ] 6 to 11. Items 1, 3 and 4 were done without a look in a browser.
+Checklist of #81 (PCs page first): [x] 1 groups and the warning on a plain Windows rule for a PC known to use Secure Boot, [x] 2 status badge (the "Why?" disclosure and moving the route line to History are still open), [x] 3, [x] 4, [x] 5 (#80), [ ] 6 to 11. Items 1 to 4 were done without a look in a browser.
 
 1. **PCs page: the rule drop-down mixes two kinds of entries** (plain ISO start through iPXE, and "Install ..., once (works with Secure Boot)"), and says nothing when a plain rule is set
-   while the Secure Boot route is on. Done in part (the drop-down has the groups "Start an ISO through iPXE" and "Once, with the PC's own boot loader"). Proposal: group the entries in `<optgroup>` by what they need, mark the Secure Boot ones, show a one-line warning on the row.
+   while the Secure Boot route is on. Done (the drop-down has the groups "Start an ISO through iPXE" and "Once, with the PC's own boot loader", and the row shows a warning when a plain Windows rule is set for a PC that refused the shim or has the Secure Boot route). Proposal: group the entries in `<optgroup>` by what they need, mark the Secure Boot ones, show a one-line warning on the row.
 2. **PCs page: repeated and long text per row.** Each "asked for a boot file" row has a four-line hint plus a "Doing" column that repeats the route ("secure boot: shim, then signed iPXE (built in)"),
-   the same for every row. Proposal: one short status badge per row ("Asked for a boot file", "Took the shim, never started iPXE", "Windows offer"), the explanation behind a "Why?"
+   the same for every row. Done in part: each row has a status badge (Refused Secure Boot, Waiting, Seen recently, Not seen lately, Not seen yet). Still open: the "Why?" disclosure and the route line only in History. Proposal: one short status badge per row ("Asked for a boot file", "Took the shim, never started iPXE", "Windows offer"), the explanation behind a "Why?"
    disclosure, and the route line only in History.
 3. **PCs page: six buttons per row** (Name, Kernel options, History, Wake, Remove rule, Forget). Done: Name, History and Remove rule stay visible; Kernel options, the Secure Boot route, the Windows offer, Wake and Forget are under "More". Proposal was: keep Name and History visible, move Kernel options, Wake and Forget into a
    "More" menu, and keep "Remove rule" beside the rule drop-down.
