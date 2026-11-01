@@ -21,16 +21,18 @@ and `pcs-dark-after.png` after.
 
 ## Open findings (not changed: they need a design decision)
 
+Checklist of #81 (PCs page first): [x] 1 groups (the warning on a plain Windows rule with Secure Boot on is still open), [ ] 2, [x] 3, [x] 4, [x] 5 (#80), [ ] 6 to 11. Items 1, 3 and 4 were done without a look in a browser.
+
 1. **PCs page: the rule drop-down mixes two kinds of entries** (plain ISO start through iPXE, and "Install ..., once (works with Secure Boot)"), and says nothing when a plain rule is set
-   while the Secure Boot route is on. Proposal: group the entries in `<optgroup>` by what they need, mark the Secure Boot ones, show a one-line warning on the row.
+   while the Secure Boot route is on. Done in part (the drop-down has the groups "Start an ISO through iPXE" and "Once, with the PC's own boot loader"). Proposal: group the entries in `<optgroup>` by what they need, mark the Secure Boot ones, show a one-line warning on the row.
 2. **PCs page: repeated and long text per row.** Each "asked for a boot file" row has a four-line hint plus a "Doing" column that repeats the route ("secure boot: shim, then signed iPXE (built in)"),
    the same for every row. Proposal: one short status badge per row ("Asked for a boot file", "Took the shim, never started iPXE", "Windows offer"), the explanation behind a "Why?"
    disclosure, and the route line only in History.
-3. **PCs page: six buttons per row** (Name, Kernel options, History, Wake, Remove rule, Forget). Proposal: keep Name and History visible, move Kernel options, Wake and Forget into a
+3. **PCs page: six buttons per row** (Name, Kernel options, History, Wake, Remove rule, Forget). Done: Name, History and Remove rule stay visible; Kernel options, the Secure Boot route, the Windows offer, Wake and Forget are under "More". Proposal was: keep Name and History visible, move Kernel options, Wake and Forget into a
    "More" menu, and keep "Remove rule" beside the rule drop-down.
-4. **Column "Last seen" mixes two facts** (time and "1x menu"). Proposal: the menu count goes into History.
+4. **Column "Last seen" mixes two facts** (time and "1x menu"). Done: the menu count is in the History window.
 5. **Navigation by address.** `#pcs` and the other addresses are read only when the page loads: there is no `hashchange` handler, so the browser's Back button leaves the interface and a link
-   inside the page does not move to a page. Proposal: listen to `hashchange` and use `history.pushState` for the page buttons.
+   inside the page does not move to a page. Done (#80). Proposal was: listen to `hashchange` and use `history.pushState` for the page buttons.
 6. **First-start guide.** While it is shown no item of the menu is marked as the current page, and a `#pcs` address is ignored until the guide is finished or skipped. Proposal: show it as a banner
    above the Dashboard instead of replacing the page.
 7. **Phone width.** The page list scrolls sideways with no sign that "Menu", "Log" and "Account" exist; the PCs page is about 5500 px tall because every row is a card. Proposal: a fade or arrow at

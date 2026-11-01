@@ -136,3 +136,25 @@ test('the page buttons and in-page links go through navigate() (#80)', () => {
   assert.equal(source.match(/location\.hash =/g).length, 1, 'only navigate() writes the address');
   assert.match(source, /addEventListener\("hashchange", onAddressChange\)/);
 });
+test('the rule drop-down groups the entries by what they need (#81)', () => {
+  const f = fixture();
+  f.run('state.isos=[{id:"a",title:"Ubuntu",family:"Ubuntu (casper)"},{id:"w",title:"Windows 11",family:"Windows setup"},{id:"d",title:"Debian",family:"Debian"}]');
+  const html = f.run('actionOptions("native:w")');
+  const groups = [...html.matchAll(/<optgroup label="([^"]*)">([\s\S]*?)<\/optgroup>/g)];
+  assert.equal(groups.length, 2);
+  assert.match(groups[0][1], /iPXE/); assert.equal((groups[0][2].match(/<option/g) || []).length, 3);
+  assert.match(groups[1][1], /Secure Boot/); assert.equal((groups[1][2].match(/<option/g) || []).length, 2);
+  assert.match(groups[1][2], /value="native:w" selected/);
+  assert.match(html.split('<optgroup')[0], /Show the menu[\s\S]*Boot from its own disk/, 'the menu and own-disk choices stay ungrouped, first');
+  f.run('state.isos=[]');
+  assert.doesNotMatch(f.run('actionOptions("menu")'), /optgroup/, 'no empty group');
+});
+test('a PC row keeps Name, History and Remove rule visible and puts the rest under More; the menu count is in History (#81)', () => {
+  const row = source.slice(source.indexOf('<td><div class="row" style="gap:6px;min-width:14em">'));
+  const more = row.indexOf('<details class="more">');
+  assert.ok(more > 0);
+  for (const keep of ['data-name=', 'data-history=', 'data-del=']) assert.ok(row.indexOf(keep) < more, keep + ' stays visible');
+  for (const hide of ['data-kopt=', 'data-sb=', 'data-sf=', 'data-wake=', 'data-forget=']) assert.ok(row.indexOf(hide) > more, hide + ' is under More');
+  assert.doesNotMatch(source, /\$\{p\.count\}× menu/);
+  assert.match(source, /It has asked for the menu \$\{p\.count\} time/);
+});
