@@ -180,3 +180,14 @@ test('PCs page: warning on a plain Windows rule for a PC known to use Secure Boo
   assert.equal(warn({ shimRefused: true, rule: { action: 'iso:u' } }), '', 'not a Windows ISO');
   assert.equal(warn({ shimRefused: true }), '', 'no rule');
 });
+test('PCs page: a rule can name one entry of an ISO\'s own boot menu', () => {
+  const f = fixture(), way = 'ab'.repeat(16);
+  f.run(`state.isos=[{id:'0123456789',title:'Ubuntu',family:'Ubuntu-style (casper)',ways:[{id:'${way}',title:'Safe <graphics>'}]}]`);
+  const options = f.run(`actionOptions('iso:0123456789@${way}')`);
+  assert.match(options, new RegExp(`<option value="iso:0123456789@${way}" selected>Ubuntu: Safe &lt;graphics&gt;</option>`));
+  assert.equal(f.run(`actionLabel('iso:0123456789@${way}')`), 'Ubuntu: Safe <graphics>');
+  assert.equal(f.run(`actionLabel('iso:0123456789')`), 'Ubuntu');
+  assert.equal(f.run(`actionLabel('iso:0123456789@${'cd'.repeat(16)}')`), 'Ubuntu (missing entry)');
+  f.run('state.isos=[{id:"0123456789",title:"Plain"}]');
+  assert.doesNotMatch(f.run('actionOptions("menu")'), /boot menu/, 'an ISO without entries adds no group');
+});

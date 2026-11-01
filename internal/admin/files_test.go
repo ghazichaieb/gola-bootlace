@@ -89,13 +89,14 @@ func TestListMakeRenameAndDelete(t *testing.T) {
 	_ = r.store.Update(func(c *config.Config) error {
 		c.Titles[oldID], c.Hidden[oldID], c.Args[oldID], c.Default = "My A", true, "quiet", "iso:"+oldID
 		c.Rules = append(c.Rules, config.Rule{MAC: "aa:bb:cc:dd:ee:01", Action: "iso:" + oldID})
+		c.Rules = append(c.Rules, config.Rule{MAC: "aa:bb:cc:dd:ee:02", Action: "iso:" + oldID + "@0123456789abcdef0123456789abcdef"})
 		return nil
 	})
 	if code, out := r.do("POST", "/api/library/rename", map[string]any{"from": "a.iso", "to": "linux/b.iso"}, nil); code != 200 {
 		t.Fatalf("rename: %d %v", code, out)
 	}
 	c := r.store.Get()
-	if c.Titles[newID] != "My A" || !c.Hidden[newID] || c.Args[newID] != "quiet" || c.Default != "iso:"+newID || c.Rules[0].Action != "iso:"+newID {
+	if c.Titles[newID] != "My A" || !c.Hidden[newID] || c.Args[newID] != "quiet" || c.Default != "iso:"+newID || c.Rules[0].Action != "iso:"+newID || c.Rules[1].Action != "iso:"+newID+"@0123456789abcdef0123456789abcdef" {
 		t.Fatalf("the settings did not follow the rename: %+v", c)
 	}
 	if _, ok := c.Titles[oldID]; ok {

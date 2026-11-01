@@ -88,3 +88,26 @@ func TestHiddenWaysAreOmittedAndConfiguredTitlesCannotInjectIpxe(t *testing.T) {
 		t.Fatalf("title interpreted as iPXE:\n%s", page)
 	}
 }
+
+func TestARuleCanNameOneEntryOfTheIsosOwnMenu(t *testing.T) {
+	way := safeWay
+	way.ID = entryChoice
+	hidden := safeWay
+	hidden.ID = "fedcba9876543210fedcba9876543210"
+	e := waysISO("0123456789", "Ubuntu", way, hidden)
+	cfg := config.Config{ISOEntries: map[string]config.ISOEntrySettings{"0123456789": {Entries: map[string]config.EntryOptions{hidden.ID: {Hidden: true}}}}}
+	if got, ok := ruleEntry(cfg, e, "iso:0123456789@"+entryChoice); !ok || !strings.Contains(strings.Join(got.Commands, "\n"), "nomodeset") || got.Name != "Ubuntu" {
+		t.Errorf("the chosen entry starts, under the ISO's name: %v %+v", ok, got)
+	}
+	if got, ok := ruleEntry(cfg, e, "iso:0123456789"); !ok || strings.Contains(strings.Join(got.Commands, "\n"), "nomodeset") {
+		t.Errorf("a plain rule keeps the usual start: %v %+v", ok, got)
+	}
+	if _, ok := ruleEntry(cfg, e, "native:0123456789"); !ok {
+		t.Error("a native rule that reaches iPXE starts the ISO")
+	}
+	for _, action := range []string{"iso:0123456789@" + hidden.ID, "iso:0123456789@00000000000000000000000000000000", "iso:ffffffffff@" + entryChoice, "iso:ffffffffff", "local", "iso:0123456789@x"} {
+		if _, ok := ruleEntry(cfg, e, action); ok {
+			t.Errorf("%q must not start this ISO: a hidden or missing entry, or another ISO", action)
+		}
+	}
+}

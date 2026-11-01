@@ -261,6 +261,7 @@ const DefaultPCDays = 90
 
 var (
 	idPattern     = regexp.MustCompile(`^[0-9a-f]{10}$`)
+	entryPattern  = regexp.MustCompile(`^[0-9a-f]{32}$`)
 	defaultAction = regexp.MustCompile(`^(|local|iso:[0-9a-f]{10}|index:[0-9]{1,3}|pick:[^\r\n]{1,80})$`)
 )
 
@@ -282,8 +283,19 @@ func ValidAction(a string) bool {
 	if id, ok := strings.CutPrefix(a, "native:"); ok { // started by the PC's own firmware, so that UEFI Secure Boot can stay on
 		return idPattern.MatchString(id)
 	}
-	id, ok := strings.CutPrefix(a, "iso:")
-	return ok && idPattern.MatchString(id)
+	_, _, ok := ISOAction(a)
+	return ok
+}
+
+// ISOAction splits the action "iso:<id>" (the ISO's usual start) or "iso:<id>@<entry>" (one entry of the ISO's own boot menu, by the id the ISO's page gives it) into its parts;
+// ok says whether it is one of the two and well formed.
+func ISOAction(a string) (id, entry string, ok bool) {
+	rest, ok := strings.CutPrefix(a, "iso:")
+	if !ok {
+		return "", "", false
+	}
+	id, entry, hasEntry := strings.Cut(rest, "@")
+	return id, entry, idPattern.MatchString(id) && (!hasEntry || entryPattern.MatchString(entry))
 }
 
 // Validate checks what a person may have typed and cleans it up.

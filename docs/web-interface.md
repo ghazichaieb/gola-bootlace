@@ -81,6 +81,12 @@ the list of those ISOs, and an ISO opens its entries: "The usual start" first, t
 check of the disc and such. The ISO's boot password, its extra arguments and the PC's own options apply to every one. The ISOs page lists the entries of an ISO under "other ways to start
 it". They are looked for in the background after the server starts or the library changes ("Look again" on the ISOs page makes it forget them), so a new ISO shows its ways after a minute.
 
+**A rule can name one entry.** Besides "Start <ISO>", the drop-down of a PC's rule (and of a rule for a kind of PC) has a group of entries, one per entry of an ISO's own boot menu ("Ubuntu: Safe
+graphics"). The action is `iso:<id>@<entry>`, where `<entry>` is the 32-character id that `GET /api/isos` gives each entry in `ways`. The entry is started in the place of the usual start, with
+the ISO's password, extra arguments, the entry's own arguments and the PC's options, as for the default entry. An entry that is hidden or gone (the menu changed, the ISO was replaced) makes the rule
+fall through like a rule for a missing ISO: the PC gets the menu. Renaming an ISO keeps the entry part of its rules. Not covered: entries of systems that Bootlace starts by rules of their own
+(Alma-style installers, Alpine, Proxmox, Tails, Windows, FreeBSD), and a decision on "check the disc" and persistence entries; they are offered as the menu gives them.
+
 ## Unattended installs
 
 The **Unattended** page keeps *answer files*, the files an installer reads so that it asks nothing: Debian's preseed, Ubuntu Server's autoinstall (cloud-init `user-data`), Red Hat's kickstart and

@@ -393,14 +393,14 @@ func (s *Server) menu(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, e := range infos {
-			if "iso:"+e.ISO.ID == rule.Action || "native:"+e.ISO.ID == rule.Action { // (a native rule that reaches iPXE: Secure Boot is off, the usual way does)
+			if entry, ok := ruleEntry(cfg, e, rule.Action); ok {
 				s.logf("%s: its rule starts %s", s.who(client), e.Title)
 				s.setAction(client.MAC, "rule: "+e.Title)
-				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", s.entryForPC(cfg, e.ISO.ID, e.Entry, pc, pcMAC), s.menuURL(1)))
+				fmt.Fprint(w, menu.Direct(why+": starting "+e.Title+".", s.entryForPC(cfg, e.ISO.ID, entry, pc, pcMAC), s.menuURL(1)))
 				return
 			}
 		}
-		s.logf("%s: its rule names an ISO that is not there any more: showing the menu", s.who(client))
+		s.logf("%s: its rule names an ISO (or an entry of its menu) that is not there any more: showing the menu", s.who(client))
 	}
 
 	var visible []entryInfo

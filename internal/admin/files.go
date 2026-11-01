@@ -205,8 +205,8 @@ func (a *Admin) followSettings(moved map[string]string, gone []string) {
 			}
 			for i := range c.Rules {
 				for _, p := range []string{"iso:", "native:"} {
-					if c.Rules[i].Action == p+old {
-						c.Rules[i].Action = p + id
+					if rest, ok := strings.CutPrefix(c.Rules[i].Action, p+old); ok && (rest == "" || rest[0] == '@') { // (an "@<entry>" part stays)
+						c.Rules[i].Action = p + id + rest
 					}
 				}
 			}

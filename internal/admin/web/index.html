@@ -187,7 +187,10 @@ function uptime(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 /
 function actionLabel(a) {
   if (!a || a === "menu") return "Show the menu";
   if (a === "local") return "Own disk";
-  if (a.startsWith("iso:")) { const i = state.isos.find(x => x.id === a.slice(4)); return i ? i.title : "(missing ISO)"; }
+  if (a.startsWith("iso:")) {
+    const [id, way] = a.slice(4).split("@"), i = state.isos.find(x => x.id === id), w = i && way && (i.ways || []).find(x => x.id === way);
+    return !i ? "(missing ISO)" : !way ? i.title : w ? `${i.title}: ${w.title}` : `${i.title} (missing entry)`;
+  }
   if (a.startsWith("native:")) { const i = state.isos.find(x => x.id === a.slice(7)); return i ? i.title + " (Secure Boot)" : "(missing ISO)"; }
   return a;
 }
@@ -196,6 +199,8 @@ function actionOptions(sel, withMenu = true) {
   o += `<option value="local"${sel === "local" ? " selected" : ""}>Boot from its own disk</option>`;
   const plain = state.isos.map(i => `<option value="iso:${i.id}"${sel === "iso:" + i.id ? " selected" : ""}>Start ${esc(i.title)}</option>`).join("");
   if (plain) o += `<optgroup label="Start an ISO through iPXE (Secure Boot off, or the Secure Boot route)">${plain}</optgroup>`;
+  const entries = state.isos.flatMap(i => (i.ways || []).map(w => `<option value="iso:${i.id}@${w.id}"${sel === "iso:" + i.id + "@" + w.id ? " selected" : ""}>${esc(i.title)}: ${esc(w.title)}</option>`)).join("");
+  if (entries) o += `<optgroup label="One entry of an ISO's own boot menu (safe graphics, rescue ...), through iPXE">${entries}</optgroup>`;
   // Windows set-up can also be started by the PC's own firmware, which works with UEFI Secure Boot on (the rule is used up at the PC's next network boot)
   const native = state.isos.filter(i => i.family === "Windows setup" || i.family === "Ubuntu (casper)").map(i => `<option value="native:${i.id}"${sel === "native:" + i.id ? " selected" : ""}>${i.family === "Windows setup" ? "Install" : "Start"} ${esc(i.title)}, once (works with Secure Boot)</option>`).join("");
   if (native) o += `<optgroup label="Once, with the PC's own boot loader (works with Secure Boot)">${native}</optgroup>`;

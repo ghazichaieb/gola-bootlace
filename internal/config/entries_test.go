@@ -49,3 +49,20 @@ func TestBootEntrySettingsRejectUnsafeInput(t *testing.T) {
 		}
 	}
 }
+
+func TestISOActionAcceptsTheUsualStartAndOneEntryOnly(t *testing.T) {
+	entry := "0123456789abcdef0123456789abcdef"
+	for _, a := range []string{"iso:0123456789", "iso:0123456789@" + entry} {
+		if !ValidAction(a) {
+			t.Errorf("%q should be valid", a)
+		}
+	}
+	if id, e, ok := ISOAction("iso:0123456789@" + entry); !ok || id != "0123456789" || e != entry {
+		t.Errorf("split: %q %q %v", id, e, ok)
+	}
+	for _, a := range []string{"iso:0123456789@", "iso:0123456789@" + entry + "0", "iso:0123456789@XYZ", "iso:0123456789@" + entry + "@" + entry, "native:0123456789@" + entry, "iso:@" + entry, "iso:short@" + entry} {
+		if ValidAction(a) {
+			t.Errorf("%q should be refused", a)
+		}
+	}
+}
