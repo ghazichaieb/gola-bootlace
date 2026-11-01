@@ -274,3 +274,68 @@ func managedList() string {
 	sort.Strings(l)
 	return strings.Join(l, " ")
 }
+
+// scanDepth is how many folders deep the scan for ISOs goes (isos.Scan stops at the same depth): what is deeper is not offered, so it is not counted or searched either.
+const scanDepth = 4
+
+// Walk calls fn for every folder and every ISO or image under rel (the library when rel is ""), a folder before what is in it. It lists through ListDir, so links are not
+// followed and nothing outside the library is reached; files that are not managed are left out. A folder deeper than the scan goes is reported but not entered.
+func (l *Library) Walk(rel string, fn func(Entry)) error {
+	entries, err := l.ListDir(rel)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		switch {
+		case e.Dir:
+			fn(e)
+			if strings.Count(e.Path, "/") < scanDepth {
+				if err := l.Walk(e.Path, fn); err != nil {
+					return err
+				}
+			}
+		case e.Managed:
+			fn(e)
+		}
+	}
+	return nil
+}
+
+// CountManaged is the number of ISOs and images at any depth under the folder rel.
+func (l *Library) CountManaged(rel string) (n int, err error) {
+	err = l.Walk(rel, func(e Entry) {
+		if !e.Dir {
+			n++
+		}
+	})
+	return n, err
+}
+
+// Folders lists every folder of the library as a path, in walk order (for choosing where to move a file).
+func (l *Library) Folders() (out []string, err error) {
+	err = l.Walk("", func(e Entry) {
+		if e.Dir {
+			out = append(out, e.Path)
+		}
+	})
+	return out, err
+}
+
+// Search finds folders and ISOs or images whose name contains q (ignoring case) anywhere in the library, at most limit of them; more says there were others.
+func (l *Library) Search(q string, limit int) (out []Entry, more bool, err error) {
+	q = strings.ToLower(strings.TrimSpace(q))
+	if q == "" {
+		return nil, false, nil
+	}
+	err = l.Walk("", func(e Entry) {
+		if !strings.Contains(strings.ToLower(e.Name), q) {
+			return
+		}
+		if len(out) < limit {
+			out = append(out, e)
+		} else {
+			more = true
+		}
+	})
+	return out, more, err
+}

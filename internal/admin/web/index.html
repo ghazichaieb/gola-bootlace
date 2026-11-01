@@ -50,7 +50,7 @@ h2{font-size:16px;margin:0 0 10px}
 .muted{color:var(--muted)}
 .small{font-size:13px}
 table{width:100%;border-collapse:collapse}
-th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+th,td{text-align:start;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
 th{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:600}
 tr:last-child td{border-bottom:0}
 .tablewrap{overflow-x:auto}
@@ -125,7 +125,17 @@ fieldset.seg legend{font-weight:600;padding:0;margin:0 0 4px}
 .dirs button:hover{background:var(--panel2)}
 .bar2{height:8px;background:var(--panel2);border-radius:4px;margin:6px 0 2px;overflow:hidden}.bar2>i{display:block;height:100%;background:var(--accent);border-radius:4px;transition:width .3s}
 button.link{background:none;border:0;padding:0;color:var(--accent-fg);cursor:pointer;font:inherit;text-decoration:underline}
-.steps{margin:0;padding-left:20px}
+.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;list-style:none;margin:0;padding:0}
+.crumbs li+li::before{content:"/";color:var(--muted);margin-inline-end:8px}
+.crumbs a,.crumbs [aria-current]{display:inline-block;padding:8px 2px;overflow-wrap:anywhere}
+.crumbs [aria-current]{font-weight:700}
+.lbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:0 0 8px}
+.lbar input[type=search]{flex:1 1 220px;max-width:420px}
+.fname{display:inline-flex;align-items:center;gap:8px;min-height:36px}
+.fname a{font-weight:700;text-decoration:none;overflow-wrap:anywhere}
+.fname a:hover{text-decoration:underline}
+.ficon{width:20px;height:20px;flex:none;fill:currentColor;color:var(--muted)}
+.steps{margin:0;padding-inline-start:20px}
 .steps li{margin:4px 0}
 .empty{padding:26px;text-align:center;color:var(--muted)}
 footer{max-width:1120px;margin:0 auto;padding:0 16px 28px;color:var(--muted);font-size:12px}
@@ -140,6 +150,7 @@ td.k{color:var(--muted);white-space:nowrap}
   table.rt td{display:block;border:0;padding:4px 6px}
   table.rt td[data-l]::before{content:attr(data-l);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
   table.rt td.hide-s{display:block}
+  table.rt td:empty{display:none}
   table.rt td{overflow-wrap:anywhere}
   table.rt td.k,table.rt td.nowrap{white-space:normal;overflow-wrap:anywhere}
 }
@@ -252,14 +263,35 @@ function viewScope(page) {
 function clearTimers() { state.timers.forEach(clearInterval); state.timers = []; }
 function every(ms, fn) { state.timers.push(setInterval(() => { state.polling = true; const p = fn().catch(() => {}); state.polling = false; return p; }, ms)); }
 
-/** Whether the address names a page of the interface (#start is valid after the guide was finished too). */
-function pageInAddress() { const h = location.hash.slice(1); return h === "start" || views.some(v => v[0] === h) ? h : ""; }
+/** Whether the address names a page of the interface (#start is valid after the guide was finished too). A page may be followed by a path: #library/linux/deb. */
+function pageInAddress() { const h = location.hash.slice(1).split("/")[0]; return h === "start" || views.some(v => v[0] === h) ? h : ""; }
 
-/** Opens a page and puts it in the address, so that Back, Forward, reload and a copied link return to it. */
-function navigate(view) { state.view = view; location.hash = view; render(); }
+/** The library folder the address names (`#library/linux/deb` is "linux/deb", `#library` the top), "" for any other address or one that cannot be read. */
+function folderInAddress() {
+  const h = location.hash.slice(1);
+  if (!h.startsWith("library/")) return "";
+  try { return h.slice(8).split("/").filter(Boolean).map(decodeURIComponent).join("/"); } catch (e) { return ""; }
+}
 
-/** Follows the address when it changes without navigate() (Back, Forward, a typed or pasted #page): shows that page unless it is the one shown. */
-function onAddressChange() { const h = pageInAddress(); if (h && h !== state.view) { state.view = h; render(); } }
+/** The address of a library folder (each part encoded, so a name with a space, # or ? stays one part). */
+function folderHash(path) { return "library" + (path ? "/" + path.split("/").map(encodeURIComponent).join("/") : ""); }
+
+/** Opens a page and puts it in the address, so that Back, Forward, reload and a copied link return to it. A library folder is part of the address (the page itself starts at the top of the library). */
+function navigate(view, folder = "") {
+  state.view = view;
+  if (view === "library") state.libPath = folder;
+  location.hash = view === "library" ? folderHash(folder) : view;
+  render();
+}
+
+/** Follows the address when it changes without navigate() (Back, Forward, a typed or pasted #page or #library/folder): shows that page and folder unless they are the ones shown. */
+function onAddressChange() {
+  const h = pageInAddress();
+  if (!h) return;
+  const folder = h === "library" ? folderInAddress() : state.libPath;
+  if (h === state.view && folder === state.libPath) return;
+  state.view = h; state.libPath = folder; render();
+}
 
 function render() {
   clearTimers();
@@ -666,13 +698,77 @@ function joinPath(a, b) { return a ? a + "/" + b : b; }
 const reasonText = { name: "has the same name", source: "was imported from the same address", size: "has the same name and size", content: "has the same content (checksum)" };
 function matchesHTML(ms) { return `<p>This looks like something that is already in the library:</p><ul>${ms.map(m => `<li><code>${esc(m.path)}</code> ${esc(reasonText[m.reason] || m.reason)}</li>`).join("")}</ul>`; }
 
+const FOLDER_ICON = `<svg class="ficon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/></svg>`;
+const DISC_ICON = `<svg class="ficon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path fill-rule="evenodd" d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm0 7a2 2 0 1 1 0 4 2 2 0 0 1 0-4z"/></svg>`;
+const libUI = { query: "", results: null, more: false, timer: null }; // the search box of the Library page and what it found
+
+/** How many ISOs and images a folder holds, in words ("empty" when none). */
+function countText(n) { return n ? `${n} ${n === 1 ? "ISO or image" : "ISOs or images"}` : "empty"; }
+
+/** The folder part of a path of the library ("linux/deb/a.iso" is "linux/deb", a file at the top is ""). */
+function folderOf(path) { const i = path.lastIndexOf("/"); return i < 0 ? "" : path.slice(0, i); }
+
+/** A link to a folder of the library: it carries the folder in the address, so Back, a copied link and Ctrl+click work. */
+function folderLink(path, text, cls = "") { return `<a${cls ? ` class="${cls}"` : ""} href="#${esc(folderHash(path))}" data-open="${esc(path)}">${text}</a>`; }
+
+/** The path of the folder being viewed: Library / folder / subfolder, each part but the last a link. */
+function crumbsHTML(path) {
+  let acc = "";
+  const items = [["", "Library"], ...(path ? path.split("/") : []).map(p => [acc = joinPath(acc, p), p])];
+  return `<nav aria-label="Where you are in the library"><ol class="crumbs">${items.map(([p, name], i) => `<li>${i === items.length - 1 ? `<span aria-current="page">${esc(name)}</span>` : folderLink(p, esc(name))}</li>`).join("")}</ol></nav>`;
+}
+
+/** The "Up" link to the parent folder, or "" at the top of the library. */
+function upHTML(d) { return d.hasParent ? folderLink(d.parent, "&#8593; Up", "btn small") : ""; }
+
+/** One line of a folder: a folder opens on click and says how many ISOs it holds; an ISO or image shows its size, date and checksum. */
+function entryRowHTML(e, hashing) {
+  const name = e.dir ? `<span class="fname">${FOLDER_ICON}${folderLink(e.path, esc(e.name))} <span class="badge${e.count ? "" : " warn"}">${countText(e.count)}</span></span>`
+    : `<span class="fname${e.managed ? "" : " muted"}">${e.managed ? DISC_ICON : ""}${esc(e.name)}</span>`;
+  const sum = e.dir || !e.managed ? "" : e.sha256 ? `<span class="mono small" title="SHA-256 ${esc(e.sha256)}">${esc(e.sha256.slice(0, 12))}</span>` : `<span class="muted small">${hashing && hashing.file === e.path ? "checking " + Math.round(100 * hashing.done / Math.max(1, hashing.total)) + " %" : "to be checked"}</span>`;
+  const src = e.source ? `<div class="muted small" title="${esc(e.source)}">from ${esc(new URL(e.source).host)}</div>` : "";
+  const dir = e.dir ? 1 : 0, p = esc(e.path);
+  const act = e.dir || e.managed ? `<button class="btn small" data-ren="${p}" data-dir="${dir}" aria-label="Rename ${esc(e.name)}">Rename</button> <button class="btn small" data-mv="${p}" data-dir="${dir}" aria-label="Move ${esc(e.name)} to another folder">Move</button>${e.dir && e.count ? "" : ` <button class="btn small danger" data-del="${p}" data-dir="${dir}" aria-label="Delete ${esc(e.name)}">Delete</button>`}` : `<span class="muted small">not an ISO or image</span>`;
+  return `<tr><td data-l="Name">${name}${e.inUse ? ` <span class="badge warn">in use</span>` : ""}${src}</td><td class="hide-s" data-l="Size">${e.dir ? "" : bytes(e.size)}</td><td class="hide-s" data-l="Changed">${when(e.mod)}</td><td class="hide-s" data-l="Checksum">${sum}</td><td data-l="">${act}</td></tr>`;
+}
+
+/** The list of the folder being viewed: its folders first, then its ISOs and files (nothing from the folders below). */
+function libraryTableHTML(d, hashing) {
+  return d.entries.length ? `<table class="rt"><thead><tr><th>Name</th><th class="hide-s">Size</th><th class="hide-s">Changed</th><th class="hide-s">SHA-256</th><th></th></tr></thead><tbody>${d.entries.map(e => entryRowHTML(e, hashing)).join("")}</tbody></table>`
+    : `<div class="empty">${d.path ? "This folder is empty. Upload files or add one from a web address to put them here, or delete the folder." : "The library is empty. Upload files, add one from a web address, or copy files into its folder."}</div>`;
+}
+
+/** What a search of the whole library found, each hit with the folder it is in (a folder hit opens that folder). */
+function searchHTML(ui) {
+  if (!ui.results) return `<div class="empty">Searching ...</div>`;
+  if (!ui.results.length) return `<div class="empty">Nothing in the library has ${esc(ui.query.trim())} in its name.</div>`;
+  const rows = ui.results.map(e => {
+    const where = folderOf(e.path);
+    const name = e.dir ? `<span class="fname">${FOLDER_ICON}${folderLink(e.path, esc(e.name))}</span>` : `<span class="fname">${DISC_ICON}${esc(e.name)}</span>`;
+    return `<tr><td data-l="Name">${name}</td><td data-l="Folder">${folderLink(where, esc("/" + where))}</td><td class="hide-s" data-l="Size">${e.dir ? "" : bytes(e.size)}</td></tr>`;
+  }).join("");
+  return `<table class="rt"><thead><tr><th>Name</th><th>Folder</th><th class="hide-s">Size</th></tr></thead><tbody>${rows}</tbody></table>${ui.more ? `<p class="muted small">Only the first ${ui.results.length} are shown: type more of the name.</p>` : ""}`;
+}
+
+/** Makes the links of folders (data-open) open the folder through navigate(), unless the person wants a new tab or window. */
+function wireFolderLinks(root) {
+  root.querySelectorAll("[data-open]").forEach(a => a.onclick = ev => {
+    if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button) return;
+    ev.preventDefault(); navigate("library", a.dataset.open); const p = $("#page"); if (p) p.focus({ preventScroll: true });
+  });
+}
+
 async function pageLibrary() {
   const page = $("#page");
   const { request: api, repeat: every, current } = viewScope(page);
+  Object.assign(libUI, { query: "", results: null, more: false });
+  clearTimeout(libUI.timer);
   page.innerHTML = `<div class="row" style="justify-content:space-between"><h1>Library</h1>
     <div class="row"><button class="btn primary" id="up">Upload files</button><button class="btn" id="imp">Add from a web address</button><button class="btn" id="mk">New folder</button></div></div>
     <input type="file" id="pick" multiple hidden>
-    <div class="card" id="drop"><div id="crumbs" class="small" style="margin-bottom:8px"></div><div id="ltable" class="tablewrap"></div><div id="lfoot" class="small muted" style="margin-top:10px"></div></div>
+    <div class="card" id="drop"><div id="crumbs" style="margin-bottom:4px"></div>
+    <div class="lbar"><span id="lup"></span><input type="search" id="lsearch" placeholder="Search the whole library" aria-label="Search the whole library" autocomplete="off"></div>
+    <div id="ltable" class="tablewrap" aria-live="polite"></div><div id="lfoot" class="small muted" style="margin-top:10px"></div></div>
     <div class="card" id="transfers" style="margin-top:14px" hidden></div>
     <div class="card" id="limitcard" style="margin-top:14px"></div>`;
   const draw = async () => {
@@ -685,8 +781,19 @@ async function pageLibrary() {
   transfers.refresh = () => guard(draw)();
   const safeDraw = async () => {
     try { await draw(); }
-    catch (e) { if (e === staleView) return; $("#ltable").innerHTML = `<div class="empty">${esc(e.message)}. <a href="#server" data-go="server">Open the Server page</a> to choose or fix the library.</div>`; $("#crumbs").innerHTML = ""; page.querySelectorAll("[data-go]").forEach(a => a.onclick = ev => { ev.preventDefault(); navigate(a.dataset.go); }); }
+    catch (e) { if (e === staleView) return; $("#ltable").innerHTML = `<div class="empty">${esc(e.message)}. ${state.libPath ? `<a href="#library" data-open="">Go to the top of the library</a> or ` : ""}<a href="#server" data-go="server">open the Server page</a> to choose or fix the library.</div>`; $("#crumbs").innerHTML = state.libPath ? crumbsHTML(state.libPath) : ""; wireFolderLinks(page); page.querySelectorAll("[data-go]").forEach(a => a.onclick = ev => { ev.preventDefault(); navigate(a.dataset.go); }); }
   };
+  const search = async () => {
+    if (!state.lib) return;
+    const text = $("#lsearch").value, query = text.trim();
+    libUI.query = text; libUI.results = null;
+    drawFiles(state.lib, null);
+    if (!query) return;
+    const r = await api("/api/library/search?q=" + encodeURIComponent(query));
+    if (libUI.query !== text) return; // (typing went on: a later answer is coming)
+    libUI.results = r.results; libUI.more = r.more; drawFiles(state.lib, null);
+  };
+  $("#lsearch").oninput = () => { clearTimeout(libUI.timer); libUI.timer = setTimeout(guard(search), 250); };
   $("#up").onclick = () => uploadDialog();
   $("#pick").onchange = e => { [...e.target.files].forEach(queueUpload); e.target.value = ""; };
   $("#imp").onclick = () => importDialog();
@@ -701,23 +808,15 @@ async function pageLibrary() {
 }
 
 function drawFiles(d, hashing) {
-  const parts = d.path ? d.path.split("/") : [];
-  let acc = "";
-  $("#crumbs").innerHTML = `<button class="link" data-open="">Library</button>` + parts.map(p => { acc = joinPath(acc, p); return ` / <button class="link" data-open="${esc(acc)}">${esc(p)}</button>`; }).join("");
-  const rows = d.entries.map(e => {
-    const name = e.dir ? `<button class="link" data-open="${esc(e.path)}"><strong>${esc(e.name)}/</strong></button>` : `<span${e.managed ? "" : ' class="muted"'}>${esc(e.name)}</span>`;
-    const sum = e.dir || !e.managed ? "" : e.sha256 ? `<span class="mono small" title="SHA-256 ${esc(e.sha256)}">${esc(e.sha256.slice(0, 12))}</span>` : `<span class="muted small">${hashing && hashing.file === e.path ? "checking " + Math.round(100 * hashing.done / Math.max(1, hashing.total)) + " %" : "to be checked"}</span>`;
-    const src = e.source ? `<div class="muted small" title="${esc(e.source)}">from ${esc(new URL(e.source).host)}</div>` : "";
-    const act = e.dir || e.managed ? `<button class="btn small" data-ren="${esc(e.path)}" data-dir="${e.dir ? 1 : 0}">Rename or move</button> <button class="btn small danger" data-del="${esc(e.path)}" data-dir="${e.dir ? 1 : 0}">Delete</button>` : `<span class="muted small">not an ISO or image</span>`;
-    return `<tr><td data-l="Name">${name}${e.inUse ? ` <span class="badge warn">in use</span>` : ""}${src}</td><td class="hide-s" data-l="Size">${e.dir ? "" : bytes(e.size)}</td><td class="hide-s" data-l="Changed">${when(e.mod)}</td><td class="hide-s" data-l="Checksum">${sum}</td><td data-l="">${act}</td></tr>`;
-  }).join("");
-  $("#ltable").innerHTML = d.entries.length ? `<table class="rt"><thead><tr><th>Name</th><th class="hide-s">Size</th><th class="hide-s">Changed</th><th class="hide-s">SHA-256</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-    : `<div class="empty">${d.path ? "This folder is empty." : "The library is empty. Upload files, add one from a web address, or copy files into its folder."}</div>`;
+  $("#crumbs").innerHTML = crumbsHTML(d.path);
+  $("#lup").innerHTML = upHTML(d);
+  $("#ltable").innerHTML = libUI.query.trim() ? searchHTML(libUI) : libraryTableHTML(d, hashing);
   const i = d.info;
-  $("#lfoot").textContent = `${i.path}${i.freeBytes ? " — " + bytes(i.freeBytes) + " free" : ""}${hashing && hashing.waiting ? " — checking " + hashing.waiting + " file" + (hashing.waiting > 1 ? "s" : "") + (hashing.paused ? " (waiting for the PCs to finish)" : "") : ""}. Drop files here to upload them.`;
+  $("#lfoot").textContent = `${i.path}${i.freeBytes ? " — " + bytes(i.freeBytes) + " free" : ""}${hashing && hashing.waiting ? " — checking " + hashing.waiting + " file" + (hashing.waiting > 1 ? "s" : "") + (hashing.paused ? " (waiting for the PCs to finish)" : "") : ""}. Drop files here to upload them to ${d.path ? "/" + d.path : "the top of the library"}.`;
   const page = $("#page");
-  page.querySelectorAll("[data-open]").forEach(b => b.onclick = () => { state.libPath = b.dataset.open; transfers.refresh(); });
+  wireFolderLinks(page);
   page.querySelectorAll("[data-ren]").forEach(b => b.onclick = () => renameDialog(b.dataset.ren, b.dataset.dir === "1"));
+  page.querySelectorAll("[data-mv]").forEach(b => b.onclick = guard(() => moveDialog(b.dataset.mv, b.dataset.dir === "1")));
   page.querySelectorAll("[data-del]").forEach(b => b.onclick = () => deleteDialog(b.dataset.del, b.dataset.dir === "1"));
 }
 
@@ -748,7 +847,8 @@ function renderTransfers() {
   jobCall("jc", "cancel"); jobCall("jr", "resume"); jobCall("jd", "dismiss");
 }
 
-function queueUpload(file, sha) { transfers.queue = transfers.queue.then(() => uploadFile(file, state.libPath || "", sha)); }
+/** Queues a file for upload into the folder being viewed now (not the one being viewed when its turn comes). */
+function queueUpload(file, sha) { const folder = state.libPath || ""; transfers.queue = transfers.queue.then(() => uploadFile(file, folder, sha)); }
 
 async function uploadFile(file, folder, sha) {
   const item = { name: file.name, size: file.size, sent: 0, state: "checking", error: "", warnings: [] };
@@ -877,20 +977,48 @@ function folderDialog() {
   q("#fo").onclick = go; q("#fn").onkeydown = e => { if (e.key === "Enter") go(); };
 }
 
+/** Renames a file or folder where it is (the folder it is in does not change; moving is a separate dialog). */
 function renameDialog(path, isDir) {
-  const m = modal(`<h2>${isDir ? "Rename or move the folder" : "Rename or move the file"}</h2><p class="muted small">The path in the library, folders separated by <code>/</code>. Change the last part to rename, the first parts to move. The menu name, hidden flag and rules of an ISO follow it.</p>
-    <div class="field"><label for="rp">Path</label><input type="text" id="rp" value="${esc(path)}" autocomplete="off"></div><p class="err" id="re" role="alert"></p>
+  const where = folderOf(path), name = path.slice(where ? where.length + 1 : 0);
+  const m = modal(`<h2>${isDir ? "Rename the folder" : "Rename the file"}</h2><p class="muted small">It stays in ${esc("/" + where)}. A file keeps a name that ends like an ISO or image. The menu name, hidden flag and rules of an ISO follow it.</p>
+    <div class="field"><label for="rp">New name</label><input type="text" id="rp" value="${esc(name)}" autocomplete="off"></div><p class="err" id="re" role="alert"></p>
     <div class="row" style="justify-content:flex-end"><button class="btn" id="rc">Cancel</button><button class="btn primary" id="rs">Save</button></div>`);
   const q = s => m.el.querySelector(s);
   q("#rc").onclick = m.close;
-  const go = async (force) => {
-    try { await api("/api/library/rename", "POST", { from: path, to: q("#rp").value.trim(), force: !!force }); m.close(); toast("Done"); transfers.refresh && transfers.refresh(); }
+  moveCall(m, path, () => joinPath(where, q("#rp").value.trim()));
+  q("#rp").onkeydown = e => { if (e.key === "Enter") q("#rs").click(); };
+}
+
+/** The folders a file or folder can be moved to: the top of the library and every folder, except where it is now and (for a folder) itself and what is inside it. "" is the top. */
+function moveTargets(folders, path, isDir) {
+  return ["", ...folders].filter(f => f !== folderOf(path) && !(isDir && (f === path || f.startsWith(path + "/"))));
+}
+
+/** Moves a file or folder into another folder chosen from the list of the library's folders. */
+async function moveDialog(path, isDir) {
+  const { folders } = await api("/api/library/folders");
+  const targets = moveTargets(folders, path, isDir), name = path.slice(folderOf(path) ? folderOf(path).length + 1 : 0);
+  const m = modal(`<h2>Move ${esc(name)}</h2>${targets.length ? `<div class="field"><label for="mt">Move to the folder</label><select id="mt">${targets.map(f => `<option value="${esc(f)}">${esc("/" + f)}</option>`).join("")}</select><p class="hint">The menu name, hidden flag and rules of an ISO follow it.</p></div>`
+      : `<p class="muted">There is no other folder to move it to. Make a folder first (New folder).</p>`}<p class="err" id="re" role="alert"></p>
+    <div class="row" style="justify-content:flex-end"><button class="btn" id="rc">Cancel</button>${targets.length ? `<button class="btn primary" id="rs">Move</button>` : ""}</div>`);
+  const q = s => m.el.querySelector(s);
+  q("#rc").onclick = m.close;
+  if (!targets.length) return;
+  q("#mt").focus();
+  moveCall(m, path, () => joinPath(q("#mt").value, name));
+}
+
+/** Wires the Save/Move button (#rs) of a dialog to the rename call from `path` to the path that `target()` gives; a file in use asks first. */
+function moveCall(m, path, target) {
+  const q = s => m.el.querySelector(s), btn = q("#rs");
+  btn.go = async (force) => {
+    try { await api("/api/library/rename", "POST", { from: path, to: target(), force: !!force }); m.close(); toast("Done"); transfers.refresh && transfers.refresh(); }
     catch (e) {
-      if (e.status === 409 && e.data && e.data.inUse) { if (await ask("A PC is using this", "A PC is reading this file right now. Moving it makes that PC fail.", "Move anyway")) go(true); }
+      if (e.status === 409 && e.data && e.data.inUse) { if (await ask("A PC is using this", "A PC is reading this file right now. Moving it makes that PC fail.", "Move anyway")) btn.go(true); }
       else q("#re").textContent = e.message;
     }
   };
-  q("#rs").onclick = () => go(false); q("#rp").onkeydown = e => { if (e.key === "Enter") go(false); };
+  btn.onclick = () => btn.go(false);
 }
 
 async function deleteDialog(path, isDir) {
@@ -907,6 +1035,11 @@ async function deleteDialog(path, isDir) {
 }
 
 // ---- ISOs
+/** The path of an ISO in the library, its folder a link to that folder of the Library page. */
+function isoPathHTML(name) {
+  const where = folderOf(name);
+  return where ? folderLink(where, esc(where + "/")) + esc(name.slice(where.length + 1)) : esc(name);
+}
 async function pageISOs() {
   const page = $("#page");
   const { request: api, repeat: every, current } = viewScope(page);
@@ -916,7 +1049,7 @@ async function pageISOs() {
   const draw = async () => {
     await loadCommon(api);
     $("#isotable").innerHTML = state.isos.length ? `<table class="rt"><thead><tr><th>Name in the menu</th><th class="hide-s">Starts as</th><th class="hide-s">Size</th><th>In the menu</th><th>Starts by itself</th></tr></thead><tbody>${state.isos.map(i => `<tr>
-      <td data-l="Name in the menu"><input class="inline" type="text" value="${esc(i.title)}" data-id="${i.id}" data-orig="${esc(i.original)}" aria-label="Name of ${esc(i.original)} in the menu" maxlength="120"><div class="muted small mono">${esc(i.name)}</div><div class="row small" style="gap:8px;margin-top:4px">${i.protected ? `<span class="badge warn" title="The menu asks for a password before it starts this ISO">password</span><button class="btn small" data-pwclear="${i.id}">Remove the password</button>` : `<button class="btn small" data-pwset="${i.id}" title="Ask for a password in the menu before this ISO starts">Set a password ...</button>`}</div>${i.method === "recognised" && !/^(Windows|Disk image|Proxmox)/.test(i.family || "") ? `<input class="inline small" type="text" value="${esc(i.args || "")}" data-args="${i.id}" placeholder="Extra kernel arguments (optional)" aria-label="Extra kernel arguments for ${esc(i.title)}" maxlength="300">
+      <td data-l="Name in the menu"><input class="inline" type="text" value="${esc(i.title)}" data-id="${i.id}" data-orig="${esc(i.original)}" aria-label="Name of ${esc(i.original)} in the menu" maxlength="120"><div class="muted small mono">${isoPathHTML(i.name)}</div><div class="row small" style="gap:8px;margin-top:4px">${i.protected ? `<span class="badge warn" title="The menu asks for a password before it starts this ISO">password</span><button class="btn small" data-pwclear="${i.id}">Remove the password</button>` : `<button class="btn small" data-pwset="${i.id}" title="Ask for a password in the menu before this ISO starts">Set a password ...</button>`}</div>${i.method === "recognised" && !/^(Windows|Disk image|Proxmox)/.test(i.family || "") ? `<input class="inline small" type="text" value="${esc(i.args || "")}" data-args="${i.id}" placeholder="Extra kernel arguments (optional)" aria-label="Extra kernel arguments for ${esc(i.title)}" maxlength="300">
         <div class="row small" style="gap:14px;margin-top:4px"><label class="row small" style="margin:0;font-weight:500" title="Takes out quiet, splash and rhgb and turns the kernel's messages up (loglevel=7 debug): for finding why an ISO does not start"><input type="checkbox" data-debug="${i.id}" data-kind="verbose" ${i.debug && i.debug.verbose ? "checked" : ""}> Verbose start-up</label>
         <label class="row small" style="margin:0;font-weight:500" title="Also sends the console to the first serial port (115200 baud)"><input type="checkbox" data-debug="${i.id}" data-kind="serial" ${i.debug && i.debug.serial ? "checked" : ""}> Serial console</label>
         <label class="row small" style="margin:0;font-weight:500" title="Stops the start-up at a shell before the system goes on, to look around (network, disks, logs). Works for Proxmox VE, Fedora and the other dracut systems, Debian live and Ubuntu; other systems have no such word and ignore it. Type exit (or press Ctrl+D) to carry on."><input type="checkbox" data-debug="${i.id}" data-kind="shell" ${i.debug && i.debug.shell ? "checked" : ""}> Debug shell</label></div>
@@ -982,6 +1115,7 @@ async function pageISOs() {
     page.querySelectorAll("input[data-dflt]").forEach(inp => inp.onchange = guard(async () => { const s = await api("/api/settings"); await api("/api/settings", "PUT", { ...s, default: "iso:" + inp.dataset.dflt }); toast("Saved"); await draw(); }));
     page.querySelectorAll("input[data-dflt-other]").forEach(inp => inp.onchange = guard(async () => { const s = await api("/api/settings"); await api("/api/settings", "PUT", { ...s, default: inp.dataset.dfltOther }); toast("Saved"); await draw(); }));
     page.querySelectorAll("[data-go]").forEach(a => a.onclick = e => { e.preventDefault(); state.view = a.dataset.go; render(); });
+    wireFolderLinks(page);
   };
   await guard(draw)();
   if (!current()) return;
@@ -1368,6 +1502,7 @@ function pageAccount() {
 // ---- start
 (async () => {
   state.view = pageInAddress() || state.view;
+  state.libPath = folderInAddress();
   window.addEventListener("hashchange", onAddressChange);
   try { const s = await fetch("/api/session", { credentials: "same-origin" }).then(r => r.json()); state.authed = !!s.authenticated; state.version = s.version || ""; } catch (e) { state.authed = false; }
   render();

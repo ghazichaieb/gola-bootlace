@@ -159,6 +159,8 @@ func (a *Admin) Mount() map[string]http.Handler {
 	api.HandleFunc("GET /api/library/inspect", a.authed(a.libraryInspect))
 	api.HandleFunc("PUT /api/library", a.authed(a.librarySelect))
 	api.HandleFunc("GET /api/library/files", a.authed(a.filesList))
+	api.HandleFunc("GET /api/library/search", a.authed(a.filesSearch))
+	api.HandleFunc("GET /api/library/folders", a.authed(a.foldersList))
 	api.HandleFunc("POST /api/library/folder", a.authed(a.folderMake))
 	api.HandleFunc("POST /api/library/rename", a.authed(a.fileRename))
 	api.HandleFunc("POST /api/library/delete", a.authed(a.fileDelete))

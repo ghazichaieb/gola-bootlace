@@ -51,3 +51,32 @@ test('an address in the PCs table is never broken in the middle', () => {
   assert.ok(/<td class="hide-s mono small nowrap" data-l="Address">/.test(html));
   assert.ok(/table\.rt td\.nowrap\{white-space:nowrap;overflow-wrap:normal\}/.test(css));
 });
+
+test('the folder navigation wraps on a phone, follows the reading direction and has touch-sized links', () => {
+  assert.ok(/\.crumbs\{display:flex;flex-wrap:wrap;/.test(css), 'a long path wraps instead of widening the page');
+  assert.ok(/\.crumbs a,\.crumbs \[aria-current\]\{[^}]*padding:8px 2px;[^}]*overflow-wrap:anywhere/.test(css), 'a long folder name wraps and the link is at least 36px high');
+  assert.ok(/\.crumbs li\+li::before\{content:"\/";[^}]*margin-inline-end:8px\}/.test(css), 'the separator sits on the right side in a right-to-left language');
+  assert.ok(/\.fname a\{[^}]*overflow-wrap:anywhere/.test(css));
+  assert.ok(/th,td\{text-align:start;/.test(css), 'table text follows the reading direction');
+  assert.ok(/\.lbar input\[type=search\]\{flex:1 1 220px;max-width:420px\}/.test(css), 'the search box shrinks to the phone width');
+  assert.ok(!/\.(crumbs|fname|lbar|ficon)[^{]*\{[^}]*(padding|margin)-(left|right)/.test(css), 'the folder navigation uses logical sides only');
+});
+
+for (const [theme, marker] of [['light', ':root{'], ['dark', ':root[data-theme="dark"]{']]) {
+  test(`${theme}: the folder icon, the folder column and the item counts read on the panel (#78)`, () => {
+    const t = Object.assign(tokens(':root{'), tokens(marker));
+    assert.ok(contrast(t.muted, t.panel) >= 4.5, `muted text on the panel: ${contrast(t.muted, t.panel).toFixed(2)}`);
+    assert.ok(contrast(t.muted, t.panel) >= 3, 'the folder icon (a graphic, 3:1)');
+    assert.ok(contrast(t.muted, t.panel2) >= 4.5, `the count badge (muted on panel2): ${contrast(t.muted, t.panel2).toFixed(2)}`);
+    assert.ok(contrast(t.warn, t['warn-soft']) >= 4.5, `the "empty" badge: ${contrast(t.warn, t['warn-soft']).toFixed(2)}`);
+    assert.ok(contrast(t['accent-fg'], t.panel) >= 4.5, 'folder links on the panel');
+  });
+}
+
+test('the breadcrumb, the folder icons and the search box are marked up for a screen reader and the keyboard', () => {
+  assert.ok(/<nav aria-label="Where you are in the library"><ol class="crumbs">/.test(html));
+  assert.ok(/aria-current="page">\$\{esc\(name\)\}/.test(html), 'the current folder is marked');
+  assert.ok(/class="ficon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"/.test(html), 'icons are decoration');
+  assert.ok(/<input type="search" id="lsearch"[^>]*aria-label="Search the whole library"/.test(html));
+  assert.ok(/data-mv="\$\{p\}"[^>]*aria-label="Move /.test(html) && /data-ren="\$\{p\}"[^>]*aria-label="Rename /.test(html), 'row buttons name their item');
+});

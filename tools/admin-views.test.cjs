@@ -191,3 +191,106 @@ test('PCs page: a rule can name one entry of an ISO\'s own boot menu', () => {
   f.run('state.isos=[{id:"0123456789",title:"Plain"}]');
   assert.doesNotMatch(f.run('actionOptions("menu")'), /boot menu/, 'an ISO without entries adds no group');
 });
+
+const dirEntry = (name, path, count) => ({ name, path, dir: true, count, managed: false, size: 0, mod: '2026-01-01T00:00:00Z', inUse: false });
+const isoEntry = (name, path) => ({ name, path, dir: false, count: 0, managed: true, size: 5 * 2 ** 20, mod: '2026-01-01T00:00:00Z', inUse: false, sha256: 'a'.repeat(64) });
+const call = (f, expr, data) => { f.context.__d = data; return f.run(expr); };
+
+test('a library folder is part of the address: navigate() writes it, Back, Forward and typed addresses are followed (library folders)', () => {
+  const f = fixture();
+  f.run('globalThis.drawn=[]; render=()=>{drawn.push(state.view+":"+state.libPath)}; state.setupDone=true; state.view="dash"');
+  f.run('navigate("library", "linux/deb")');
+  assert.equal(f.run('location.hash'), 'library/linux/deb');
+  assert.equal(f.run('state.libPath'), 'linux/deb');
+  f.run('navigate("library", "R&D #1/new?")');
+  assert.equal(f.run('location.hash'), 'library/R%26D%20%231/new%3F', 'a name keeps to one part of the address');
+  f.run('location.hash="#library/R%26D%20%231/new%3F"; onAddressChange()');
+  assert.equal(f.run('drawn.length'), 2, 'the address of the folder already shown draws nothing again');
+  f.run('location.hash="#library/a%20b/c"; onAddressChange()');
+  assert.equal(f.run('state.libPath'), 'a b/c', 'Back or a typed address shows that folder');
+  f.run('location.hash="#library"; onAddressChange()');
+  assert.equal(f.run('state.libPath'), '', 'the address of the library alone is its top');
+  f.run('location.hash="#library/%E0%A4%A"; onAddressChange()');
+  assert.equal(f.run('state.libPath'), '', 'an address that cannot be read is the top, not an error');
+  f.run('navigate("pcs"); navigate("library")');
+  assert.equal(f.run('location.hash'), 'library', 'the Library button opens the top');
+  assert.equal(f.run('state.libPath'), '');
+  f.run('location.hash="#library"');
+  assert.equal(f.run('pageInAddress()'), 'library');
+  f.run('location.hash="#library/x"');
+  assert.equal(f.run('pageInAddress()'), 'library', 'a page followed by a path is still that page');
+  assert.equal(f.run('folderInAddress()'), 'x');
+  f.run('location.hash="#pcs/x"');
+  assert.equal(f.run('folderInAddress()'), '', 'only the Library page has a folder');
+});
+test('the breadcrumb is Library / folder / subfolder: every part but the last is a link, names are escaped', () => {
+  const f = fixture();
+  const top = call(f, 'crumbsHTML(__d)', '');
+  assert.match(top, /<span aria-current="page">Library<\/span>/);
+  assert.doesNotMatch(top, /<a /, 'the top has nothing to go up to');
+  const deep = call(f, 'crumbsHTML(__d)', 'linux/R&D <x>/new #2');
+  assert.match(deep, /<a href="#library" data-open="">Library<\/a>/);
+  assert.match(deep, /<a href="#library\/linux" data-open="linux">linux<\/a>/);
+  assert.match(deep, /<a href="#library\/linux\/R%26D%20%3Cx%3E" data-open="linux\/R&amp;D &lt;x&gt;">R&amp;D &lt;x&gt;<\/a>/);
+  assert.match(deep, /<span aria-current="page">new #2<\/span>/, 'the folder shown is text, not a link');
+  assert.doesNotMatch(deep, /<x>/, 'nothing of a name reaches the page unescaped');
+  assert.match(deep, /<nav aria-label="[^"]+"><ol class="crumbs">/);
+});
+test('the library list shows the folder\'s folders first, with a count and an icon, then its ISOs only', () => {
+  const f = fixture();
+  const d = { path: 'linux', parent: '', hasParent: true, entries: [dirEntry('deb', 'linux/deb', 2), dirEntry('<b>new</b>', 'linux/<b>new</b>', 0), dirEntry('one', 'linux/one', 1), isoEntry('ubuntu.iso', 'linux/ubuntu.iso')] };
+  const html = call(f, 'libraryTableHTML(__d, null)', d);
+  assert.match(html, /<svg class="ficon"[^>]*aria-hidden="true"/);
+  assert.match(html, /data-open="linux\/deb">deb<\/a> <span class="badge">2 ISOs or images<\/span>/);
+  assert.match(html, /<span class="badge">1 ISO or image<\/span>/);
+  assert.match(html, /<span class="badge warn">empty<\/span>/);
+  assert.ok(html.indexOf('deb</a>') < html.indexOf('ubuntu.iso'), 'folders come first');
+  assert.doesNotMatch(html, /<b>new/, 'a folder name is escaped');
+  assert.match(html, /data-open="linux\/&lt;b&gt;new&lt;\/b&gt;"/);
+  assert.equal((html.match(/data-del=/g) || []).length, 2, 'a folder with ISOs in it is not offered for deletion');
+  assert.match(html, /data-mv="linux\/ubuntu\.iso"/);
+  assert.match(html, /data-ren="linux\/deb"/);
+  assert.doesNotMatch(html, /href=[^>]*ubuntu/, 'an ISO is not a link');
+});
+test('an empty folder says so, the top of an empty library says how to fill it', () => {
+  const f = fixture();
+  assert.match(call(f, 'libraryTableHTML(__d, null)', { path: 'linux', entries: [] }), /This folder is empty/);
+  assert.match(call(f, 'libraryTableHTML(__d, null)', { path: '', entries: [] }), /The library is empty/);
+});
+test('Up goes to the parent folder and is absent at the top', () => {
+  const f = fixture();
+  assert.equal(call(f, 'upHTML(__d)', { hasParent: false }), '');
+  assert.match(call(f, 'upHTML(__d)', { hasParent: true, parent: 'a/b' }), /<a class="btn small" href="#library\/a\/b" data-open="a\/b">/);
+  assert.match(call(f, 'upHTML(__d)', { hasParent: true, parent: '' }), /href="#library" data-open=""/);
+});
+test('a search hit shows the folder it is in, and a folder hit opens', () => {
+  const f = fixture();
+  const ui = { query: 'ubu <', results: [isoEntry('ubuntu.iso', 'linux/ubuntu.iso'), isoEntry('top.iso', 'top.iso'), dirEntry('ubuntu-old', 'linux/ubuntu-old', 1)], more: true };
+  const html = call(f, 'searchHTML(__d)', ui);
+  assert.match(html, /<a href="#library\/linux" data-open="linux">\/linux<\/a>/);
+  assert.match(html, /<a href="#library" data-open="">\/<\/a>/, 'a file at the top is in the top');
+  assert.match(html, /data-open="linux\/ubuntu-old">ubuntu-old<\/a>/);
+  assert.match(html, /Only the first 3 are shown/);
+  assert.match(call(f, 'searchHTML(__d)', { query: ' x<y ', results: [], more: false }), /Nothing in the library has x&lt;y in its name/);
+  assert.match(call(f, 'searchHTML(__d)', { query: 'x', results: null }), /Searching/);
+});
+test('the folders an item can be moved to leave out where it is, and for a folder itself and what is inside it', () => {
+  const f = fixture();
+  const folders = ['a', 'a/b', 'a/b/c', 'ab', 'z'];
+  const targets = (path, dir) => JSON.parse(f.run(`JSON.stringify(moveTargets(${JSON.stringify(folders)}, ${JSON.stringify(path)}, ${dir}))`));
+  assert.deepEqual(targets('x.iso', false), folders, 'a file at the top can go to every folder');
+  assert.deepEqual(targets('a/x.iso', false), ['', 'a/b', 'a/b/c', 'ab', 'z'], 'not where it already is');
+  assert.deepEqual(targets('a/b', true), ['', 'ab', 'z'], 'a folder cannot go into itself or below; where it is now (a) is left out');
+  assert.deepEqual(targets('ab', true), ['a', 'a/b', 'a/b/c', 'z'], 'a folder whose name starts like another is not "inside" it');
+});
+test('an upload goes to the folder that was shown when it was chosen, not where the page is when its turn comes', async () => {
+  const f = fixture();
+  f.run('globalThis.sent=[]; uploadFile = async (file, folder) => { sent.push(folder); }; state.libPath="linux"; queueUpload({name:"a.iso"}); state.libPath="other"; queueUpload({name:"b.iso"}); state.libPath="elsewhere"');
+  await f.run('transfers.queue');
+  assert.deepEqual(JSON.parse(f.run('JSON.stringify(sent)')), ['linux', 'other']);
+});
+test('the ISOs page links the folder of each ISO to the Library page', () => {
+  const f = fixture();
+  assert.equal(f.run('isoPathHTML("a.iso")'), 'a.iso');
+  assert.equal(f.run('isoPathHTML("linux/deb/<a>.iso")'), '<a href="#library/linux/deb" data-open="linux/deb">linux/deb/</a>&lt;a&gt;.iso');
+});

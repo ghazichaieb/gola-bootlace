@@ -306,3 +306,86 @@ func TestReserveAndSpace(t *testing.T) {
 		t.Fatalf("an absurd size fitted: %v", err)
 	}
 }
+
+func TestPathsFromTheAddressBarAreRefusedOrCleaned(t *testing.T) {
+	for _, bad := range []string{`C:\Windows`, "C:/Windows", `\server\share`, "a/C:", `..\x`, `a\..\..\x`, "%2e%2e", "a/\x00", ".bootlace/x", "a/.bootlace"} {
+		if got, err := CleanRel(bad); err == nil && (strings.Contains(got, "..") || strings.Contains(got, ":") || strings.HasPrefix(got, ".")) {
+			t.Errorf("CleanRel(%q) = %q, accepted", bad, got)
+		}
+	}
+	for _, bad := range []string{`C:\Windows`, "C:/Windows", `..\x`, ".bootlace/x"} {
+		if got, err := CleanRel(bad); err == nil {
+			t.Errorf("CleanRel(%q) = %q, accepted", bad, got)
+		}
+	}
+	if got, err := CleanRel("/etc/passwd"); err != nil || got != "etc/passwd" {
+		t.Errorf("an absolute path is taken as inside the library: %q, %v", got, err)
+	}
+}
+
+func TestWalkCountsSearchesAndListsFolders(t *testing.T) {
+	l, dir := ready(t)
+	put(t, filepath.Join(dir, "top.iso"), "1")
+	put(t, filepath.Join(dir, "linux", "Ubuntu.iso"), "1")
+	put(t, filepath.Join(dir, "linux", "deb", "debian.iso"), "1")
+	put(t, filepath.Join(dir, "linux", "deb", "notes.txt"), "1")
+	put(t, filepath.Join(dir, "empty", ".keep"), "1")
+	put(t, filepath.Join(dir, "a", "b", "c", "d", "e", "too-deep.iso"), "1")
+	for rel, want := range map[string]int{"": 3, "linux": 2, "linux/deb": 1, "empty": 0, "a": 0} {
+		if n, err := l.CountManaged(rel); err != nil || n != want {
+			t.Errorf("CountManaged(%q) = %d, %v; want %d", rel, n, err, want)
+		}
+	}
+	if _, err := l.CountManaged("../x"); err == nil {
+		t.Error("counted outside the library")
+	}
+	folders, err := l.Folders()
+	if err != nil || strings.Join(folders, ",") != "a,a/b,a/b/c,a/b/c/d,a/b/c/d/e,empty,linux,linux/deb" {
+		t.Errorf("Folders() = %v, %v", folders, err)
+	}
+	hits, more, err := l.Search("UBUNTU", 10)
+	if err != nil || more || len(hits) != 1 || hits[0].Path != "linux/Ubuntu.iso" {
+		t.Errorf("Search = %+v, %v, %v", hits, more, err)
+	}
+	hits, more, _ = l.Search("deb", 10)
+	if len(hits) != 2 || hits[0].Path != "linux/deb" || hits[1].Path != "linux/deb/debian.iso" {
+		t.Errorf("a folder and a file match: %+v", hits)
+	}
+	if hits, more, _ = l.Search("iso", 2); len(hits) != 2 || !more {
+		t.Errorf("the limit: %d hits, more=%v", len(hits), more)
+	}
+	if hits, _, _ = l.Search("notes", 10); len(hits) != 0 {
+		t.Errorf("a file that is not an ISO is searched: %+v", hits)
+	}
+	if hits, _, _ = l.Search("too-deep", 10); len(hits) != 0 {
+		t.Errorf("the scan does not offer what is deeper than it goes: %+v", hits)
+	}
+	if hits, _, _ = l.Search("  ", 10); len(hits) != 0 {
+		t.Errorf("an empty search found %+v", hits)
+	}
+	if hits, _, _ = l.Search("keep", 10); len(hits) != 0 {
+		t.Errorf("a hidden file is searched: %+v", hits)
+	}
+}
+
+func TestWalkDoesNotFollowLinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("links need rights that a test does not have here")
+	}
+	l, dir := ready(t)
+	outside := t.TempDir()
+	put(t, filepath.Join(outside, "secret.iso"), "private")
+	if err := os.Symlink(outside, filepath.Join(dir, "escape")); err != nil {
+		t.Skip(err)
+	}
+	put(t, filepath.Join(dir, "own.iso"), "1")
+	if n, _ := l.CountManaged(""); n != 1 {
+		t.Errorf("a link out of the library was counted: %d", n)
+	}
+	if hits, _, _ := l.Search("secret", 10); len(hits) != 0 {
+		t.Errorf("a link out of the library was searched: %+v", hits)
+	}
+	if f, _ := l.Folders(); len(f) != 0 {
+		t.Errorf("a link is listed as a folder: %v", f)
+	}
+}

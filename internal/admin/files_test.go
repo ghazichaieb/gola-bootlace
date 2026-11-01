@@ -60,7 +60,7 @@ func decode(r io.Reader) map[string]any {
 
 func TestFileManagementNeedsALogin(t *testing.T) {
 	r := newRig(t)
-	for _, c := range [][2]string{{"GET", "/api/library/files"}, {"POST", "/api/library/folder"}, {"POST", "/api/library/rename"}, {"POST", "/api/library/delete"},
+	for _, c := range [][2]string{{"GET", "/api/library/files"}, {"GET", "/api/library/search"}, {"GET", "/api/library/folders"}, {"POST", "/api/library/folder"}, {"POST", "/api/library/rename"}, {"POST", "/api/library/delete"},
 		{"POST", "/api/library/import"}, {"POST", "/api/library/import/check"}, {"GET", "/api/library/jobs"}, {"PUT", "/api/library/upload"}, {"POST", "/api/library/upload/check"}, {"PUT", "/api/library/limit"}} {
 		if code, _ := r.do(c[0], c[1], map[string]any{}, nil); code != 401 {
 			t.Errorf("%s %s: %d", c[0], c[1], code)
@@ -251,5 +251,57 @@ func TestTheLoginSlides(t *testing.T) {
 	a.mu.Unlock()
 	if a.valid(cookieRequest(token)) {
 		t.Fatal("a login outlived the longest time")
+	}
+}
+
+func TestFolderViewCountsSearchAndMove(t *testing.T) {
+	r, dir := withLibrary(t)
+	write(t, filepath.Join(dir, "top.iso"), "x")
+	write(t, filepath.Join(dir, "linux", "ubuntu.iso"), "x")
+	write(t, filepath.Join(dir, "linux", "deb", "debian.iso"), "x")
+	write(t, filepath.Join(dir, "R&D 'new'", "a.iso"), "x")
+	if err := os.Mkdir(filepath.Join(dir, "empty"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]float64{}
+	_, out := r.do("GET", "/api/library/files", nil, nil)
+	for _, e := range out["entries"].([]any) {
+		m := e.(map[string]any)
+		counts[m["name"].(string)] = m["count"].(float64)
+	}
+	if counts["linux"] != 2 || counts["empty"] != 0 || counts["R&D 'new'"] != 1 {
+		t.Fatalf("counts of the folders: %v", counts)
+	}
+	if _, out = r.do("GET", "/api/library/files?path=linux", nil, nil); out["path"] != "linux" || out["parent"] != "" || out["hasParent"] != true || len(out["entries"].([]any)) != 2 {
+		t.Fatalf("one folder only: %v", out)
+	}
+	if _, out = r.do("GET", "/api/library/files?path=linux/deb", nil, nil); out["parent"] != "linux" {
+		t.Fatalf("the parent: %v", out)
+	}
+	for _, bad := range []string{"..", "../x", "linux/../..", `C:\Windows`, "linux/%00", ".bootlace"} {
+		if code, _ := r.do("GET", "/api/library/files?path="+bad, nil, nil); code != 400 {
+			t.Errorf("path %q: %d", bad, code)
+		}
+	}
+	if code, _ := r.do("GET", "/api/library/files?path=nope", nil, nil); code != 404 {
+		t.Errorf("a folder that is not there: %d", code)
+	}
+	if code, out := r.do("GET", "/api/library/search?q=UBU", nil, nil); code != 200 || len(out["results"].([]any)) != 1 || out["results"].([]any)[0].(map[string]any)["path"] != "linux/ubuntu.iso" {
+		t.Fatalf("search: %d %v", code, out)
+	}
+	if _, out = r.do("GET", "/api/library/search?q=", nil, nil); len(out["results"].([]any)) != 0 {
+		t.Fatalf("an empty search: %v", out)
+	}
+	if _, out = r.do("GET", "/api/library/folders", nil, nil); len(out["folders"].([]any)) != 4 {
+		t.Fatalf("folders: %v", out)
+	}
+	if code, _ := r.do("POST", "/api/library/rename", map[string]any{"from": "top.iso", "to": "linux/top.iso"}, nil); code != 200 {
+		t.Fatalf("move into a folder: %d", code)
+	}
+	if code, _ := r.do("POST", "/api/library/rename", map[string]any{"from": "linux/top.iso", "to": "nope/top.iso"}, nil); code != 404 {
+		t.Fatalf("move into a folder that is not there: %d", code)
+	}
+	if code, _ := r.do("POST", "/api/library/rename", map[string]any{"from": "linux/top.iso", "to": "../top.iso"}, nil); code != 400 {
+		t.Fatalf("move out of the library: %d", code)
 	}
 }

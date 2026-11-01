@@ -23,6 +23,7 @@ type fileView struct {
 	SHA256 string `json:"sha256,omitempty"`
 	Source string `json:"source,omitempty"`
 	InUse  bool   `json:"inUse"` // a PC is using it right now
+	Count  int    `json:"count"` // for a folder: the ISOs and images in it, at any depth
 }
 
 func (a *Admin) libraryError(w http.ResponseWriter, err error) {
@@ -57,6 +58,9 @@ func (a *Admin) filesList(w http.ResponseWriter, r *http.Request) {
 	out := make([]fileView, 0, len(entries))
 	for _, e := range entries {
 		v := fileView{Entry: e, InUse: a.o.Backend.InUse(e.Path)}
+		if e.Dir {
+			v.Count, _ = a.o.Library.CountManaged(e.Path) // (a folder that cannot be read counts as empty)
+		}
 		if idx != nil && e.Managed {
 			if rec, ok := idx.Get(e.Path); ok {
 				v.SHA256, v.Source = rec.SHA256, rec.Source
@@ -73,6 +77,32 @@ func (a *Admin) filesList(w http.ResponseWriter, r *http.Request) {
 		d["hashing"] = idx.Status()
 	}
 	writeJSON(w, http.StatusOK, d)
+}
+
+// filesSearch is GET /api/library/search?q=: folders and ISOs anywhere in the library whose name contains q (the page shows each hit with its folder).
+func (a *Admin) filesSearch(w http.ResponseWriter, r *http.Request) {
+	found, more, err := a.o.Library.Search(r.URL.Query().Get("q"), 200)
+	if err != nil {
+		a.libraryError(w, err)
+		return
+	}
+	if found == nil {
+		found = []library.Entry{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": found, "more": more})
+}
+
+// foldersList is GET /api/library/folders: every folder of the library, for choosing where to move a file.
+func (a *Admin) foldersList(w http.ResponseWriter, _ *http.Request) {
+	folders, err := a.o.Library.Folders()
+	if err != nil {
+		a.libraryError(w, err)
+		return
+	}
+	if folders == nil {
+		folders = []string{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"folders": folders})
 }
 
 func (a *Admin) folderMake(w http.ResponseWriter, r *http.Request) {
