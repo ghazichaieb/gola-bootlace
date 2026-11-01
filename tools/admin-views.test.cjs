@@ -109,3 +109,30 @@ test('the boot-entries dialog neither offers a hidden entry as the default nor l
   assert.deepEqual(options.map(o => o.disabled), [false, true, true]);
   assert.deepEqual(rows.map(r => r.box.disabled), [false, false]);
 });
+
+test('the address and the page agree: navigate() writes it, Back/Forward and typed addresses are followed (#80)', () => {
+  const f = fixture();
+  f.run('globalThis.drawn=[]; render=()=>{drawn.push(state.view)}; state.setupDone=true; state.view="dash"');
+  f.run('navigate("pcs")');
+  assert.equal(f.run('location.hash'), 'pcs');
+  assert.equal(f.run('state.view'), 'pcs');
+  f.run('location.hash="#server"; onAddressChange()');
+  assert.deepEqual(JSON.parse(f.run('JSON.stringify(drawn)')), ['pcs', 'server'], 'Back or a typed address shows that page');
+  f.run('onAddressChange()');
+  assert.equal(f.run('drawn.length'), 2, 'the address of the page already shown draws nothing again');
+  f.run('location.hash="#nonsense"; onAddressChange()');
+  assert.equal(f.run('state.view'), 'server', 'an address that names no page is ignored');
+  assert.equal(f.run('drawn.length'), 2);
+});
+test('an address is followed while the first-start guide is shown, and #start still opens it (#80)', () => {
+  const f = fixture();
+  f.run('globalThis.drawn=0; render=()=>{drawn++}; state.setupDone=false; state.view="start"; location.hash="#pcs"; onAddressChange()');
+  assert.equal(f.run('state.view'), 'pcs');
+  f.run('location.hash="#start"; onAddressChange()');
+  assert.equal(f.run('state.view'), 'start');
+  assert.equal(f.run('drawn'), 2);
+});
+test('the page buttons and in-page links go through navigate() (#80)', () => {
+  assert.equal(source.match(/location\.hash =/g).length, 1, 'only navigate() writes the address');
+  assert.match(source, /addEventListener\("hashchange", onAddressChange\)/);
+});

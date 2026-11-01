@@ -224,6 +224,15 @@ function viewScope(page) {
 function clearTimers() { state.timers.forEach(clearInterval); state.timers = []; }
 function every(ms, fn) { state.timers.push(setInterval(() => { state.polling = true; const p = fn().catch(() => {}); state.polling = false; return p; }, ms)); }
 
+/** Whether the address names a page of the interface (#start is valid after the guide was finished too). */
+function pageInAddress() { const h = location.hash.slice(1); return h === "start" || views.some(v => v[0] === h) ? h : ""; }
+
+/** Opens a page and puts it in the address, so that Back, Forward, reload and a copied link return to it. */
+function navigate(view) { state.view = view; location.hash = view; render(); }
+
+/** Follows the address when it changes without navigate() (Back, Forward, a typed or pasted #page): shows that page unless it is the one shown. */
+function onAddressChange() { const h = pageInAddress(); if (h && h !== state.view) { state.view = h; render(); } }
+
 function render() {
   clearTimers();
   const app = $("#app");
@@ -236,12 +245,12 @@ function render() {
   </div></header>
   <main id="page" tabindex="-1"></main>
   <footer>Gola Bootlace, by <a href="https://gola.tn" target="_blank" rel="noopener">Gola Services</a>. Copyright (c) 2026 Gola Services SUARL. GPL-3.0-or-later.</footer>`;
-  app.querySelectorAll("nav button").forEach(b => b.onclick = () => { state.view = b.dataset.v; location.hash = state.view; render(); });
+  app.querySelectorAll("nav button").forEach(b => b.onclick = () => { navigate(b.dataset.v); });
   $("#theme").onclick = toggleTheme;
   $("#out").onclick = guard(async () => { await api("/api/logout", "POST", {}); state.authed = false; render(); });
   if (state.setupDone === undefined) { // the first-start guide is offered first, until it is finished or skipped
     state.setupDone = null;
-    api("/api/setup").then(s => { state.setupDone = !!s.done; if (!s.done && !location.hash) state.view = "start"; render(); }).catch(() => { state.setupDone = true; });
+    api("/api/setup").then(s => { state.setupDone = !!s.done; if (!s.done && !pageInAddress()) state.view = "start"; render(); }).catch(() => { state.setupDone = true; });
   }
   if (state.setupDone === false && !views.some(v => v[0] === "start")) views.unshift(["start", "Start here"]);
   if (state.setupDone === true) { const i = views.findIndex(v => v[0] === "start"); if (i >= 0) views.splice(i, 1); }
@@ -289,7 +298,7 @@ async function pageDash() {
   const draw = async () => {
     const [st, log, lib, svc, sbs] = await Promise.all([api("/api/status"), api("/api/log?limit=8"), api("/api/library"), api("/api/services"), api("/api/secureboot")]);
     $("#dbanner").innerHTML = serverBanner(lib.library, svc) + sbBanner(sbs, true);
-    page.querySelectorAll("#dbanner [data-go]").forEach(a => a.onclick = e => { e.preventDefault(); state.view = a.dataset.go; location.hash = state.view; render(); });
+    page.querySelectorAll("#dbanner [data-go]").forEach(a => a.onclick = e => { e.preventDefault(); navigate(a.dataset.go); });
     page.querySelectorAll("#dbanner [data-sb-on]").forEach(b => b.onclick = guard(async () => { await api("/api/secureboot", "PUT", { mode: "builtin" }); toast("Secure Boot route is on"); await draw(); }));
     $("#dstats").innerHTML = [[st.isoCount, "ISOs in the menu" + (st.isoHidden ? ` (${st.isoHidden} hidden)` : "")], [st.pcs, "PCs seen"], [bytes(st.isoBytes), "of ISOs"], [uptime(st.uptimeSeconds), "running"]]
       .map(([n, l]) => `<div class="card stat"><div class="n">${esc(n)}</div><div class="l">${esc(l)}</div></div>`).join("");
@@ -648,7 +657,7 @@ async function pageLibrary() {
   transfers.refresh = () => guard(draw)();
   const safeDraw = async () => {
     try { await draw(); }
-    catch (e) { if (e === staleView) return; $("#ltable").innerHTML = `<div class="empty">${esc(e.message)}. <a href="#server" data-go="server">Open the Server page</a> to choose or fix the library.</div>`; $("#crumbs").innerHTML = ""; page.querySelectorAll("[data-go]").forEach(a => a.onclick = ev => { ev.preventDefault(); state.view = a.dataset.go; location.hash = state.view; render(); }); }
+    catch (e) { if (e === staleView) return; $("#ltable").innerHTML = `<div class="empty">${esc(e.message)}. <a href="#server" data-go="server">Open the Server page</a> to choose or fix the library.</div>`; $("#crumbs").innerHTML = ""; page.querySelectorAll("[data-go]").forEach(a => a.onclick = ev => { ev.preventDefault(); navigate(a.dataset.go); }); }
   };
   $("#up").onclick = () => uploadDialog();
   $("#pick").onchange = e => { [...e.target.files].forEach(queueUpload); e.target.value = ""; };
@@ -1213,7 +1222,7 @@ async function pageStart() {
     <p class="small muted">DHCP mode: <strong>${esc(dhcp || "?")}</strong>. ${dhcp === "proxy" ? "In proxy mode your network's own DHCP server gives addresses and Bootlace only answers PCs that start a network boot, so the router needs no change." : dhcp === "full" ? "In full mode Bootlace hands out addresses itself: only use it on a network without a DHCP server." : "Without DHCP the PCs have to be pointed at the server by hand."} The boot menu is at <code>${esc(fact("Boot menu"))}</code>.</p>
     <div class="row"><button class="btn" id="gcheck">Run the checks</button></div><div id="gout" aria-live="polite"></div></div>
   <div class="row" style="margin-top:14px"><button class="btn primary" id="gdone">Finish</button><button class="btn" id="gskip">Skip this guide</button></div>`;
-  page.querySelectorAll("[data-go]").forEach(b => b.onclick = () => { state.view = b.dataset.go; location.hash = state.view; render(); });
+  page.querySelectorAll("[data-go]").forEach(b => b.onclick = () => { navigate(b.dataset.go); });
   const f = $("#gpf");
   if (f) f.onsubmit = guard(async e => { e.preventDefault(); await api("/api/password", "POST", { current: $("#gpc").value, new: $("#gpn").value }); toast("Password changed"); await pageStart(); });
   $("#gcheck").onclick = guard(async () => {
@@ -1226,7 +1235,7 @@ async function pageStart() {
         <p class="small ${r.failed || conflicts ? "bad" : "muted"}">${r.failed ? r.failed + " check(s) failed. " : ""}${conflicts ? conflicts + " other server(s) answer network boots too (Server page). " : ""}${!r.failed && !conflicts ? "All good. Start a PC from the network: it should show the Gola Bootlace menu." : ""}</p>`;
     } finally { b.disabled = false; b.textContent = "Run the checks"; }
   });
-  const finish = guard(async () => { await api("/api/setup/finish", "POST", {}); state.setupDone = true; state.view = "dash"; location.hash = "dash"; render(); });
+  const finish = guard(async () => { await api("/api/setup/finish", "POST", {}); state.setupDone = true; navigate("dash"); });
   $("#gdone").onclick = finish; $("#gskip").onclick = finish;
 }
 
@@ -1309,7 +1318,7 @@ async function pageLog() {
 
 // ---- account
 /** Opens the first-start guide (also after it was finished or skipped) without changing any setting. */
-function openGuide() { state.view = "start"; location.hash = "start"; render(); }
+function openGuide() { navigate("start"); }
 function pageAccount() {
   const page = $("#page");
   const { request: api } = viewScope(page);
@@ -1330,8 +1339,8 @@ function pageAccount() {
 
 // ---- start
 (async () => {
-  const h = location.hash.slice(1);
-  if (h === "start" || views.some(v => v[0] === h)) state.view = h; // (#start works after the guide was finished too)
+  state.view = pageInAddress() || state.view;
+  window.addEventListener("hashchange", onAddressChange);
   try { const s = await fetch("/api/session", { credentials: "same-origin" }).then(r => r.json()); state.authed = !!s.authenticated; state.version = s.version || ""; } catch (e) { state.authed = false; }
   render();
 })();

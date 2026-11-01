@@ -28,7 +28,7 @@ Kept short on purpose. Last checked against the code, `git log` and the issues o
 ```
 go build ./cmd/bootlace
 go vet ./... && go test ./...
-node --test tools/admin-views.test.cjs tools/admin-secureboot.test.cjs
+node --test tools/admin-views.test.cjs tools/admin-secureboot.test.cjs tools/admin-layout.test.cjs
 ```
 
 `tools/build.sh` builds with the version read from the git tag; `tools/release.sh` prints the release commands and publishes nothing. Real-file tests need
