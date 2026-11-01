@@ -119,13 +119,35 @@ func (l *Library) Abs(rel string) (string, error) {
 	return p, err
 }
 
+// listable refuses a folder that is itself a link leading out of the library (abs only checks the folder that holds it).
+func (l *Library) listable(root, dir string) error {
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	realDir, err := filepath.EvalSymlinks(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !inside(realRoot, realDir) {
+		return fmt.Errorf("%q is not inside the library", dir)
+	}
+	return nil
+}
+
 // ListDir lists a folder: folders first, then files, each by name. Hidden files and the library's own folder are left out.
 func (l *Library) ListDir(rel string) ([]Entry, error) {
-	_, dir, err := l.abs(rel)
+	root, dir, err := l.abs(rel)
 	if err != nil {
 		return nil, err
 	}
 	rel, _ = CleanRel(rel)
+	if err := l.listable(root, dir); err != nil {
+		return nil, err
+	}
 	items, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

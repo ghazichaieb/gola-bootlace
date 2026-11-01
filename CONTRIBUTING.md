@@ -24,6 +24,10 @@ One version number names everything that is made from one commit: the program, t
 - **Docker tags.** `X.Y.Z` always; a final release also `X.Y` and `latest` (and `X` from 1.0). A pre-release has only its own tag.
 - **Who.** A release is made by the maintainer only, after the maintainer says so: tag, GitHub release with the files, Docker image. `tools/release.sh` prints the commands and publishes nothing.
 
+## Running the tests on Windows with Docker
+
+There is no need to install Go: `powershell -ExecutionPolicy Bypass -File tools	est-in-docker.ps1` copies the sources into a `golang` container and runs `gofmt -l`, `go vet` and `go test` there (pass `-Packages ./internal/library/...` for one package). Copy the sources in rather than bind-mounting the folder: a bind mount from Windows does not behave like a Linux filesystem (links, file modes), and the tests that rely on those can then give wrong results.
+
 ## Web interface regression tests
 
 Run `node --test tools/admin-views.test.cjs` with Node.js 18 or later after changing asynchronous management-page rendering.
