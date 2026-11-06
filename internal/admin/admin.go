@@ -1051,12 +1051,22 @@ func queryInt(r *http.Request, key string, def, lo, hi int) int {
 	return v
 }
 
+// pcForget makes the server forget one PC whatever way it got into the list: it was seen, only has a rule, or only has a name or options. The rule, name, options (answer file
+// choice included) and the history are all removed; a PC that asks again later is listed as a new one. Unknown to both the list and the settings is a 404.
 func (a *Admin) pcForget(w http.ResponseWriter, r *http.Request) {
 	mac, ok := config.NormalizeMAC(r.PathValue("mac"))
 	if !ok {
 		mac = r.PathValue("mac") // a PC listed by its address only (an old script without a MAC)
 	}
-	if !a.o.Backend.ForgetPC(mac) {
+	configured := false
+	if probe := a.o.Store.Get(); probe.ForgetPC(mac) {
+		configured = true
+		if err := a.o.Store.Update(func(c *config.Config) error { c.ForgetPC(mac); return nil }); err != nil {
+			fail(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	}
+	if !a.o.Backend.ForgetPC(mac) && !configured {
 		fail(w, http.StatusNotFound, "that PC is not in the list")
 		return
 	}

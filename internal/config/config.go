@@ -79,7 +79,7 @@ type Config struct {
 	BootPasswords      map[string]string           `json:"bootPasswords"`        // ISO id -> hash of the password the menu asks for before it starts that ISO (see package admin); a secret, not in backups without secrets
 	Rules              []Rule                      `json:"rules"`
 	GroupRules         []GroupRule                 `json:"groupRules"`      // rules for every PC of a kind (model, manufacturer, platform); a rule for one PC wins
-	PCNames            map[string]string           `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC is forgotten from the list
+	PCNames            map[string]string           `json:"pcNames"`         // MAC address -> the name a person gave the PC; kept when the PC drops out of the list by age; Forget removes it (ForgetPC)
 	PCOptions          map[string]PCOptions        `json:"pcOptions"`       // MAC address -> extra kernel arguments and debug switches for every ISO that PC starts from its files (see PCOptions)
 	AdminHash          string                      `json:"adminHash"`       // see package admin
 	SMBPassword        string                      `json:"smbPassword"`     // what Windows' set-up logs in to the share with; it is inside the boot.wim copies, so it stays the same
@@ -233,6 +233,18 @@ type PCOptions struct {
 // Empty says that nothing is set: such an entry is not kept.
 func (o PCOptions) Empty() bool {
 	return o.Args == "" && !o.Debug.On() && o.Answer == "" && !o.SecureBoot && !o.NoShimFallback
+}
+
+// ForgetPC takes everything kept for one PC out of the settings: its rule, its name and its options (the kernel arguments, the Secure Boot and Windows-offer choices and the
+// answer file choice are all in PCOptions). It says whether there was anything to take out. The PC's history lives with the list of PCs, not here.
+func (c *Config) ForgetPC(mac string) bool {
+	n := len(c.Rules)
+	c.Rules = slices.DeleteFunc(c.Rules, func(r Rule) bool { return r.MAC == mac })
+	_, named := c.PCNames[mac]
+	_, optioned := c.PCOptions[mac]
+	delete(c.PCNames, mac)
+	delete(c.PCOptions, mac)
+	return len(c.Rules) != n || named || optioned
 }
 
 // MaxArgs is the longest extra kernel arguments line.

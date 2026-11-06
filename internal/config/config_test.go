@@ -334,3 +334,20 @@ func TestTheSecureBootSettingIsCheckedKeptAndAbsentInOlderFiles(t *testing.T) {
 		t.Fatalf("an older file: %q %q %v", mode, scope, chosen)
 	}
 }
+
+func TestForgetPCRemovesEveryKindOfSettingOfThatPCOnly(t *testing.T) {
+	c := Config{
+		Rules:     []Rule{{MAC: "aa:bb:cc:dd:ee:01", Action: "local"}, {MAC: "aa:bb:cc:dd:ee:02", Action: "local"}},
+		PCNames:   map[string]string{"aa:bb:cc:dd:ee:01": "One", "aa:bb:cc:dd:ee:02": "Two"},
+		PCOptions: map[string]PCOptions{"aa:bb:cc:dd:ee:01": {Args: "nomodeset"}, "aa:bb:cc:dd:ee:02": {Args: "quiet"}},
+	}
+	if !c.ForgetPC("aa:bb:cc:dd:ee:01") {
+		t.Fatal("there was something to forget")
+	}
+	if len(c.Rules) != 1 || c.Rules[0].MAC != "aa:bb:cc:dd:ee:02" || len(c.PCNames) != 1 || len(c.PCOptions) != 1 {
+		t.Fatalf("%+v", c)
+	}
+	if c.ForgetPC("aa:bb:cc:dd:ee:01") || c.ForgetPC("aa:bb:cc:dd:ee:99") {
+		t.Fatal("nothing left to forget must be reported as nothing")
+	}
+}

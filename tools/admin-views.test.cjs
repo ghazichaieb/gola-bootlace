@@ -180,6 +180,15 @@ test('PCs page: warning on a plain Windows rule for a PC known to use Secure Boo
   assert.equal(warn({ shimRefused: true, rule: { action: 'iso:u' } }), '', 'not a Windows ISO');
   assert.equal(warn({ shimRefused: true }), '', 'no rule');
 });
+test('PCs page: the Forget question names what goes and nothing else', () => {
+  const f = fixture(), ask = p => f.run(`forgetQuestion(${JSON.stringify(p)})`);
+  const all = { mac: 'aa:bb:cc:dd:ee:01', name: 'Till', rule: { action: 'local' }, history: [{ what: 'menu' }], options: { args: 'nomodeset', secureBoot: true, answer: 'a1' } };
+  assert.match(ask(all), /^Forget Till\? This removes its rule, its name, its kernel options, its Secure Boot choices, its answer file choice and its history\./);
+  assert.match(ask(all), /listed again as a new PC/);
+  assert.match(ask({ mac: 'aa:bb:cc:dd:ee:02', rule: { action: 'local' } }), /^Forget aa:bb:cc:dd:ee:02\? This removes its rule\. /);
+  assert.match(ask({ mac: 'aa:bb:cc:dd:ee:03', options: { debug: { serial: true } } }), /This removes its kernel options\./);
+  assert.match(ask({ mac: 'aa:bb:cc:dd:ee:04' }), /^Forget aa:bb:cc:dd:ee:04\? It is taken out of the list\./);
+});
 test('PCs page: a rule can name one entry of an ISO\'s own boot menu', () => {
   const f = fixture(), way = 'ab'.repeat(16);
   f.run(`state.isos=[{id:'0123456789',title:'Ubuntu',family:'Ubuntu-style (casper)',ways:[{id:'${way}',title:'Safe <graphics>'}]}]`);

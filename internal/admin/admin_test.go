@@ -406,7 +406,7 @@ func TestTheLogCanBeDownloadedOnlyAfterALogin(t *testing.T) {
 	}
 }
 
-func TestAPCCanBeNamedAndTheNameIsSearchedAndKeptWhenForgotten(t *testing.T) {
+func TestAPCCanBeNamedAndTheNameIsSearchedAndKeptWhenItLeavesTheList(t *testing.T) {
 	r := newRig(t)
 	r.login()
 	if code, _ := r.do("PUT", "/api/pcs/not-a-mac/name", map[string]string{"name": "x"}, nil); code != 400 {
@@ -423,8 +423,8 @@ func TestAPCCanBeNamedAndTheNameIsSearchedAndKeptWhenForgotten(t *testing.T) {
 	if code, _ := r.do("PUT", "/api/pcs/aa:bb:cc:dd:ee:01/name", map[string]string{"name": "two\nlines"}, nil); code != 400 {
 		t.Fatalf("a name with a line break: %d", code)
 	}
-	// forgotten from the list, the PC is still listed by its name
-	r.do("DELETE", "/api/pcs/aa:bb:cc:dd:ee:01", nil, nil)
+	// gone from the list (a restart), the PC is still listed by its name
+	r.backend.clients = nil
 	_, out = r.do("GET", "/api/pcs", nil, nil)
 	pcs = out["pcs"].([]any)
 	if len(pcs) != 1 || pcs[0].(map[string]any)["name"] != "Reception" || pcs[0].(map[string]any)["mac"] != "aa:bb:cc:dd:ee:01" {
@@ -594,7 +594,7 @@ func TestAPCsKernelOptionsAreSetShownAndTakenAway(t *testing.T) {
 		t.Fatalf("arguments with a line break: %d", code)
 	}
 	// a PC that has options but has not asked since the server started is still listed
-	r.do("DELETE", "/api/pcs/aa:bb:cc:dd:ee:01", nil, nil)
+	r.backend.clients = nil
 	if _, out = r.do("GET", "/api/pcs", nil, nil); len(out["pcs"].([]any)) != 1 {
 		t.Fatalf("%v", out)
 	}
