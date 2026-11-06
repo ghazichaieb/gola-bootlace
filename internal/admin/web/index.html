@@ -288,27 +288,43 @@ function folderInAddress() {
 /** The address of a library folder (each part encoded, so a name with a space, # or ? stays one part). */
 function folderHash(path) { return "library" + (path ? "/" + path.split("/").map(encodeURIComponent).join("/") : ""); }
 
+/** The address (without the #) of a page; a library folder is part of it. */
+function addressOf(view, folder = "") { return view === "library" ? folderHash(folder) : view; }
+
+/** The page an empty address stands for: the first-start guide while it is pending, else the dashboard. */
+function defaultView() { return state.setupDone === false ? "start" : "dash"; }
+
 /** Opens a page and puts it in the address, so that Back, Forward, reload and a copied link return to it. A library folder is part of the address (the page itself starts at the top of the library). */
 function navigate(view, folder = "") {
   state.view = view;
   if (view === "library") state.libPath = folder;
-  location.hash = view === "library" ? folderHash(folder) : view;
+  location.hash = addressOf(view, folder);
   render();
 }
 
-/** Follows the address when it changes without navigate() (Back, Forward, a typed or pasted #page or #library/folder): shows that page and folder unless they are the ones shown. */
+/** Follows the address when it changes without navigate() (Back, Forward, a typed or pasted #page or #library/folder): shows that page and folder unless they are the ones shown.
+ *  An empty address (Back to the first entry of the history) is the default page; an address that names no page is replaced, without a history entry, by the address of the page shown. */
 function onAddressChange() {
-  const h = pageInAddress();
-  if (!h) return;
+  const named = pageInAddress();
+  if (!named && location.hash.length > 1) { history.replaceState(null, "", "#" + addressOf(state.view, state.libPath)); return; }
+  const h = named || defaultView();
   const folder = h === "library" ? folderInAddress() : state.libPath;
   if (h === state.view && folder === state.libPath) return;
   state.view = h; state.libPath = folder; render();
+}
+
+/** Lists the "Start here" tab among the pages while the first-start guide is pending and takes it out once the guide is finished; it has to be done before the tabs are drawn. */
+function syncGuideTab() {
+  const i = views.findIndex(v => v[0] === "start");
+  if (state.setupDone === false && i < 0) views.unshift(["start", "Start here"]);
+  if (state.setupDone === true && i >= 0) views.splice(i, 1);
 }
 
 function render() {
   clearTimers();
   const app = $("#app");
   if (!state.authed) { app.innerHTML = loginHTML(); wireLogin(); return; }
+  syncGuideTab();
   app.innerHTML = `
   <header class="top"><div class="bar">
     <div class="brand"><img src="/admin/mark.svg" alt=""><span>Gola Bootlace <small>${esc(state.version)}</small></span></div>
@@ -324,8 +340,6 @@ function render() {
     state.setupDone = null;
     api("/api/setup").then(s => { state.setupDone = !!s.done; if (!s.done && !pageInAddress()) state.view = "start"; render(); }).catch(() => { state.setupDone = true; });
   }
-  if (state.setupDone === false && !views.some(v => v[0] === "start")) views.unshift(["start", "Start here"]);
-  if (state.setupDone === true) { const i = views.findIndex(v => v[0] === "start"); if (i >= 0) views.splice(i, 1); }
   guard(({ start: pageStart, dash: pageDash, server: pageServer, library: pageLibrary, isos: pageISOs, answers: pageAnswers, pcs: pagePCs, menu: pageMenu, log: pageLog, account: pageAccount })[state.view])();
 }
 

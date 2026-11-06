@@ -14,7 +14,8 @@ function fixture() {
   page = element();
   let html = ""; Object.defineProperty(page,"innerHTML",{get(){return html;},set(value){if(departed)staleWrites++;html=value;}});
   const doc = {querySelector:s=>{if(departed && s!=='#page')foreignReads++;return s==='#page'?page:element();},querySelectorAll:()=>[],documentElement:{dataset:{}},body:element(),activeElement:null};
-  const context = vm.createContext({document:doc,location:{hash:''},localStorage:{getItem(){return null;}},matchMedia:()=>({matches:false}),setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval(){},setTimeout(){},clearTimeout(){},console,window:{innerHeight:900},URLSearchParams,fetch:(...args)=>new Promise((resolve,reject)=>pending.push({resolve,reject,args}))});
+  const location = {hash:''};
+  const context = vm.createContext({document:doc,location,history:{replaceState(_s,_t,url){location.hash=url.slice(1);}},localStorage:{getItem(){return null;}},matchMedia:()=>({matches:false}),setInterval:fn=>{intervals.push(fn);return intervals.length;},clearInterval(){},setTimeout(){},clearTimeout(){},console,window:{innerHeight:900},URLSearchParams,fetch:(...args)=>new Promise((resolve,reject)=>pending.push({resolve,reject,args}))});
   vm.runInContext(source.slice(0,boot),context);
   context.notices=notices;
   vm.runInContext('toast = message => notices.push(message)',context);
@@ -121,8 +122,13 @@ test('the address and the page agree: navigate() writes it, Back/Forward and typ
   f.run('onAddressChange()');
   assert.equal(f.run('drawn.length'), 2, 'the address of the page already shown draws nothing again');
   f.run('location.hash="#nonsense"; onAddressChange()');
-  assert.equal(f.run('state.view'), 'server', 'an address that names no page is ignored');
+  assert.equal(f.run('state.view'), 'server', 'an address that names no page keeps the page shown');
+  assert.equal(f.run('location.hash'), 'server', 'and is replaced by the address of that page');
   assert.equal(f.run('drawn.length'), 2);
+  f.run('location.hash=""; onAddressChange()');
+  assert.equal(f.run('state.view'), 'dash', 'Back to the first entry (no address) shows the dashboard');
+  assert.equal(f.run('location.hash'), '', 'the empty address stays empty');
+  assert.equal(f.run('drawn.length'), 3);
 });
 test('an address is followed while the first-start guide is shown, and #start still opens it (#80)', () => {
   const f = fixture();
@@ -131,6 +137,16 @@ test('an address is followed while the first-start guide is shown, and #start st
   f.run('location.hash="#start"; onAddressChange()');
   assert.equal(f.run('state.view'), 'start');
   assert.equal(f.run('drawn'), 2);
+  f.run('location.hash=""; onAddressChange()');
+  assert.equal(f.run('state.view'), 'start', 'no address is the guide while it is pending');
+});
+test('the "Start here" tab is among the pages while the guide is pending, before the tabs are drawn (#80)', () => {
+  const f = fixture(), tabs = () => JSON.parse(f.run('JSON.stringify(views.map(v => v[0]))'));
+  f.run('state.setupDone=false; syncGuideTab(); syncGuideTab()');
+  assert.deepEqual(tabs().slice(0, 2), ['start', 'dash'], 'once, first');
+  f.run('state.setupDone=true; syncGuideTab()');
+  assert.ok(!tabs().includes('start'));
+  assert.match(source.slice(source.indexOf('function render()')), /syncGuideTab\(\);\s+app\.innerHTML = `/, 'the tabs are adjusted before they are drawn');
 });
 test('the page buttons and in-page links go through navigate() (#80)', () => {
   assert.equal(source.match(/location\.hash =/g).length, 1, 'only navigate() writes the address');
